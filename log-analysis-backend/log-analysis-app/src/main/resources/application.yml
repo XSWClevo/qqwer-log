@@ -1,0 +1,121 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: log-analysis-app
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  # 动态数据源配置
+  datasource:
+    dynamic:
+      primary: postgres  # 默认数据源
+      strict: false  # 严格模式
+      datasource:
+        # PostgreSQL数据源（元数据库）
+        postgres:
+          driver-class-name: org.postgresql.Driver
+          url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}
+          username: ${DB_USER:postgres}
+          password: ${DB_PASSWORD:123456}
+          hikari:
+            maximum-pool-size: 20
+            minimum-idle: 5
+            connection-timeout: 30000
+
+        # ClickHouse数据源（日志数据库）
+        clickhouse:
+          driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+          url: jdbc:clickhouse://${CLICKHOUSE_HOST:10.180.5.72}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:MWLOGDB_ANALYSIS}
+          username: ${CLICKHOUSE_USER:default}
+          password: ${CLICKHOUSE_PASSWORD:mwclickhouse@2024}
+          hikari:
+            maximum-pool-size: 10
+            minimum-idle: 2
+            connection-timeout: 10000
+
+  # Redis配置
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  # Kafka配置
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:10.18.5.186:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      retries: 3
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      group-id: log-analysis-group
+      auto-offset-reset: earliest
+
+# MyBatis Plus配置
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: cn.mw.loganalysis.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    # JSONB 类型支持
+    jdbc-type-for-null: OTHER
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# JWT配置
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-for-jwt-token-generation-change-it-in-production}
+  expiration: 900000  # 15分钟 (毫秒)
+  refresh-expiration: 604800000  # 7天 (毫秒)
+
+# 日志提取配置
+extraction:
+  batch-size: 1000  # 批量读取日志数量
+  schedule-interval: 10000  # 定时任务间隔(毫秒)
+
+# 告警配置
+alert:
+  evaluation-interval: 5000  # 告警评估间隔(毫秒)
+  default-silence-period: 300  # 默认静默期(秒)
+
+# Spring Actuator配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    #cn.mw.loganalysis: DEBUG
+    #org.springframework.security: DEBUG
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%thread]){magenta} %clr(%-5level){highlight} %clr(%logger{36}){cyan} %clr(-){faint} %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

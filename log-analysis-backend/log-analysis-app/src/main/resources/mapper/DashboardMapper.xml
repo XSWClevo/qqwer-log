@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.mw.loganalysis.dashboard.mapper.DashboardMapper">
+
+    <!-- ==================== ResultMap 定义 ==================== -->
+    
+    <resultMap id="LogTrendRowMap" type="cn.mw.loganalysis.dashboard.entity.LogTrendRow">
+        <result column="time_bucket" property="timeBucket"/>
+        <result column="severity" property="severity"/>
+        <result column="cnt" property="cnt"/>
+    </resultMap>
+    
+    <resultMap id="TopEntityRowMap" type="cn.mw.loganalysis.dashboard.entity.TopEntityRow">
+        <result column="name" property="name"/>
+        <result column="cnt" property="cnt"/>
+    </resultMap>
+    
+    <resultMap id="RecurringExceptionRowMap" type="cn.mw.loganalysis.dashboard.entity.RecurringExceptionRow">
+        <result column="msg_hash" property="msgHash"/>
+        <result column="msg_summary" property="msgSummary"/>
+        <result column="cnt" property="cnt"/>
+        <result column="first_seen" property="firstSeen"/>
+        <result column="last_seen" property="lastSeen"/>
+        <result column="affected_hosts" property="affectedHosts"/>
+        <result column="affected_apps" property="affectedApps"/>
+        <result column="service" property="service"/>
+        <result column="severity" property="severity"/>
+    </resultMap>
+    
+    <resultMap id="AlertLogRowMap" type="cn.mw.loganalysis.dashboard.entity.AlertLogRow">
+        <result column="id" property="id"/>
+        <result column="timestamp" property="timestamp"/>
+        <result column="severity" property="severity"/>
+        <result column="hostname" property="hostname"/>
+        <result column="app_name" property="appName"/>
+        <result column="message" property="message"/>
+        <result column="raw" property="raw"/>
+        <result column="source_type" property="sourceType"/>
+    </resultMap>
+    
+    <resultMap id="IngestRateTrendRowMap" type="cn.mw.loganalysis.dashboard.entity.IngestRateTrendRow">
+        <result column="minute" property="minute"/>
+        <result column="cnt" property="cnt"/>
+    </resultMap>
+    
+    <resultMap id="LogCountByLevelRowMap" type="cn.mw.loganalysis.dashboard.entity.LogCountByLevelRow">
+        <result column="severity" property="severity"/>
+        <result column="cnt" property="cnt"/>
+    </resultMap>
+    
+    <resultMap id="StorageInfoRowMap" type="cn.mw.loganalysis.dashboard.entity.StorageInfoRow">
+        <result column="used_bytes" property="usedBytes"/>
+        <result column="partition_count" property="partitionCount"/>
+        <result column="total_rows" property="totalRows"/>
+    </resultMap>
+    
+    <resultMap id="QueryStatsRowMap" type="cn.mw.loganalysis.dashboard.entity.QueryStatsRow">
+        <result column="query_count" property="queryCount"/>
+        <result column="insert_count" property="insertCount"/>
+    </resultMap>
+
+    <!-- ==================== 存储指标查询 ==================== -->
+    
+    <!-- 获取 syslog 表存储大小 (bytes) -->
+    <select id="getTableStorageSize" resultType="java.lang.Long">
+        SELECT sum(bytes_on_disk) 
+        FROM system.parts 
+        WHERE table = 'syslog' AND active = 1
+    </select>
+
+    <!-- 获取 syslog 表总行数 -->
+    <select id="getTotalRowCount" resultType="java.lang.Long">
+        SELECT count() FROM syslog
+    </select>
+
+    <!-- 获取分区数量 -->
+    <select id="getPartitionCount" resultType="java.lang.Integer">
+        SELECT count(DISTINCT partition) 
+        FROM system.parts 
+        WHERE table = 'syslog' AND active = 1
+    </select>
+
+    <!-- ==================== 日志趋势查询 ==================== -->
+    
+    <select id="getLogTrendByInterval" resultMap="LogTrendRowMap">
+        SELECT 
+            ${intervalFunc} as time_bucket,
+            severity,
+            count() as cnt
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+        GROUP BY time_bucket, severity
+        ORDER BY time_bucket, severity
+    </select>
+
+    <!-- ==================== Top 实体查询 ==================== -->
+    
+    <select id="getTopHosts" resultMap="TopEntityRowMap">
+        SELECT 
+            hostname as name, 
+            count() as cnt
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+          AND hostname != ''
+        GROUP BY hostname
+        ORDER BY cnt DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="getTopApps" resultMap="TopEntityRowMap">
+        SELECT 
+            appname as name, 
+            count() as cnt
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+          AND appname != ''
+        GROUP BY appname
+        ORDER BY cnt DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ==================== 重复异常查询 ==================== -->
+    
+    <select id="getRecurringExceptions" resultMap="RecurringExceptionRowMap">
+        SELECT 
+            cityHash64(substring(message, 1, 200)) as msg_hash,
+            substring(message, 1, 200) as msg_summary,
+            count() as cnt,
+            min(timestamp) as first_seen,
+            max(timestamp) as last_seen,
+            uniqExact(hostname) as affected_hosts,
+            uniqExact(appname) as affected_apps,
+            any(appname) as service,
+            any(sev) as severity
+        FROM (
+            SELECT 
+                message,
+                timestamp,
+                hostname,
+                appname,
+                severity as sev
+            FROM syslog 
+            WHERE timestamp >= #{startTime} 
+              AND timestamp &lt;= #{endTime}
+              AND severity IN ('ERROR', 'FATAL', 'CRITICAL', 'error', 'fatal', 'critical')
+        ) as filtered_logs
+        GROUP BY msg_hash, msg_summary
+        HAVING cnt > 1
+        ORDER BY cnt DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ==================== 告警日志查询 ==================== -->
+    
+    <select id="getAlertLogs" resultMap="AlertLogRowMap">
+        SELECT 
+            id,
+            timestamp,
+            severity,
+            hostname,
+            appname as app_name,
+            message,
+            raw,
+            source_type
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+          AND severity IN ('ERROR', 'WARN', 'FATAL', 'CRITICAL', 'error', 'warn', 'fatal', 'critical', 'warning')
+        ORDER BY timestamp DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="getAlertLogsCount" resultType="java.lang.Long">
+        SELECT count() 
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+          AND severity IN ('ERROR', 'WARN', 'FATAL', 'CRITICAL', 'error', 'warn', 'fatal', 'critical', 'warning')
+    </select>
+
+    <!-- ==================== 通用统计查询 ==================== -->
+    
+    <select id="getLogCountInRange" resultType="java.lang.Long">
+        SELECT count() 
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+    </select>
+
+    <select id="getDistinctEntityCount" resultType="java.lang.Long">
+        SELECT count(DISTINCT ${field}) 
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+    </select>
+
+    <!-- ==================== 日志管道查询 ==================== -->
+    
+    <select id="getIngestRateTrend" resultMap="IngestRateTrendRowMap">
+        SELECT 
+            toStartOfMinute(timestamp) as minute,
+            count() as cnt
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+        GROUP BY minute
+        ORDER BY minute DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="getQueueBacklog" resultType="java.lang.Long">
+        SELECT count()
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+          AND severity IN ('ERROR', 'WARN', 'FATAL', 'CRITICAL')
+    </select>
+
+    <!-- ==================== 核心概览查询 ==================== -->
+    
+    <select id="getLogCountByLevel" resultMap="LogCountByLevelRowMap">
+        SELECT 
+            severity,
+            count() as cnt
+        FROM syslog 
+        WHERE timestamp >= #{startTime} 
+          AND timestamp &lt;= #{endTime}
+        GROUP BY severity
+    </select>
+
+    <!-- ==================== 数据库状态查询 ==================== -->
+    
+    <select id="getStorageInfo" resultMap="StorageInfoRowMap">
+        SELECT 
+            sum(bytes_on_disk) as used_bytes,
+            count(DISTINCT partition) as partition_count,
+            sum(rows) as total_rows
+        FROM system.parts 
+        WHERE table = 'syslog' AND active = 1
+    </select>
+
+    <select id="getQueryStats" resultMap="QueryStatsRowMap">
+        SELECT 
+            countIf(query_kind = 'Select') as query_count,
+            countIf(query_kind = 'Insert') as insert_count
+        FROM system.query_log 
+        WHERE event_time >= now() - INTERVAL 1 MINUTE
+    </select>
+
+    <select id="getActiveConnections" resultType="java.lang.Integer">
+        SELECT count() FROM system.processes
+    </select>
+
+</mapper>

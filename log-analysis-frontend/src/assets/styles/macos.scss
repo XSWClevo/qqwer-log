@@ -1,0 +1,419 @@
+/**
+ * macOS 设计风格全局样式
+ * 适配 macOS 生态的视觉语言
+ */
+
+// macOS 配色方案
+// macOS 配色方案
+:root {
+  // 主题色 - macOS Big Sur 风格
+  --macos-blue: #007AFF;
+  --macos-blue-hover: #0051D5;
+  --macos-blue-light: rgba(0, 122, 255, 0.1);
+
+  // 中性色
+  --macos-bg-primary: #FAFAFA;
+  --macos-bg-secondary: #F5F5F7;
+  --macos-bg-tertiary: #E8E8ED;
+
+  // 毛玻璃效果
+  --macos-glass-bg: rgba(255, 255, 255, 0.7);
+  --macos-glass-bg-dark: rgba(255, 255, 255, 0.5);
+
+  // 文本颜色
+  --macos-text-primary: #1D1D1F;
+  --macos-text-secondary: #6E6E73;
+  --macos-text-tertiary: #86868B;
+
+  // 边框
+  --macos-border: rgba(0, 0, 0, 0.08);
+  --macos-border-hover: rgba(0, 0, 0, 0.12);
+
+  // 阴影
+  --macos-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --macos-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --macos-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --macos-shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.12);
+
+  // 圆角
+  --macos-radius-sm: 6px;
+  --macos-radius-md: 10px;
+  --macos-radius-lg: 14px;
+  --macos-radius-xl: 18px;
+
+  // 过渡
+  --macos-transition: all 0.25s cubic-bezier(0.4, 0.0, 0.2, 1);
+  --macos-transition-fast: all 0.15s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+// 暗黑模式覆盖
+html.dark {
+  // 主题色 - 保持一致或微调
+  --macos-blue: #0A84FF; // macOS Dark Mode Blue
+  --macos-blue-hover: #0071E3;
+  --macos-blue-light: rgba(10, 132, 255, 0.15);
+
+  // 中性色 - 深色背景
+  --macos-bg-primary: #1E1E1E; // 深灰背景
+  --macos-bg-secondary: #141414; // 更深，用于侧边栏等
+  --macos-bg-tertiary: #2C2C2E; // 稍亮，用于卡片等
+
+  // 毛玻璃效果
+  --macos-glass-bg: rgba(30, 30, 30, 0.7);
+  --macos-glass-bg-dark: rgba(0, 0, 0, 0.5);
+
+  // 文本颜色
+  --macos-text-primary: #F5F5F7;
+  --macos-text-secondary: #98989D;
+  --macos-text-tertiary: #6E6E73;
+
+  // 边框 - 白色低透明度
+  --macos-border: rgba(255, 255, 255, 0.1);
+  --macos-border-hover: rgba(255, 255, 255, 0.15);
+
+  // 阴影 - 稍微加重
+  --macos-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.2);
+  --macos-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --macos-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --macos-shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.5);
+
+  // Element Plus Variable Overrides for Dark Mode
+  --el-bg-color: var(--macos-bg-secondary);
+  --el-bg-color-overlay: var(--macos-bg-tertiary);
+  --el-text-color-primary: var(--macos-text-primary);
+  --el-text-color-regular: var(--macos-text-secondary);
+  --el-text-color-secondary: var(--macos-text-tertiary);
+  --el-border-color: var(--macos-border);
+  --el-border-color-light: var(--macos-border);
+  --el-border-color-lighter: var(--macos-border);
+  --el-fill-color-blank: var(--macos-bg-secondary);
+}
+
+// macOS 字体栈
+@mixin macos-font {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// 毛玻璃效果
+@mixin macos-glass($opacity: 0.7) {
+  background: var(--macos-glass-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+// macOS 卡片样式
+@mixin macos-card {
+  background: var(--macos-glass-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid var(--macos-border);
+  border-radius: var(--macos-radius-lg);
+  box-shadow: var(--macos-shadow-md);
+  transition: var(--macos-transition);
+
+  &:hover {
+    border-color: var(--macos-border-hover);
+    box-shadow: var(--macos-shadow-lg);
+    transform: translateY(-2px);
+  }
+}
+
+// macOS 按钮样式
+@mixin macos-button-primary {
+  background: var(--macos-blue);
+  color: white;
+  border: none;
+  border-radius: var(--macos-radius-sm);
+  padding: 8px 20px;
+  font-weight: 500;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+  transition: var(--macos-transition-fast);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--macos-blue-hover);
+    box-shadow: 0 4px 16px rgba(0, 122, 255, 0.35);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+@mixin macos-button-secondary {
+  background: var(--macos-glass-bg);
+  color: var(--macos-text-primary);
+  border: 1px solid var(--macos-border);
+  border-radius: var(--macos-radius-sm);
+  padding: 8px 20px;
+  font-weight: 500;
+  font-size: 14px;
+  transition: var(--macos-transition-fast);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--macos-bg-primary);
+    border-color: var(--macos-border-hover);
+    box-shadow: var(--macos-shadow-sm);
+  }
+}
+
+// macOS 输入框样式
+@mixin macos-input {
+  background: var(--macos-bg-primary);
+  border: 1px solid var(--macos-border);
+  border-radius: var(--macos-radius-sm);
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--macos-text-primary);
+  transition: var(--macos-transition-fast);
+  box-shadow: var(--macos-shadow-sm);
+
+  &:hover {
+    border-color: var(--macos-border-hover);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--macos-blue);
+    box-shadow: 0 0 0 4px var(--macos-blue-light);
+  }
+}
+
+// 滚动条样式
+@mixin macos-scrollbar {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.3);
+    }
+  }
+}
+
+// 全局重置
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  @include macos-font;
+  width: 100%;
+  height: 100%;
+  background: var(--macos-bg-primary);
+  color: var(--macos-text-primary);
+  overflow-x: hidden;
+}
+
+// 通用工具类
+.macos-card {
+  @include macos-card;
+}
+
+.macos-glass {
+  @include macos-glass;
+}
+
+.macos-scrollbar {
+  @include macos-scrollbar;
+}
+
+// Element Plus 组件覆盖 - macOS 风格
+.el-card {
+  @include macos-card;
+
+  .el-card__header {
+    background: transparent;
+    border-bottom: 1px solid var(--macos-border);
+    padding: 16px 20px;
+  }
+
+  .el-card__body {
+    padding: 20px;
+  }
+}
+
+.el-button {
+  border-radius: var(--macos-radius-sm);
+  font-weight: 500;
+  transition: var(--macos-transition-fast);
+
+  &.el-button--primary {
+    @include macos-button-primary;
+  }
+
+  &.el-button--default {
+    @include macos-button-secondary;
+  }
+}
+
+.el-input {
+  --el-input-bg-color: var(--macos-bg-primary);
+  --el-input-border-color: var(--macos-border);
+  --el-input-hover-border-color: var(--macos-border-hover);
+  --el-input-focus-border-color: var(--macos-blue);
+
+  .el-input__wrapper {
+    @include macos-input;
+
+    .el-input__inner {
+      @include macos-font;
+      color: var(--macos-text-primary);
+    }
+  }
+}
+
+.el-select {
+  .el-select__wrapper {
+    @include macos-input;
+  }
+}
+
+.el-table {
+  @include macos-font;
+  border-radius: var(--macos-radius-md);
+  overflow: hidden;
+  box-shadow: var(--macos-shadow-sm);
+
+  th {
+    background: var(--macos-bg-secondary);
+    color: var(--macos-text-secondary);
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  td {
+    color: var(--macos-text-primary);
+    font-size: 14px;
+  }
+
+  tr:hover>td {
+    background: var(--macos-blue-light) !important;
+  }
+}
+
+.el-tag {
+  border: none;
+  border-radius: var(--macos-radius-sm);
+  font-weight: 500;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.el-dialog {
+  border-radius: var(--macos-radius-xl);
+  box-shadow: var(--macos-shadow-xl);
+  overflow: hidden;
+
+  .el-dialog__header {
+    background: var(--macos-bg-secondary);
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--macos-border);
+  }
+
+  .el-dialog__body {
+    padding: 24px;
+  }
+
+  .el-dialog__footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--macos-border);
+  }
+}
+
+.el-pagination {
+  .el-pager li {
+    border-radius: var(--macos-radius-sm);
+    font-weight: 500;
+
+    &.is-active {
+      background: var(--macos-blue);
+      color: white;
+    }
+  }
+
+  button {
+    border-radius: var(--macos-radius-sm);
+  }
+}
+
+// 动画
+@keyframes macos-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.macos-fade-in {
+  animation: macos-fade-in 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+// 页面顶部栏 mixin
+@mixin macos-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--macos-glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 0 24px;
+  height: 64px;
+  box-shadow: var(--macos-shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 1px solid var(--macos-border);
+}
+
+// 页面标题样式
+@mixin macos-page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--macos-text-primary);
+}
+
+// 页面容器样式
+@mixin macos-page-container {
+  min-height: 100vh;
+  background: var(--macos-bg-secondary);
+  padding: 0;
+}
+
+// 内容卡片样式
+@mixin macos-content-card {
+  margin: 20px;
+  border-radius: var(--macos-radius-lg);
+  border: 1px solid var(--macos-border);
+  background: var(--macos-glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--macos-shadow-sm);
+}
