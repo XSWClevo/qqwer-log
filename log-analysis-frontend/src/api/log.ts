@@ -98,3 +98,29 @@ export function exportLogs(data: LogQueryRequest, format: 'csv' | 'xlsx' = 'csv'
     params: { format }
   })
 }
+
+// AI查询请求类型
+export interface AiQueryRequest {
+  query: string
+  datasourceId?: string
+}
+
+// AI查询响应类型
+export interface AiQueryResponse {
+  success: boolean
+  sql: string | null
+  result: any
+  error: string | null
+  sqlGenerationTime: number | null
+  sqlExecutionTime: number | null
+  totalExecutionTime: number | null
+}
+
+// AI自然语言查询
+export function aiQuery(data: AiQueryRequest) {
+  return request<AiQueryResponse>({
+    url: '/api/stats/logs/ai-query',
+    method: 'POST',
+    data
+  })
+}

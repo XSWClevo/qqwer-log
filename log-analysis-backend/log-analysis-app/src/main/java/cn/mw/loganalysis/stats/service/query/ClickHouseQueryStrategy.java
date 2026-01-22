@@ -10,6 +10,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.Statement;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
@@ -289,12 +294,13 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
         log.debug("批量查询维度: {}", dimensions);
 
         // 构建 UNION ALL 查询，使用 PREWHERE 优化
+        // 使用反引号包裹字段名，支持中文和特殊字符
         String sql = dimensions.stream()
             .map(dim -> String.format(
-                "SELECT '%s' as dimension, %s as value, count(*) as count " +
+                "SELECT '%s' as dimension, `%s` as value, count(*) as count " +
                 "FROM %s " +
                 "PREWHERE timestamp >= ? AND timestamp <= ? " +
-                "GROUP BY %s " +
+                "GROUP BY `%s` " +
                 "ORDER BY count DESC " +
                 "LIMIT 10",
                 dim, dim, tableName, dim
@@ -413,12 +419,14 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
             String dbField = mapFieldToDbColumn(filter.getField());
 
             if ("include".equalsIgnoreCase(filter.getType())) {
-                sql.append("AND ").append(dbField).append(" IN (");
+                // 使用反引号包裹字段名，支持中文和特殊字符
+                sql.append("AND `").append(dbField).append("` IN (");
                 sql.append(filter.getValues().stream().map(v -> "?").collect(Collectors.joining(", ")));
                 sql.append(") ");
                 params.addAll(filter.getValues());
             } else if ("exclude".equalsIgnoreCase(filter.getType())) {
-                sql.append("AND ").append(dbField).append(" NOT IN (");
+                // 使用反引号包裹字段名，支持中文和特殊字符
+                sql.append("AND `").append(dbField).append("` NOT IN (");
                 sql.append(filter.getValues().stream().map(v -> "?").collect(Collectors.joining(", ")));
                 sql.append(") ");
                 params.addAll(filter.getValues());
@@ -508,5 +516,73 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
             statsQueryExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * 执行原始SQL查询
+     */
+    @Override
+    public Object executeRawSQL(String sql, DatasourceConnectionConfig connectionConfig) {
+        log.info("执行原始SQL: {}", sql);
+
+        String jdbcUrl = buildJdbcUrl(connectionConfig);
+        String username = connectionConfig.getUsername() != null ? connectionConfig.getUsername() : "default";
+        String password = connectionConfig.getPassword() != null ? connectionConfig.getPassword() : "";
+
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            ResultSetMetaData metaData = rs.getMetaData();
+            int columnCount = metaData.getColumnCount();
+
+            // 如果只有一列一行，返回单个值
+            if (columnCount == 1 && rs.next()) {
+                Object value = rs.getObject(1);
+                if (!rs.next()) {
+                    return value;
+                }
+                // 如果有多行，重新查询并返回列表
+                rs.beforeFirst();
+            }
+
+            // 返回结果列表
+            List<Map<String, Object>> results = new ArrayList<>();
+            while (rs.next()) {
+                Map<String, Object> row = new HashMap<>();
+                for (int i = 1; i <= columnCount; i++) {
+                    String columnName = metaData.getColumnName(i);
+                    Object value = rs.getObject(i);
+                    row.put(columnName, value);
+                }
+                results.add(row);
+            }
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("执行SQL失败: {}", sql, e);
+            throw new RuntimeException("执行SQL失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 构建 JDBC URL
+     */
+    private String buildJdbcUrl(DatasourceConnectionConfig config) {
+        String endpoint = config.getEndpoint();
+        String database = config.getDatabase();
+
+        if (endpoint.startsWith("jdbc:")) {
+            return endpoint;
+        }
+
+        StringBuilder url = new StringBuilder("jdbc:clickhouse://");
+        url.append(endpoint);
+        if (StringUtils.hasText(database)) {
+            url.append("/").append(database);
+        }
+
+        return url.toString();
     }
 }

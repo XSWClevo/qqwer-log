@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.yaml.snakeyaml.Yaml;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -373,5 +374,48 @@ public class DynamicLogQueryService {
         return queryStrategies.stream()
                 .map(LogQueryStrategy::getSupportedType)
                 .toList();
+    }
+
+    /**
+     * 获取数据源的表名
+     */
+    public String getTableName(String datasourceId) {
+        DatasourceConnectionConfig config = getDatasourceConfig(datasourceId);
+        return config.getTable();
+    }
+
+    /**
+     * 获取数据源类型
+     */
+    public String getDatasourceType(String datasourceId) {
+        DatasourceConnectionConfig config = getDatasourceConfig(datasourceId);
+        return config.getType();
+    }
+
+    /**
+     * 执行原始SQL查询
+     *
+     * @param datasourceId 数据源ID（可为null，使用默认数据源）
+     * @param sql SQL语句
+     * @return 查询结果
+     */
+    public Object executeRawSQL(String datasourceId, String sql) {
+        if (StringUtils.hasText(datasourceId)) {
+            DatasourceConnectionConfig config = getDatasourceConfig(datasourceId);
+            LogQueryStrategy strategy = getStrategy(config.getType());
+            return strategy.executeRawSQL(sql, config);
+        } else {
+            // 使用默认的ClickHouse数据源
+            DatasourceConnectionConfig defaultConfig = DatasourceConnectionConfig.builder()
+                    .type("clickhouse")
+                    .endpoint("10.180.5.72:8123")
+                    .database("MWLOGDB_ANALYSIS")
+                    .table("syslog")
+                    .username("default")
+                    .password("mwclickhouse@2024")
+                    .build();
+            LogQueryStrategy strategy = getStrategy("clickhouse");
+            return strategy.executeRawSQL(sql, defaultConfig);
+        }
     }
 }

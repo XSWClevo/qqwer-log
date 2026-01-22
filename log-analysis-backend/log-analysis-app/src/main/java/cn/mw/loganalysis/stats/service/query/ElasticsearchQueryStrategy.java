@@ -439,6 +439,11 @@ public class ElasticsearchQueryStrategy implements LogQueryStrategy {
         }
     }
 
+    @Override
+    public Object executeRawSQL(String sql, DatasourceConnectionConfig connectionConfig) {
+        return null;
+    }
+
     // ==================== 私有方法 ====================
 
     private RestTemplate getRestTemplate(DatasourceConnectionConfig config) {

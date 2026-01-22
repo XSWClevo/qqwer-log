@@ -57,4 +57,12 @@ public interface LogQueryStrategy {
      * @return 时间序列数据
      */
     Map<String, Object> queryTimeSeries(StatsQueryRequest request, DatasourceConnectionConfig connectionConfig);
+
+    /**
+     * 执行原始SQL查询
+     * @param sql SQL语句
+     * @param connectionConfig 连接配置
+     * @return 查询结果
+     */
+    Object executeRawSQL(String sql, DatasourceConnectionConfig connectionConfig);
 }

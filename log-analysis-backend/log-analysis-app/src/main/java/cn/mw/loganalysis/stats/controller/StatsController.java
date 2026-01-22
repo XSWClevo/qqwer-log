@@ -1,9 +1,12 @@
 package cn.mw.loganalysis.stats.controller;
 
 import cn.mw.loganalysis.common.response.Result;
+import cn.mw.loganalysis.stats.dto.AiQueryRequest;
+import cn.mw.loganalysis.stats.dto.AiQueryResponse;
 import cn.mw.loganalysis.stats.dto.LogContextRequest;
 import cn.mw.loganalysis.stats.dto.LogQueryRequest;
 import cn.mw.loganalysis.stats.dto.StatsQueryRequest;
+import cn.mw.loganalysis.stats.service.AiQueryService;
 import cn.mw.loganalysis.stats.service.DynamicLogQueryService;
 import cn.mw.loganalysis.stats.service.StatsService;
 import cn.mw.loganalysis.stats.service.query.FieldInfo;
@@ -27,6 +30,7 @@ public class StatsController {
 
     private final StatsService statsService;
     private final DynamicLogQueryService dynamicLogQueryService;
+    private final AiQueryService aiQueryService;
 
     /**
      * 获取数据源的表结构（字段列表）
@@ -133,5 +137,16 @@ public class StatsController {
         log.info("Export report in format: {}", format);
         String reportFile = statsService.exportReport(request, format);
         return Result.success(reportFile);
+    }
+
+    /**
+     * AI自然语言查询
+     * 使用LangChain和Claude API将自然语言转换为SQL并执行
+     */
+    @PostMapping("/logs/ai-query")
+    public Result<AiQueryResponse> aiQuery(@Valid @RequestBody AiQueryRequest request) {
+        log.info("AI query request received: {}", request.getQuery());
+        AiQueryResponse response = aiQueryService.query(request);
+        return Result.success(response);
     }
 }

@@ -72,45 +72,74 @@ import { Check, Select, InfoFilled, Rank, Close, Plus } from '@element-plus/icon
 import draggable from 'vuedraggable'
 import { getFieldConfig, saveFieldConfig } from '@/api/field-config'
 
+interface FieldInfo {
+  name: string
+  type: string
+  label: string
+  isTimestamp?: boolean
+  isStatsDimension?: boolean
+  isContentField?: boolean
+}
+
 const props = defineProps<{
   username?: string
+  availableFields?: FieldInfo[]  // 可用字段列表（从父组件传入）
+  datasourceId?: string           // 数据源ID（用于检测切换和配置存储）
 }>()
 
 const emit = defineEmits<{
   change: [fields: string[]]
 }>()
 
-// 所有可用字段定义
-const ALL_FIELDS = [
-  'timestamp', 'level', 'host', 'service', 'source',
-  'message', 'facility', 'procid', 'sourceIp', 'raw'
-]
-
-// 字段标签映射
-const FIELD_LABELS: Record<string, string> = {
-  timestamp: '时间戳',
-  level: '日志级别',
-  host: '主机',
-  service: '应用名',
-  source: '来源类型',
-  message: '消息',
-  facility: '设施',
-  procid: '进程ID',
-  sourceIp: '来源IP',
-  raw: '原始日志'
+// 获取默认字段（兼容旧逻辑）
+const getDefaultFields = (): FieldInfo[] => {
+  return [
+    { name: 'timestamp', type: 'DateTime', label: '时间戳', isTimestamp: true },
+    { name: 'severity', type: 'String', label: '日志级别', isStatsDimension: true },
+    { name: 'hostname', type: 'String', label: '主机', isStatsDimension: true },
+    { name: 'appname', type: 'String', label: '应用名', isStatsDimension: true },
+    { name: 'source_type', type: 'String', label: '来源类型', isStatsDimension: true },
+    { name: 'message', type: 'String', label: '消息', isContentField: true },
+    { name: 'facility', type: 'String', label: '设施' },
+    { name: 'procid', type: 'String', label: '进程ID' },
+    { name: 'source_ip', type: 'String', label: '来源IP' },
+    { name: 'raw', type: 'String', label: '原始日志', isContentField: true }
+  ]
 }
+
+// 所有可用字段（动态或默认）
+const allFields = computed(() => {
+  if (props.availableFields && props.availableFields.length > 0) {
+    return props.availableFields
+  }
+  return getDefaultFields()
+})
+
+// 所有可用字段名列表
+const ALL_FIELDS = computed(() => {
+  return allFields.value.map(f => f.name)
+})
+
+// 字段标签映射（动态生成）
+const FIELD_LABELS = computed(() => {
+  const labels: Record<string, string> = {}
+  allFields.value.forEach(field => {
+    labels[field.name] = field.label || field.name
+  })
+  return labels
+})
 
 // 已选择的字段
 const selectedFields = ref<string[]>([])
 
 // 可用字段(排除已选择的)
 const availableFields = computed(() => {
-  return ALL_FIELDS.filter(field => !selectedFields.value.includes(field))
+  return ALL_FIELDS.value.filter(field => !selectedFields.value.includes(field))
 })
 
 // 获取字段标签
 const getFieldLabel = (field: string): string => {
-  return FIELD_LABELS[field] || field
+  return FIELD_LABELS.value[field] || field
 }
 
 // 添加字段
@@ -131,8 +160,9 @@ const removeField = (field: string) => {
 // 重置字段为默认配置
 const resetFields = async () => {
   try {
+    const configType = props.datasourceId ? `log_list_${props.datasourceId}` : 'log_list'
     const username = props.username || 'admin'
-    await fetch(`/api/field-config/log_list?username=${username}`, {
+    await fetch(`/api/field-config/${configType}?username=${username}`, {
       method: 'DELETE'
     })
     // 重新加载默认配置
@@ -148,8 +178,9 @@ const resetFields = async () => {
 const saveConfig = async () => {
   try {
     const username = props.username || 'admin'
+    const configType = props.datasourceId ? `log_list_${props.datasourceId}` : 'log_list'
     await saveFieldConfig(username, {
-      configType: 'log_list',
+      configType,
       selectedFields: selectedFields.value,
       fieldOrder: selectedFields.value
     })
@@ -164,24 +195,56 @@ const saveConfig = async () => {
 const loadConfig = async () => {
   try {
     const username = props.username || 'admin'
-    const config = await getFieldConfig(username, 'log_list')
+    const configType = props.datasourceId ? `log_list_${props.datasourceId}` : 'log_list'
+    const config = await getFieldConfig(username, configType)
 
     if (config.selectedFields && config.selectedFields.length > 0) {
-      selectedFields.value = config.selectedFields
+      // 过滤掉不存在的字段，保留存在的字段
+      const validFields = config.selectedFields.filter(field =>
+        ALL_FIELDS.value.includes(field)
+      )
+
+      if (validFields.length > 0) {
+        selectedFields.value = validFields
+      } else {
+        // 如果没有有效字段，使用默认配置
+        setDefaultFields()
+      }
     } else {
-      // 默认配置
-      selectedFields.value = ['timestamp', 'level', 'host', 'service', 'message']
+      // 默认配置：前5个字段
+      setDefaultFields()
     }
   } catch (error) {
     console.error('加载配置失败:', error)
     // 使用默认配置
-    selectedFields.value = ['timestamp', 'level', 'host', 'service', 'message']
+    setDefaultFields()
   }
+}
+
+// 设置默认字段（前5个）
+const setDefaultFields = () => {
+  selectedFields.value = ALL_FIELDS.value.slice(0, 5)
 }
 
 // 监听字段变化,通知父组件
 watch(selectedFields, (newFields) => {
   emit('change', newFields)
+}, { deep: true })
+
+// 监听数据源切换
+watch(() => props.datasourceId, async (newId, oldId) => {
+  if (newId !== oldId && oldId !== undefined) {
+    // 数据源切换时，重新加载配置
+    await loadConfig()
+  }
+})
+
+// 监听可用字段变化（数据源字段加载完成）
+watch(() => props.availableFields, async (newFields, oldFields) => {
+  if (newFields && newFields.length > 0 && (!oldFields || oldFields.length === 0)) {
+    // 字段信息首次加载完成，重新加载配置
+    await loadConfig()
+  }
 }, { deep: true })
 
 // 组件挂载时加载配置

@@ -244,6 +244,11 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
         return result;
     }
 
+    @Override
+    public Object executeRawSQL(String sql, DatasourceConnectionConfig connectionConfig) {
+        return null;
+    }
+
     // ==================== 私有方法 ====================
 
     private JdbcTemplate getJdbcTemplate(DatasourceConnectionConfig config) {

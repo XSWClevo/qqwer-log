@@ -47,8 +47,22 @@
 
       <el-divider style="margin: 12px 0" />
 
+      <!-- 查询模式切换 -->
+      <div class="query-mode-row">
+        <el-radio-group v-model="queryMode" size="small">
+          <el-radio-button label="normal">普通查询</el-radio-button>
+          <el-radio-button label="ai">AI查询</el-radio-button>
+        </el-radio-group>
+        <el-tag v-if="queryMode === 'ai'" type="warning" size="small" style="margin-left: 10px">
+          <el-icon><MagicStick /></el-icon>
+          自然语言转SQL
+        </el-tag>
+      </div>
+
       <div class="main-search-row">
+        <!-- 普通查询输入框 -->
         <el-input
+          v-if="queryMode === 'normal'"
           v-model="messageSearchText"
           placeholder="搜索日志内容... (支持Message和Raw字段搜索)"
           class="main-search-input"
@@ -60,6 +74,18 @@
           </template>
         </el-input>
 
+        <!-- AI查询输入框 -->
+        <el-input
+          v-else
+          v-model="aiQueryText"
+          type="textarea"
+          :rows="2"
+          placeholder="例如：查询最近1小时内severity为error的日志，按时间倒序排列"
+          class="ai-query-input"
+          clearable
+          @keyup.enter.ctrl="handleAiQuery"
+        />
+
         <el-select v-model="timeRange" class="time-range-select" @change="handleTimeRangeChange">
           <el-option label="最近15分钟" value="15m" />
           <el-option label="最近1小时" value="1h" />
@@ -68,10 +94,10 @@
           <el-option label="自定义" value="custom" />
         </el-select>
 
-        <el-button type="primary" @click="handleMessageSearch">
+        <el-button type="primary" @click="queryMode === 'normal' ? handleMessageSearch() : handleAiQuery()">
           <el-icon v-if="!loading"><Search /></el-icon>
           <el-icon v-else class="is-loading"><Loading /></el-icon>
-          {{ loading ? '查询中...' : '查询' }}
+          {{ loading ? '查询中...' : (queryMode === 'ai' ? 'AI查询' : '查询') }}
         </el-button>
       </div>
 
@@ -163,12 +189,15 @@
           :time-range="getTimeRange()"
           :selected-fields="tableColumns"
           :pinned-fields="pinnedFieldNames"
+          :available-fields="datasourceFields"
+          :datasource-id="selectedDatasource"
           @filter="handleSidebarFilter"
           @remove-filter="handleRemoveFilter"
           @clear-filters="clearAllFilters"
           @show-chart="handleShowFieldChart"
           @pin-chart="handlePinFieldChart"
           @fields-change="handleFieldsChange"
+          @stats-fields-change="handleStatsFieldsChange"
         />
       </template>
 
@@ -498,12 +527,12 @@
 import { ref, reactive, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDark } from '@vueuse/core'
-import { Search, Filter, Download, Loading, Close, Star, DataAnalysis } from '@element-plus/icons-vue'
+import { Search, Filter, Download, Loading, Close, Star, DataAnalysis, MagicStick } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import * as yaml from 'js-yaml'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { ElMessage } from 'element-plus'
-import { queryLogs, queryTimeSeries, exportLogs, queryFieldStats, queryLogContext, queryFieldTimeSeries, getDatasourceSchema, type FieldInfo } from '@/api/log'
+import { queryLogs, queryTimeSeries, exportLogs, queryFieldStats, queryLogContext, queryFieldTimeSeries, getDatasourceSchema, aiQuery, type FieldInfo, type AiQueryResponse } from '@/api/log'
 import { getPinnedChartsConfig, savePinnedChartsConfig, type PinnedChartConfig } from '@/api/field-config'
 import { configComponentApi, type ConfigComponent } from '@/api/vector'
 import type { LogEntry, TimeRangeType, FieldStats, FilterCondition, MessageCondition, FieldFilter } from '@/types/log'
@@ -528,6 +557,8 @@ const detailVisible = ref(false)
 const timeRange = ref<TimeRangeType>('24h')
 const customTimeRange = ref<[string, string]>()
 const messageSearchText = ref('')
+const aiQueryText = ref('')
+const queryMode = ref<'normal' | 'ai'>('normal')
 const isDark = useDark()
 
 // 数据源相关
@@ -651,6 +682,8 @@ const loadDatasourceSchema = async () => {
   if (!selectedDatasource.value) {
     // 没有选择数据源时，使用默认字段
     datasourceFields.value = getDefaultFields()
+    initializeTableColumns()
+    initializeStatsFields()
     return
   }
 
@@ -659,13 +692,21 @@ const loadDatasourceSchema = async () => {
     const res = await getDatasourceSchema(selectedDatasource.value) as any
     datasourceFields.value = res.data || res || []
     console.log('加载数据源字段:', datasourceFields.value)
-    
-    // 更新 fieldStats 使用实际的统计维度字段
-    updateFieldStatsFromSchema()
+
+    // 初始化表格列
+    initializeTableColumns()
+
+    // 初始化统计字段
+    initializeStatsFields()
+
+    // 更新 fieldStats 使用实际的统计维度字段（已废弃，由 initializeStatsFields 替代）
+    // updateFieldStatsFromSchema()
   } catch (error) {
     console.error('加载数据源字段失败:', error)
     // 使用默认字段
     datasourceFields.value = getDefaultFields()
+    initializeTableColumns()
+    initializeStatsFields()
   } finally {
     schemaLoading.value = false
   }
@@ -684,17 +725,17 @@ const getDefaultFields = (): FieldInfo[] => {
   ]
 }
 
-// 根据字段信息更新 fieldStats
-const updateFieldStatsFromSchema = () => {
-  const dimensions = availableStatsDimensions.value
-  if (dimensions.length > 0) {
-    fieldStats.value = dimensions.slice(0, 6).map(f => ({
-      name: f.name,
-      label: f.label || f.name,
-      topValues: []
-    }))
-  }
-}
+// 根据字段信息更新 fieldStats（已废弃，由 initializeStatsFields 替代）
+// const updateFieldStatsFromSchema = () => {
+//   const dimensions = availableStatsDimensions.value
+//   if (dimensions.length > 0) {
+//     fieldStats.value = dimensions.slice(0, 6).map(f => ({
+//       name: f.name,
+//       label: f.label || f.name,
+//       topValues: []
+//     }))
+//   }
+// }
 
 // 数据源切换处理
 const handleDatasourceChange = async () => {
@@ -748,50 +789,125 @@ const currentLog = ref<LogEntry | null>(null)
 // Time series data
 const timeSeriesData = ref<Array<{ timestamp: string; count: number }>>([])
 
-// Field statistics
-const fieldStats = ref<FieldStats[]>([
-  { name: 'severity', label: '日志级别', topValues: [] },
-  { name: 'source_type', label: '来源类型', topValues: [] },
-  { name: 'hostname', label: '主机', topValues: [] },
-  { name: 'appname', label: '应用名', topValues: [] }
-])
+// Field statistics (动态初始化)
+const fieldStats = ref<FieldStats[]>([])
 
-// Stats view fields
-const statsViewFields = ref([
-  { name: 'severity', label: '日志级别' },
-  { name: 'source_type', label: '来源类型' },
-  { name: 'hostname', label: '主机名' },
-  { name: 'appname', label: '应用名' }
-])
+// Stats view fields (动态初始化)
+const statsViewFields = ref<Array<{ name: string; label: string }>>([])
+
+// 初始化统计字段（使用数据源的统计维度字段）
+const initializeStatsFields = () => {
+  const statsDimensions = datasourceFields.value.filter(f => f.isStatsDimension)
+
+  if (statsDimensions.length > 0) {
+    // 使用数据源的统计维度字段
+    fieldStats.value = statsDimensions.map(f => ({
+      name: f.name,
+      label: f.label,
+      topValues: []
+    }))
+
+    statsViewFields.value = statsDimensions.map(f => ({
+      name: f.name,
+      label: f.label
+    }))
+  } else {
+    // 默认统计字段
+    fieldStats.value = [
+      { name: 'severity', label: '日志级别', topValues: [] },
+      { name: 'source_type', label: '来源类型', topValues: [] },
+      { name: 'hostname', label: '主机', topValues: [] },
+      { name: 'appname', label: '应用名', topValues: [] }
+    ]
+
+    statsViewFields.value = [
+      { name: 'severity', label: '日志级别' },
+      { name: 'source_type', label: '来源类型' },
+      { name: 'hostname', label: '主机名' },
+      { name: 'appname', label: '应用名' }
+    ]
+  }
+}
 
 // Table columns configuration
-const tableColumns = ref<string[]>(['timestamp', 'severity', 'hostname', 'appname', 'message'])
+const tableColumns = ref<string[]>([])
 
-// Column definitions
-const COLUMN_DEFS: Record<string, { label: string; width?: number; minWidth?: number }> = {
-  timestamp: { label: '时间戳', width: 180 },
-  severity: { label: '级别', width: 100 },
-  hostname: { label: '主机', width: 150 },
-  appname: { label: '应用', width: 120 },
-  source_type: { label: '来源', width: 120 },
-  message: { label: '消息', minWidth: 200 },
-  facility: { label: '设施', width: 100 },
-  procid: { label: '进程ID', width: 100 },
-  source_ip: { label: '来源IP', width: 140 },
-  raw: { label: '原始日志', minWidth: 300 }
+// 初始化表格列（根据数据源字段）
+const initializeTableColumns = () => {
+  if (datasourceFields.value.length > 0) {
+    // 使用数据源的前5个字段
+    tableColumns.value = datasourceFields.value.slice(0, 5).map(f => f.name)
+  } else {
+    // 默认字段
+    tableColumns.value = ['timestamp', 'severity', 'hostname', 'appname', 'message']
+  }
 }
+
+// Column definitions (动态生成，改为 ref 以支持运行时修改)
+const COLUMN_DEFS = ref<Record<string, { label: string; width?: number; minWidth?: number }>>({})
+  const defs: Record<string, { label: string; width?: number; minWidth?: number }> = {}
+
+  // 从数据源字段生成列定义
+  datasourceFields.value.forEach(field => {
+    if (field.isTimestamp) {
+      defs[field.name] = { label: field.label, width: 180 }
+    } else if (field.isStatsDimension) {
+      defs[field.name] = { label: field.label, width: 120 }
+    } else if (field.isContentField) {
+      defs[field.name] = { label: field.label, minWidth: 200 }
+    } else {
+      defs[field.name] = { label: field.label, width: 120 }
+    }
+  })
+
+  // 如果没有数据源字段，使用默认定义
+  if (Object.keys(defs).length === 0) {
+    return {
+      timestamp: { label: '时间戳', width: 180 },
+      severity: { label: '级别', width: 100 },
+      hostname: { label: '主机', width: 150 },
+      appname: { label: '应用', width: 120 },
+      source_type: { label: '来源', width: 120 },
+      message: { label: '消息', minWidth: 200 },
+      facility: { label: '设施', width: 100 },
+      procid: { label: '进程ID', width: 100 },
+      source_ip: { label: '来源IP', width: 140 },
+      raw: { label: '原始日志', minWidth: 300 }
+    }
+  }
+
+  return defs
+})
 
 // Computed visible columns based on selected fields
 const visibleColumns = computed(() => {
   return tableColumns.value.map(field => ({
     prop: field,
-    ...COLUMN_DEFS[field]
+    ...COLUMN_DEFS.value[field]
   }))
 })
 
 // Handle fields change from sidebar
 const handleFieldsChange = (fields: string[]) => {
   tableColumns.value = fields
+}
+
+// Handle stats fields change from sidebar
+const handleStatsFieldsChange = (fields: Array<{ name: string; label: string }>) => {
+  // 更新 fieldStats 和 statsViewFields
+  fieldStats.value = fields.map(f => ({
+    name: f.name,
+    label: f.label,
+    topValues: []
+  }))
+
+  statsViewFields.value = fields.map(f => ({
+    name: f.name,
+    label: f.label
+  }))
+
+  // 重新加载统计数据
+  loadFieldStats()
 }
 
 // Search form
@@ -929,6 +1045,187 @@ const handleMessageSearch = () => {
   }
   handleSearch()
 }
+
+// AI查询结果类型
+const aiQueryResultType = ref<'list' | 'aggregate' | 'single'>('list')
+const aiQueryMetadata = ref<{ sql?: string; executionTime?: number }>({})
+
+// AI查询处理
+const handleAiQuery = async () => {
+  if (!aiQueryText.value?.trim()) {
+    ElMessage.warning('请输入查询内容')
+    return
+  }
+
+  loading.value = true
+  try {
+    const { data } = await aiQuery({
+      query: aiQueryText.value.trim(),
+      datasourceId: selectedDatasource.value || undefined
+    })
+
+    if (data.success) {
+      // 保存查询元数据
+      aiQueryMetadata.value = {
+        sql: data.sql || undefined,
+        executionTime: data.totalExecutionTime || undefined
+      }
+
+      // 显示生成的SQL和执行时间
+      ElMessage.success({
+        message: `查询成功！SQL生成: ${data.sqlGenerationTime}秒, SQL执行: ${data.sqlExecutionTime}秒`,
+        duration: 3000
+      })
+
+      // 显示SQL（可选）
+      if (data.sql) {
+        console.log('生成的SQL:', data.sql)
+      }
+
+      // 智能识别结果类型并处理
+      if (data.result) {
+        handleAiQueryResult(data.result)
+      }
+    } else {
+      ElMessage.error(`AI查询失败: ${data.error || '未知错误'}`)
+    }
+  } catch (error: any) {
+    console.error('AI查询失败:', error)
+    ElMessage.error(`AI查询失败: ${error.message || '网络错误'}`)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 智能识别并处理 AI 查询结果
+const handleAiQueryResult = (result: any) => {
+  // 1. 列表数据（数组）
+  if (Array.isArray(result)) {
+    if (result.length === 0) {
+      ElMessage.info('查询结果为空')
+      logs.value = []
+      total.value = 0
+      aiQueryResultType.value = 'list'
+      return
+    }
+
+    // 检查是否是聚合结果（只有一行且包含聚合函数字段）
+    if (result.length === 1 && isAggregateResult(result[0])) {
+      aiQueryResultType.value = 'aggregate'
+      displayAggregateResult(result[0])
+    } else {
+      // 普通列表数据
+      aiQueryResultType.value = 'list'
+      logs.value = result
+      total.value = result.length
+
+      // 动态生成表头
+      generateDynamicColumns(result[0])
+    }
+  }
+  // 2. 单个对象
+  else if (typeof result === 'object' && result !== null) {
+    // 检查是否是聚合结果
+    if (isAggregateResult(result)) {
+      aiQueryResultType.value = 'aggregate'
+      displayAggregateResult(result)
+    } else {
+      // 单行数据，作为列表展示
+      aiQueryResultType.value = 'list'
+      logs.value = [result]
+      total.value = 1
+      generateDynamicColumns(result)
+    }
+  }
+  // 3. 单值结果（数字、字符串等）
+  else {
+    aiQueryResultType.value = 'single'
+    ElMessage.info({
+      message: `查询结果: ${result}`,
+      duration: 5000,
+      showClose: true
+    })
+  }
+}
+
+// 判断是否是聚合结果
+const isAggregateResult = (obj: any): boolean => {
+  if (!obj || typeof obj !== 'object') return false
+
+  const keys = Object.keys(obj)
+  // 常见的聚合函数字段名模式
+  const aggregatePatterns = [
+    /^count/i,
+    /^sum/i,
+    /^avg/i,
+    /^max/i,
+    /^min/i,
+    /^total/i,
+    /^average/i,
+    /_count$/i,
+    /_sum$/i,
+    /_avg$/i
+  ]
+
+  return keys.some(key =>
+    aggregatePatterns.some(pattern => pattern.test(key))
+  )
+}
+
+// 展示聚合结果（使用卡片形式）
+const displayAggregateResult = (result: any) => {
+  // 将聚合结果转换为卡片数据
+  const cards = Object.entries(result).map(([key, value]) => ({
+    label: formatFieldLabel(key),
+    value: value,
+    key: key
+  }))
+
+  // 使用 ElMessage 展示（临时方案，后续可以改为专门的卡片组件）
+  const message = cards.map(c => `${c.label}: ${c.value}`).join(', ')
+  ElMessage.success({
+    message: `统计结果 - ${message}`,
+    duration: 8000,
+    showClose: true
+  })
+
+  // 同时在表格中展示（作为单行数据）
+  logs.value = [result]
+  total.value = 1
+  generateDynamicColumns(result)
+}
+
+// 动态生成表格列
+const generateDynamicColumns = (sampleRow: any) => {
+  if (!sampleRow || typeof sampleRow !== 'object') return
+
+  const fields = Object.keys(sampleRow)
+
+  // 更新表格列配置
+  tableColumns.value = fields
+
+  // 更新列定义（如果字段不在 COLUMN_DEFS 中）
+  fields.forEach(field => {
+    if (!COLUMN_DEFS.value[field]) {
+      // 动态添加列定义
+      COLUMN_DEFS.value[field] = {
+        label: formatFieldLabel(field),
+        width: 120
+      }
+    }
+  })
+
+  console.log('动态生成表头:', tableColumns.value)
+}
+
+// 格式化字段标签（将下划线转为空格，首字母大写）
+const formatFieldLabel = (field: string): string => {
+  return field
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 
 const handleSearch = async () => {
   loading.value = true
@@ -1684,6 +1981,26 @@ onUnmounted(() => {
     }
   }
 
+  .query-mode-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 8px 0;
+
+    :deep(.el-radio-group) {
+      .el-radio-button__inner {
+        padding: 8px 20px;
+        font-size: 14px;
+      }
+    }
+
+    .el-tag {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  }
+
   .main-search-row {
     display: flex;
     gap: 12px;
@@ -1699,6 +2016,19 @@ onUnmounted(() => {
         border-radius: 8px;
         @include macos-input;
         box-shadow: none; // Override default
+      }
+    }
+
+    .ai-query-input {
+      flex: 1;
+
+      :deep(.el-textarea__inner) {
+        font-size: 14px;
+        border-radius: 8px;
+        @include macos-input;
+        box-shadow: none;
+        resize: none;
+        line-height: 1.6;
       }
     }
 

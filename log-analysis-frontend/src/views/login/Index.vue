@@ -3,7 +3,7 @@
     <el-card class="login-card">
       <template #header>
         <div class="login-header">
-          <h2>日志分析系统</h2>
+          <h2>qqwer</h2>
         </div>
       </template>
 

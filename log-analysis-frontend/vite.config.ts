@@ -15,7 +15,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://192.168.31.90:8080',  // 改为实际 IP
+        target: 'http://localhost:8080',  // 改为实际 IP
         changeOrigin: true
       }
     }

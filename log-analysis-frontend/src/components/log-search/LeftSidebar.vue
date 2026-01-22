@@ -4,6 +4,67 @@
     <div class="sidebar-header">
       <el-icon><Filter /></el-icon>
       <span class="header-title">字段过滤</span>
+
+      <!-- 统计字段选择按钮 -->
+      <el-popover
+        placement="right-start"
+        :width="320"
+        trigger="click"
+        v-model:visible="statsFieldSelectorVisible"
+        popper-class="stats-field-selector-popper"
+      >
+        <template #reference>
+          <el-button size="small" type="success" plain class="stats-field-select-btn">
+            <el-icon><DataAnalysis /></el-icon>
+            统计字段
+          </el-button>
+        </template>
+        <div class="field-selector-popover">
+          <div class="popover-header">
+            <span>选择统计字段</span>
+            <el-button link type="primary" size="small" @click="handleSaveStatsFields">
+              <el-icon><Check /></el-icon>
+              保存
+            </el-button>
+          </div>
+          <el-divider style="margin: 8px 0" />
+          <div class="field-section">
+            <div class="section-label">已选统计字段 ({{ selectedStatsFields.length }})</div>
+            <draggable
+              v-model="selectedStatsFields"
+              group="statsFields"
+              item-key="name"
+              class="field-list selected-list"
+              :animation="200"
+            >
+              <template #item="{ element }">
+                <div class="field-item selected">
+                  <el-icon class="drag-icon"><Rank /></el-icon>
+                  <span class="field-name">{{ element.label }}</span>
+                  <el-icon class="remove-icon" @click="removeStatsField(element)"><Close /></el-icon>
+                </div>
+              </template>
+            </draggable>
+          </div>
+          <el-divider style="margin: 8px 0" />
+          <div class="field-section">
+            <div class="section-label">可用统计字段 ({{ availableStatsFields.length }})</div>
+            <div class="field-list available-list">
+              <div
+                v-for="field in availableStatsFields"
+                :key="field.name"
+                class="field-item available"
+                @click="addStatsField(field)"
+              >
+                <el-icon class="add-icon"><Plus /></el-icon>
+                <span class="field-name">{{ field.label }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-popover>
+
+      <!-- 表格字段选择按钮 -->
       <el-popover
         placement="right-start"
         :width="320"
@@ -92,12 +153,21 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { Filter, Setting, Check, Rank, Close, Plus } from '@element-plus/icons-vue'
+import { Filter, Setting, Check, Rank, Close, Plus, DataAnalysis } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import draggable from 'vuedraggable'
 import SelectedFiltersSection from './SelectedFiltersSection.vue'
 import FieldFacetPanel from './FieldFacetPanel.vue'
 import { getFieldConfig, saveFieldConfig } from '@/api/field-config'
+
+interface FieldInfo {
+  name: string
+  type: string
+  label: string
+  isTimestamp?: boolean
+  isStatsDimension?: boolean
+  isContentField?: boolean
+}
 
 interface FieldValue {
   value: string
@@ -124,14 +194,18 @@ interface Props {
   totalCount: number
   selectedFields?: string[]
   pinnedFields?: string[]
+  availableFields?: FieldInfo[]  // 新增：可用字段列表
+  datasourceId?: string           // 新增：数据源ID
 }
 
 const props = withDefaults(defineProps<Props>(), {
   fieldStats: () => [],
   activeFilters: () => [],
   totalCount: 0,
-  selectedFields: () => ['timestamp', 'level', 'hostname', 'service', 'message'],
-  pinnedFields: () => []
+  selectedFields: () => ['timestamp', 'severity', 'hostname', 'appname', 'message'],
+  pinnedFields: () => [],
+  availableFields: () => [],
+  datasourceId: ''
 })
 
 const emit = defineEmits<{
@@ -141,47 +215,167 @@ const emit = defineEmits<{
   'show-chart': [fieldName: string, fieldLabel: string]
   'pin-chart': [fieldName: string, fieldLabel: string]
   'fields-change': [fields: string[]]
+  'stats-fields-change': [fields: Array<{ name: string; label: string }>]  // 新增：统计字段变化事件
 }>()
 
-// Field configurations
-const fieldConfigs = [
-  { name: 'severity', label: '日志级别' },
-  { name: 'hostname', label: '主机' },
-  { name: 'appname', label: '应用名' },
-  { name: 'source_type', label: '来源类型' }
-]
+// Field configurations (动态生成，基于统计维度字段)
+// 改为从用户选择的统计字段生成
+const fieldConfigs = computed(() => {
+  return selectedStatsFields.value
+})
+
+// 获取默认字段（兼容旧逻辑）
+const getDefaultFields = (): FieldInfo[] => {
+  return [
+    { name: 'timestamp', type: 'DateTime', label: '时间戳', isTimestamp: true },
+    { name: 'severity', type: 'String', label: '日志级别', isStatsDimension: true },
+    { name: 'hostname', type: 'String', label: '主机', isStatsDimension: true },
+    { name: 'appname', type: 'String', label: '应用名', isStatsDimension: true },
+    { name: 'source_type', type: 'String', label: '来源类型', isStatsDimension: true },
+    { name: 'message', type: 'String', label: '消息', isContentField: true },
+    { name: 'facility', type: 'String', label: '设施' },
+    { name: 'procid', type: 'String', label: '进程ID' },
+    { name: 'source_ip', type: 'String', label: '来源IP' },
+    { name: 'raw', type: 'String', label: '原始日志', isContentField: true }
+  ]
+}
+
+// 所有可用字段（动态或默认）
+const allFieldsInfo = computed(() => {
+  if (props.availableFields && props.availableFields.length > 0) {
+    return props.availableFields
+  }
+  return getDefaultFields()
+})
 
 // All available fields for table columns
-const ALL_FIELDS = [
-  'timestamp', 'severity', 'hostname', 'appname', 'source_type',
-  'message', 'facility', 'procid', 'source_ip', 'raw'
-]
+const ALL_FIELDS = computed(() => {
+  return allFieldsInfo.value.map(f => f.name)
+})
 
-const FIELD_LABELS: Record<string, string> = {
-  timestamp: '时间戳',
-  severity: '日志级别',
-  hostname: '主机',
-  appname: '应用名',
-  source_type: '来源类型',
-  message: '消息',
-  facility: '设施',
-  procid: '进程ID',
-  source_ip: '来源IP',
-  raw: '原始日志'
-}
+const FIELD_LABELS = computed(() => {
+  const labels: Record<string, string> = {}
+  allFieldsInfo.value.forEach(field => {
+    labels[field.name] = field.label || field.name
+  })
+  return labels
+})
 
 // Field selector state
 const fieldSelectorVisible = ref(false)
 const localSelectedFields = ref<string[]>([...props.selectedFields])
 
+// Stats field selector state
+const statsFieldSelectorVisible = ref(false)
+const selectedStatsFields = ref<Array<{ name: string; label: string }>>([])
+
+// 所有可用的统计维度字段
+const allStatsDimensions = computed(() => {
+  return allFieldsInfo.value.filter(f => f.isStatsDimension)
+})
+
+// 可用的统计字段（排除已选择的）
+const availableStatsFields = computed(() => {
+  const selectedNames = selectedStatsFields.value.map(f => f.name)
+  return allStatsDimensions.value
+    .filter(f => !selectedNames.includes(f.name))
+    .map(f => ({ name: f.name, label: f.label }))
+})
+
+// 添加统计字段
+const addStatsField = (field: { name: string; label: string }) => {
+  if (!selectedStatsFields.value.find(f => f.name === field.name)) {
+    selectedStatsFields.value.push(field)
+  }
+}
+
+// 移除统计字段
+const removeStatsField = (field: { name: string; label: string }) => {
+  const index = selectedStatsFields.value.findIndex(f => f.name === field.name)
+  if (index > -1) {
+    selectedStatsFields.value.splice(index, 1)
+  }
+}
+
+// 保存统计字段配置
+const handleSaveStatsFields = async () => {
+  try {
+    const configType = props.datasourceId ? `stats_fields_${props.datasourceId}` : 'stats_fields'
+    await saveFieldConfig('admin', {
+      configType,
+      selectedFields: selectedStatsFields.value.map(f => f.name),
+      fieldOrder: selectedStatsFields.value.map(f => f.name)
+    })
+    emit('stats-fields-change', [...selectedStatsFields.value])
+    statsFieldSelectorVisible.value = false
+    ElMessage.success('统计字段配置已保存')
+  } catch (error) {
+    console.error('保存统计字段配置失败:', error)
+    emit('stats-fields-change', [...selectedStatsFields.value])
+    statsFieldSelectorVisible.value = false
+  }
+}
+
+// 加载统计字段配置
+const loadStatsFieldConfig = async () => {
+  try {
+    const configType = props.datasourceId ? `stats_fields_${props.datasourceId}` : 'stats_fields'
+    const config = await getFieldConfig('admin', configType)
+
+    if (config.selectedFields && config.selectedFields.length > 0) {
+      // 过滤掉不存在的字段，保留存在的字段
+      const validFields = config.selectedFields
+        .map(name => {
+          const field = allStatsDimensions.value.find(f => f.name === name)
+          return field ? { name: field.name, label: field.label } : null
+        })
+        .filter(f => f !== null) as Array<{ name: string; label: string }>
+
+      if (validFields.length > 0) {
+        selectedStatsFields.value = validFields
+        emit('stats-fields-change', [...validFields])
+      } else {
+        // 如果没有有效字段，使用默认配置（前4个统计维度字段）
+        console.log('配置中的字段在当前数据源中不存在，使用默认字段')
+        setDefaultStatsFields()
+      }
+    } else {
+      // 默认配置：前4个统计维度字段
+      setDefaultStatsFields()
+    }
+  } catch (error) {
+    console.error('加载统计字段配置失败:', error)
+    // 使用默认配置
+    setDefaultStatsFields()
+  }
+}
+
+// 设置默认统计字段（前4个）
+const setDefaultStatsFields = () => {
+  if (allStatsDimensions.value.length === 0) {
+    console.warn('当前数据源没有统计维度字段')
+    selectedStatsFields.value = []
+    emit('stats-fields-change', [])
+    return
+  }
+
+  const defaultFields = allStatsDimensions.value.slice(0, 4).map(f => ({
+    name: f.name,
+    label: f.label
+  }))
+  selectedStatsFields.value = defaultFields
+  emit('stats-fields-change', [...defaultFields])
+  console.log('使用默认统计字段:', defaultFields)
+}
+
 // Available fields (not selected)
 const availableFieldsList = computed(() => {
-  return ALL_FIELDS.filter(f => !localSelectedFields.value.includes(f))
+  return ALL_FIELDS.value.filter(f => !localSelectedFields.value.includes(f))
 })
 
 // Get field label
 const getFieldLabel = (field: string): string => {
-  return FIELD_LABELS[field] || field
+  return FIELD_LABELS.value[field] || field
 }
 
 // Add field to selected
@@ -202,8 +396,9 @@ const removeField = (field: string) => {
 // Save field configuration
 const handleSaveFields = async () => {
   try {
+    const configType = props.datasourceId ? `log_list_${props.datasourceId}` : 'log_list'
     await saveFieldConfig('admin', {
-      configType: 'log_list',
+      configType,
       selectedFields: localSelectedFields.value,
       fieldOrder: localSelectedFields.value
     })
@@ -221,13 +416,35 @@ const handleSaveFields = async () => {
 // Load field configuration on mount
 const loadFieldConfig = async () => {
   try {
-    const config = await getFieldConfig('admin', 'log_list')
+    const configType = props.datasourceId ? `log_list_${props.datasourceId}` : 'log_list'
+    const config = await getFieldConfig('admin', configType)
     if (config.selectedFields && config.selectedFields.length > 0) {
-      localSelectedFields.value = config.selectedFields
-      emit('fields-change', [...config.selectedFields])
+      // 过滤掉不存在的字段，保留存在的字段
+      const validFields = config.selectedFields.filter(field =>
+        ALL_FIELDS.value.includes(field)
+      )
+
+      if (validFields.length > 0) {
+        localSelectedFields.value = validFields
+        emit('fields-change', [...validFields])
+      } else {
+        // 如果没有有效字段，使用默认配置（前5个字段）
+        const defaultFields = ALL_FIELDS.value.slice(0, 5)
+        localSelectedFields.value = defaultFields
+        emit('fields-change', [...defaultFields])
+      }
+    } else {
+      // 默认配置：前5个字段
+      const defaultFields = ALL_FIELDS.value.slice(0, 5)
+      localSelectedFields.value = defaultFields
+      emit('fields-change', [...defaultFields])
     }
   } catch (error) {
     console.error('加载字段配置失败:', error)
+    // 使用默认配置
+    const defaultFields = ALL_FIELDS.value.slice(0, 5)
+    localSelectedFields.value = defaultFields
+    emit('fields-change', [...defaultFields])
   }
 }
 
@@ -235,6 +452,28 @@ const loadFieldConfig = async () => {
 watch(() => props.selectedFields, (newFields) => {
   if (JSON.stringify(newFields) !== JSON.stringify(localSelectedFields.value)) {
     localSelectedFields.value = [...newFields]
+  }
+}, { deep: true })
+
+// 监听数据源切换
+watch(() => props.datasourceId, async (newId, oldId) => {
+  if (newId !== oldId && oldId !== undefined) {
+    // 数据源切换时，等待字段加载完成后再加载配置
+    // 配置加载会在 availableFields 变化时触发
+    console.log('数据源切换:', oldId, '->', newId)
+  }
+})
+
+// 监听可用字段变化（数据源字段加载完成）
+watch(() => props.availableFields, async (newFields, oldFields) => {
+  // 只在字段从无到有，或者字段内容发生变化时重新加载配置
+  const fieldsChanged = JSON.stringify(newFields) !== JSON.stringify(oldFields)
+
+  if (newFields && newFields.length > 0 && fieldsChanged) {
+    console.log('数据源字段已加载，重新加载配置')
+    // 字段信息加载完成，重新加载配置
+    await loadFieldConfig()
+    await loadStatsFieldConfig()
   }
 }, { deep: true })
 
@@ -279,19 +518,26 @@ const handlePinChart = (fieldName: string, fieldLabel: string) => {
 
 // Load config on mount
 onMounted(() => {
+  // 只加载表格字段配置
+  // 统计字段配置会在 availableFields 加载完成后自动加载
   loadFieldConfig()
+
+  // 如果已经有可用字段，则立即加载统计字段配置
+  if (props.availableFields && props.availableFields.length > 0) {
+    loadStatsFieldConfig()
+  }
 })
 </script>
 
 <style lang="scss">
 // Global styles for popover (rendered outside component)
-.field-selector-popper {
+.field-selector-popper,
+.stats-field-selector-popper {
   .popover-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-weight: 600;
-    font-size: 14px;
     font-size: 14px;
     color: var(--macos-text-primary);
   }
@@ -304,11 +550,25 @@ onMounted(() => {
     font-size: 12px;
     color: var(--macos-text-secondary);
     margin-bottom: 8px;
+    font-weight: 500;
   }
 
   .field-list {
     max-height: 200px;
     overflow-y: auto;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: #dcdfe6;
+      border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
   }
 
   .field-item {
@@ -389,6 +649,7 @@ onMounted(() => {
   padding: 16px;
   border-bottom: 1px solid var(--macos-border);
   background: var(--macos-bg-secondary);
+  flex-wrap: wrap;
 
   .el-icon {
     font-size: 16px;
@@ -399,16 +660,33 @@ onMounted(() => {
 .header-title {
   font-weight: 600;
   font-size: 15px;
-  font-weight: 600;
-  font-size: 15px;
   color: var(--macos-text-primary);
   flex: 1;
+  min-width: 80px;
+}
+
+.stats-field-select-btn {
+  font-size: 12px;
+  padding: 4px 8px;
+  height: 28px;
+
+  :deep(.el-button__text) {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
 }
 
 .field-select-btn {
-  color: #ffffff;
   font-size: 12px;
   padding: 4px 8px;
+  height: 28px;
+
+  :deep(.el-button__text) {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
 }
 
 .facet-panels-container {

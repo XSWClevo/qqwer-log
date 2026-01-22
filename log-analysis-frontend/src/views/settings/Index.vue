@@ -87,7 +87,7 @@ MODIFY TTL timestamp + INTERVAL {{ retentionForm.days }} DAY;</pre>
             </template>
             
             <el-descriptions :column="1" border>
-              <el-descriptions-item label="系统名称">日志分析平台</el-descriptions-item>
+              <el-descriptions-item label="系统名称">qqwer</el-descriptions-item>
               <el-descriptions-item label="版本号">{{ systemInfo.version }}</el-descriptions-item>
               <el-descriptions-item label="构建时间">{{ systemInfo.buildTime }}</el-descriptions-item>
               <el-descriptions-item label="Vector 版本">{{ systemInfo.vectorVersion }}</el-descriptions-item>
@@ -97,7 +97,7 @@ MODIFY TTL timestamp + INTERVAL {{ retentionForm.days }} DAY;</pre>
             <el-divider />
 
             <div class="tech-stack">
-              <h4>技术栈</h4>
+              <!-- <h4>技术栈</h4>
               <el-space wrap>
                 <el-tag>Vue 3</el-tag>
                 <el-tag>Spring Boot</el-tag>
@@ -105,7 +105,7 @@ MODIFY TTL timestamp + INTERVAL {{ retentionForm.days }} DAY;</pre>
                 <el-tag>ClickHouse</el-tag>
                 <el-tag>Vector</el-tag>
                 <el-tag>Go</el-tag>
-              </el-space>
+              </el-space> -->
             </div>
           </el-card>
         </el-col>

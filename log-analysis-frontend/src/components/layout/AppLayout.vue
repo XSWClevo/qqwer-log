@@ -4,7 +4,7 @@
     <el-aside :width="isCollapsed ? '64px' : '220px'" class="app-aside">
       <div class="logo-section">
         <img src="@/assets/vue.svg" alt="Logo" class="logo-icon" />
-        <span v-show="!isCollapsed" class="logo-text">日志分析平台</span>
+        <span v-show="!isCollapsed" class="logo-text">qqwer</span>
       </div>
       <el-menu
         :default-active="activeMenu"
