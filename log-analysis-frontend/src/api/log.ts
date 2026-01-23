@@ -103,6 +103,7 @@ export function exportLogs(data: LogQueryRequest, format: 'csv' | 'xlsx' = 'csv'
 export interface AiQueryRequest {
   query: string
   datasourceId?: string
+  datasourceIds?: string[] // 多数据源联合查询
 }
 
 // AI查询响应类型

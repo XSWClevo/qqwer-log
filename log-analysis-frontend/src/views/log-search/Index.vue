@@ -6,10 +6,14 @@
       <!-- 数据源选择行 -->
       <div class="datasource-row">
         <span class="datasource-label">数据源:</span>
-        <el-select 
-          v-model="selectedDatasource" 
-          placeholder="选择数据源" 
+        <el-select
+          v-model="selectedDatasource"
+          placeholder="选择数据源"
           class="datasource-select"
+          :multiple="isAiQuery"
+          :collapse-tags="isAiQuery"
+          :collapse-tags-tooltip="isAiQuery"
+          :max-collapse-tags="2"
           @change="handleDatasourceChange"
           :loading="datasourceLoading"
         >
@@ -19,15 +23,15 @@
               <p class="hint">请先在组件库中将 Sink 组件设为"可查询"</p>
             </div>
           </template>
-          <el-option-group 
-            v-for="group in groupedDatasources" 
-            :key="group.type" 
+          <el-option-group
+            v-for="group in groupedDatasources"
+            :key="group.type"
             :label="group.label"
           >
-            <el-option 
-              v-for="ds in group.items" 
-              :key="ds.id" 
-              :label="ds.name" 
+            <el-option
+              v-for="ds in group.items"
+              :key="ds.id"
+              :label="ds.name"
               :value="ds.id"
             >
               <div class="datasource-option">
@@ -37,8 +41,13 @@
             </el-option>
           </el-option-group>
         </el-select>
-        <el-tag v-if="currentDatasource" size="small" type="info" class="datasource-tag">
+        <el-tag v-if="currentDatasource && !isAiQuery" size="small" type="info" class="datasource-tag">
           {{ currentDatasource.vectorType }} / {{ currentDatasource.tableName || '-' }}
+        </el-tag>
+        <el-tag v-if="isAiQuery && Array.isArray(selectedDatasource) && selectedDatasource.length > 1"
+                size="small" type="warning" class="datasource-tag">
+          <el-icon><Connection /></el-icon>
+          联合查询 {{ selectedDatasource.length }} 个数据源
         </el-tag>
         <router-link v-if="datasources.length === 0 && !datasourceLoading" to="/vector/components" class="datasource-link">
           去组件库配置 →
@@ -47,44 +56,25 @@
 
       <el-divider style="margin: 12px 0" />
 
-      <!-- 查询模式切换 -->
-      <div class="query-mode-row">
-        <el-radio-group v-model="queryMode" size="small">
-          <el-radio-button label="normal">普通查询</el-radio-button>
-          <el-radio-button label="ai">AI查询</el-radio-button>
-        </el-radio-group>
-        <el-tag v-if="queryMode === 'ai'" type="warning" size="small" style="margin-left: 10px">
-          <el-icon><MagicStick /></el-icon>
-          自然语言转SQL
-        </el-tag>
-      </div>
-
       <div class="main-search-row">
-        <!-- 普通查询输入框 -->
+        <!-- 统一搜索输入框 -->
         <el-input
-          v-if="queryMode === 'normal'"
-          v-model="messageSearchText"
-          placeholder="搜索日志内容... (支持Message和Raw字段搜索)"
+          v-model="searchText"
+          placeholder="搜索日志内容或输入自然语言查询... (支持普通搜索和AI查询)"
           class="main-search-input"
           clearable
-          @keyup.enter="handleMessageSearch"
+          @keyup.enter="handleUnifiedSearch"
         >
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
+          <template #suffix>
+            <el-tag v-if="isAiQuery" type="warning" size="small" style="margin-right: 8px">
+              <el-icon><MagicStick /></el-icon>
+              AI
+            </el-tag>
+          </template>
         </el-input>
-
-        <!-- AI查询输入框 -->
-        <el-input
-          v-else
-          v-model="aiQueryText"
-          type="textarea"
-          :rows="2"
-          placeholder="例如：查询最近1小时内severity为error的日志，按时间倒序排列"
-          class="ai-query-input"
-          clearable
-          @keyup.enter.ctrl="handleAiQuery"
-        />
 
         <el-select v-model="timeRange" class="time-range-select" @change="handleTimeRangeChange">
           <el-option label="最近15分钟" value="15m" />
@@ -94,11 +84,23 @@
           <el-option label="自定义" value="custom" />
         </el-select>
 
-        <el-button type="primary" @click="queryMode === 'normal' ? handleMessageSearch() : handleAiQuery()">
+        <el-button type="primary" @click="handleUnifiedSearch">
           <el-icon v-if="!loading"><Search /></el-icon>
           <el-icon v-else class="is-loading"><Loading /></el-icon>
-          {{ loading ? '查询中...' : (queryMode === 'ai' ? 'AI查询' : '查询') }}
+          {{ loading ? '查询中...' : '查询' }}
         </el-button>
+
+        <!-- AI查询切换按钮 -->
+        <el-tooltip content="切换AI查询模式" placement="top">
+          <el-button
+            :type="isAiQuery ? 'warning' : ''"
+            :class="{ 'ai-mode-active': isAiQuery }"
+            @click="toggleAiQuery"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ isAiQuery ? 'AI模式' : '普通模式' }}
+          </el-button>
+        </el-tooltip>
       </div>
 
       <!-- 自定义时间范围 -->
@@ -209,6 +211,25 @@
           :loading="chartLoading"
           v-model:auto-refresh="autoRefresh"
           @refresh="loadTimeSeries"
+        />
+
+        <!-- AI 查询结果展示 -->
+        <!-- 调试信息 -->
+        <el-alert v-if="aiQueryMetadata.sql" type="info" :closable="false" style="margin-bottom: 16px;">
+          <template #title>
+            调试信息：
+            SQL存在: {{ !!aiQueryMetadata.sql }},
+            结果类型: {{ aiQueryResultType }},
+            显示条件: {{ aiQueryMetadata.sql && (aiQueryResultType === 'metric' || aiQueryResultType === 'category') }}
+          </template>
+        </el-alert>
+
+        <AiQueryResultCard
+          v-if="aiQueryMetadata.sql && (aiQueryResultType === 'metric' || aiQueryResultType === 'category' || aiQueryResultType === 'timeseries')"
+          :result="logs"
+          :sql="aiQueryMetadata.sql"
+          :execution-time="aiQueryMetadata.executionTime"
+          :result-type="aiQueryResultType"
         />
 
         <!-- 日志列表 -->
@@ -527,7 +548,7 @@
 import { ref, reactive, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDark } from '@vueuse/core'
-import { Search, Filter, Download, Loading, Close, Star, DataAnalysis, MagicStick } from '@element-plus/icons-vue'
+import { Search, Filter, Download, Loading, Close, Star, DataAnalysis, MagicStick, Connection } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import * as yaml from 'js-yaml'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -542,6 +563,7 @@ import TwoColumnLayout from '@/components/log-search/TwoColumnLayout.vue'
 import LeftSidebar from '@/components/log-search/LeftSidebar.vue'
 import LogVolumeTrendChart from '@/components/log-search/LogVolumeTrendChart.vue'
 import InlineRowExpansion from '@/components/log-search/InlineRowExpansion.vue'
+import AiQueryResultCard from '@/components/ai-query-result/AiQueryResultCard.vue'
 
 // Route
 const route = useRoute()
@@ -556,14 +578,13 @@ const compactMode = ref(false)
 const detailVisible = ref(false)
 const timeRange = ref<TimeRangeType>('24h')
 const customTimeRange = ref<[string, string]>()
-const messageSearchText = ref('')
-const aiQueryText = ref('')
-const queryMode = ref<'normal' | 'ai'>('normal')
+const searchText = ref('') // 统一搜索文本
+const isAiQuery = ref(false) // 是否使用AI查询模式
 const isDark = useDark()
 
 // 数据源相关
 const datasources = ref<ConfigComponent[]>([])
-const selectedDatasource = ref<string>('')
+const selectedDatasource = ref<string | string[]>('') // 支持单选和多选
 const datasourceLoading = ref(false)
 
 // 数据源字段信息（动态获取）
@@ -643,6 +664,11 @@ const groupedDatasources = computed(() => {
 
 // 当前选中的数据源详情
 const currentDatasource = computed(() => {
+  // 如果是多选模式，返回 null
+  if (Array.isArray(selectedDatasource.value)) {
+    return null
+  }
+
   if (!selectedDatasource.value) return null
   const ds = datasources.value.find(d => d.id === selectedDatasource.value)
   if (!ds) return null
@@ -659,16 +685,16 @@ const loadDatasources = async () => {
     const res = await configComponentApi.getQueryableDataSources() as any
     // 处理后端返回的 Result 包装
     datasources.value = res.data || res || []
-    
+
     console.log('加载数据源:', datasources.value)
-    
+
     // 如果 URL 中有 datasource 参数，自动选中
     const dsId = route.query.datasource as string
     if (dsId && datasources.value.some(d => d.id === dsId)) {
-      selectedDatasource.value = dsId
+      selectedDatasource.value = isAiQuery.value ? [dsId] : dsId
     } else if (datasources.value.length > 0 && !selectedDatasource.value) {
       // 默认选中第一个
-      selectedDatasource.value = datasources.value[0].id
+      selectedDatasource.value = isAiQuery.value ? [datasources.value[0].id] : datasources.value[0].id
     }
   } catch (error) {
     console.error('加载数据源失败:', error)
@@ -679,7 +705,15 @@ const loadDatasources = async () => {
 
 // 加载数据源的字段信息
 const loadDatasourceSchema = async () => {
-  if (!selectedDatasource.value) {
+  // 获取当前选中的数据源ID（单选或多选的第一个）
+  let datasourceId = ''
+  if (Array.isArray(selectedDatasource.value)) {
+    datasourceId = selectedDatasource.value.length > 0 ? selectedDatasource.value[0] : ''
+  } else {
+    datasourceId = selectedDatasource.value
+  }
+
+  if (!datasourceId) {
     // 没有选择数据源时，使用默认字段
     datasourceFields.value = getDefaultFields()
     initializeTableColumns()
@@ -689,7 +723,7 @@ const loadDatasourceSchema = async () => {
 
   schemaLoading.value = true
   try {
-    const res = await getDatasourceSchema(selectedDatasource.value) as any
+    const res = await getDatasourceSchema(datasourceId) as any
     datasourceFields.value = res.data || res || []
     console.log('加载数据源字段:', datasourceFields.value)
 
@@ -841,10 +875,16 @@ const initializeTableColumns = () => {
     // 默认字段
     tableColumns.value = ['timestamp', 'severity', 'hostname', 'appname', 'message']
   }
+
+  // 同时初始化列定义
+  initializeColumnDefs()
 }
 
 // Column definitions (动态生成，改为 ref 以支持运行时修改)
 const COLUMN_DEFS = ref<Record<string, { label: string; width?: number; minWidth?: number }>>({})
+
+// 初始化列定义
+const initializeColumnDefs = () => {
   const defs: Record<string, { label: string; width?: number; minWidth?: number }> = {}
 
   // 从数据源字段生成列定义
@@ -862,7 +902,7 @@ const COLUMN_DEFS = ref<Record<string, { label: string; width?: number; minWidth
 
   // 如果没有数据源字段，使用默认定义
   if (Object.keys(defs).length === 0) {
-    return {
+    Object.assign(defs, {
       timestamp: { label: '时间戳', width: 180 },
       severity: { label: '级别', width: 100 },
       hostname: { label: '主机', width: 150 },
@@ -873,11 +913,11 @@ const COLUMN_DEFS = ref<Record<string, { label: string; width?: number; minWidth
       procid: { label: '进程ID', width: 100 },
       source_ip: { label: '来源IP', width: 140 },
       raw: { label: '原始日志', minWidth: 300 }
-    }
+    })
   }
 
-  return defs
-})
+  COLUMN_DEFS.value = defs
+}
 
 // Computed visible columns based on selected fields
 const visibleColumns = computed(() => {
@@ -1035,10 +1075,43 @@ const getTimeRange = (): [string, string] => {
 }
 
 // Search handlers
+// 切换AI查询模式
+const toggleAiQuery = () => {
+  isAiQuery.value = !isAiQuery.value
+
+  // 切换模式时重置数据源选择
+  if (isAiQuery.value) {
+    // 切换到AI模式：如果当前是单选，保持；如果没选，清空
+    if (typeof selectedDatasource.value === 'string' && selectedDatasource.value) {
+      selectedDatasource.value = [selectedDatasource.value]
+    } else {
+      selectedDatasource.value = []
+    }
+    ElMessage.info('已切换到AI查询模式，支持多数据源联合查询')
+  } else {
+    // 切换到普通模式：如果是多选，取第一个；如果是空数组，清空
+    if (Array.isArray(selectedDatasource.value)) {
+      selectedDatasource.value = selectedDatasource.value.length > 0 ? selectedDatasource.value[0] : ''
+    }
+    ElMessage.info('已切换到普通查询模式')
+  }
+}
+
+// 统一搜索处理
+const handleUnifiedSearch = () => {
+  if (isAiQuery.value) {
+    // AI查询模式
+    handleAiQuery()
+  } else {
+    // 普通查询模式
+    handleMessageSearch()
+  }
+}
+
 const handleMessageSearch = () => {
-  if (messageSearchText.value?.trim()) {
-    searchForm.messageConditions = [{ operator: 'contains', value: messageSearchText.value.trim() }]
-    searchForm.rawConditions = [{ operator: 'contains', value: messageSearchText.value.trim() }]
+  if (searchText.value?.trim()) {
+    searchForm.messageConditions = [{ operator: 'contains', value: searchText.value.trim() }]
+    searchForm.rawConditions = [{ operator: 'contains', value: searchText.value.trim() }]
   } else {
     searchForm.messageConditions = []
     searchForm.rawConditions = []
@@ -1047,22 +1120,39 @@ const handleMessageSearch = () => {
 }
 
 // AI查询结果类型
-const aiQueryResultType = ref<'list' | 'aggregate' | 'single'>('list')
+const aiQueryResultType = ref<'list' | 'metric' | 'category' | 'timeseries'>('list')
 const aiQueryMetadata = ref<{ sql?: string; executionTime?: number }>({})
 
 // AI查询处理
 const handleAiQuery = async () => {
-  if (!aiQueryText.value?.trim()) {
+  if (!searchText.value?.trim()) {
     ElMessage.warning('请输入查询内容')
     return
   }
 
   loading.value = true
   try {
-    const { data } = await aiQuery({
-      query: aiQueryText.value.trim(),
-      datasourceId: selectedDatasource.value || undefined
-    })
+    // 构建请求参数
+    const requestData: any = {
+      query: searchText.value.trim()
+    }
+
+    // 判断是单数据源还是多数据源
+    if (Array.isArray(selectedDatasource.value)) {
+      if (selectedDatasource.value.length > 1) {
+        // 多数据源联合查询
+        requestData.datasourceIds = selectedDatasource.value
+      } else if (selectedDatasource.value.length === 1) {
+        // 单数据源
+        requestData.datasourceId = selectedDatasource.value[0]
+      }
+      // 如果是空数组，不传数据源参数，使用默认
+    } else if (selectedDatasource.value) {
+      // 单数据源（字符串）
+      requestData.datasourceId = selectedDatasource.value
+    }
+
+    const { data } = await aiQuery(requestData)
 
     if (data.success) {
       // 保存查询元数据
@@ -1084,7 +1174,17 @@ const handleAiQuery = async () => {
 
       // 智能识别结果类型并处理
       if (data.result) {
+        console.log('=== AI 查询结果调试 ===')
+        console.log('原始结果:', data.result)
+        console.log('结果类型:', typeof data.result)
+        console.log('是否数组:', Array.isArray(data.result))
+
         handleAiQueryResult(data.result)
+
+        console.log('识别的结果类型:', aiQueryResultType.value)
+        console.log('SQL:', aiQueryMetadata.value.sql)
+        console.log('logs.value:', logs.value)
+        console.log('========================')
       }
     } else {
       ElMessage.error(`AI查询失败: ${data.error || '未知错误'}`)
@@ -1109,10 +1209,27 @@ const handleAiQueryResult = (result: any) => {
       return
     }
 
+    const firstRow = result[0]
+
+    // 检查是否是时序统计（优先级最高）
+    if (isTimeSeriesResult(firstRow)) {
+      aiQueryResultType.value = 'timeseries'
+      logs.value = result
+      total.value = result.length
+      generateDynamicColumns(firstRow)
+      return
+    }
+
     // 检查是否是聚合结果（只有一行且包含聚合函数字段）
-    if (result.length === 1 && isAggregateResult(result[0])) {
-      aiQueryResultType.value = 'aggregate'
-      displayAggregateResult(result[0])
+    if (result.length === 1 && isAggregateResult(firstRow)) {
+      aiQueryResultType.value = 'metric'
+      displayAggregateResult(firstRow)
+    } else if (isAggregateResult(firstRow)) {
+      // 多行聚合结果（分类统计）
+      aiQueryResultType.value = 'category'
+      logs.value = result
+      total.value = result.length
+      generateDynamicColumns(firstRow)
     } else {
       // 普通列表数据
       aiQueryResultType.value = 'list'
@@ -1120,14 +1237,14 @@ const handleAiQueryResult = (result: any) => {
       total.value = result.length
 
       // 动态生成表头
-      generateDynamicColumns(result[0])
+      generateDynamicColumns(firstRow)
     }
   }
   // 2. 单个对象
   else if (typeof result === 'object' && result !== null) {
     // 检查是否是聚合结果
     if (isAggregateResult(result)) {
-      aiQueryResultType.value = 'aggregate'
+      aiQueryResultType.value = 'metric'
       displayAggregateResult(result)
     } else {
       // 单行数据，作为列表展示
@@ -1139,13 +1256,34 @@ const handleAiQueryResult = (result: any) => {
   }
   // 3. 单值结果（数字、字符串等）
   else {
-    aiQueryResultType.value = 'single'
+    aiQueryResultType.value = 'metric'
+    // 将单值包装成对象
+    logs.value = [{ value: result }]
+    total.value = 1
     ElMessage.info({
       message: `查询结果: ${result}`,
       duration: 5000,
       showClose: true
     })
   }
+}
+
+// 判断是否是时序统计结果
+const isTimeSeriesResult = (obj: any): boolean => {
+  if (!obj || typeof obj !== 'object') return false
+
+  const keys = Object.keys(obj)
+  // 必须有时间字段
+  const hasTimeField = keys.some(key =>
+    /time|date|timestamp|hour|day|month/i.test(key)
+  )
+
+  // 必须有聚合字段
+  const hasAggregateField = keys.some(key =>
+    /count|sum|avg|max|min|total/i.test(key)
+  )
+
+  return hasTimeField && hasAggregateField
 }
 
 // 判断是否是聚合结果
@@ -1331,7 +1469,7 @@ const clearAllFilters = () => {
   searchForm.sources = []
   searchForm.hosts = []
   searchForm.services = []
-  messageSearchText.value = ''
+  searchText.value = ''
   ElMessage.success('已清除所有筛选条件')
   handleSearch()
 }
@@ -1348,7 +1486,8 @@ const handleExpandChange = (row: LogEntry, expandedRows: LogEntry[]) => {
 
 // Reset
 const handleReset = () => {
-  messageSearchText.value = ''
+  searchText.value = ''
+  isAiQuery.value = false
   searchForm.filters = []
   searchForm.messageConditions = []
   searchForm.rawConditions = []
@@ -2047,6 +2186,19 @@ onUnmounted(() => {
       padding: 0 24px;
       font-size: 14px;
       @include macos-button-primary;
+    }
+
+    // AI 模式按钮激活状态
+    .ai-mode-active {
+      background: linear-gradient(135deg, #FF9500 0%, #FF6B00 100%) !important;
+      border-color: #FF9500 !important;
+      color: white !important;
+      box-shadow: 0 4px 12px rgba(255, 149, 0, 0.3) !important;
+
+      &:hover {
+        background: linear-gradient(135deg, #FFa520 0%, #FF7B10 100%) !important;
+        box-shadow: 0 6px 16px rgba(255, 149, 0, 0.4) !important;
+      }
     }
   }
 
