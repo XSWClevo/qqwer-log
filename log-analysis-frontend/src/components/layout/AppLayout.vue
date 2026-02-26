@@ -59,6 +59,11 @@
           <template #title>数据源管理</template>
         </el-menu-item>
 
+        <el-menu-item index="/log-source">
+          <el-icon><Connection /></el-icon>
+          <template #title>日志源管理</template>
+        </el-menu-item>
+
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>
           <template #title>系统设置</template>

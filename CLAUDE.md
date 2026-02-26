@@ -509,6 +509,8 @@ public Result<Map<String, Object>> queryLogs(@Valid @RequestBody LogQueryRequest
 - **Redis**: localhost:6379
 - **Kafka**: 10.18.5.186:9092
 
+- **postgres**: 所采用 docker部署，你可以操作，clickhouse 为远程服务器，你不可以操作。
+
 ### 环境变量覆盖
 
 ```bash

@@ -773,10 +773,10 @@ const getDefaultFields = (): FieldInfo[] => {
 
 // 数据源切换处理
 const handleDatasourceChange = async () => {
-  // 先加载字段信息
+  // 只加载字段信息，不自动触发查询
   await loadDatasourceSchema()
-  // 然后重新查询
-  handleSearch()
+  // 移除自动查询，由用户手动点击查询按钮
+  // handleSearch()
 }
 
 // Expanded rows
@@ -1077,11 +1077,12 @@ const getTimeRange = (): [string, string] => {
 // Search handlers
 // 切换AI查询模式
 const toggleAiQuery = () => {
+  const previousMode = isAiQuery.value
   isAiQuery.value = !isAiQuery.value
 
-  // 切换模式时重置数据源选择
+  // 切换模式时重置数据源选择（不触发 change 事件）
   if (isAiQuery.value) {
-    // 切换到AI模式：如果当前是单选，保持；如果没选，清空
+    // 切换到AI模式：如果当前是单选，转换为数组；如果没选，清空
     if (typeof selectedDatasource.value === 'string' && selectedDatasource.value) {
       selectedDatasource.value = [selectedDatasource.value]
     } else {
@@ -1095,6 +1096,12 @@ const toggleAiQuery = () => {
     }
     ElMessage.info('已切换到普通查询模式')
   }
+
+  // 清空搜索结果，避免显示不匹配的数据
+  logs.value = []
+  total.value = 0
+  aiQueryMetadata.value = {}
+  aiQueryResultType.value = 'list'
 }
 
 // 统一搜索处理

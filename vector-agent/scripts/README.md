@@ -129,7 +129,9 @@ vector-agent-bundle/
 
 # 重启服务使更改生效
 # macOS:
+# 卸载关闭
 sudo launchctl bootout system /Library/LaunchDaemons/com.vector.agent.plist
+# 安装启动
 sudo launchctl bootstrap system /Library/LaunchDaemons/com.vector.agent.plist
 
 # Linux:
