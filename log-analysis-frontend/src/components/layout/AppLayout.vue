@@ -23,6 +23,10 @@
           <el-icon><Search /></el-icon>
           <template #title>日志搜索</template>
         </el-menu-item>
+        <el-menu-item index="/agent">
+          <el-icon><MagicStick /></el-icon>
+          <template #title>智能助手</template>
+        </el-menu-item>
         <el-sub-menu index="analysis">
           <template #title>
             <el-icon><TrendCharts /></el-icon>
@@ -102,6 +106,7 @@ import { useDark, useToggle } from '@vueuse/core'
 import {
   DataBoard,
   Search,
+  MagicStick,
   TrendCharts,
   Bell,
   Setting,

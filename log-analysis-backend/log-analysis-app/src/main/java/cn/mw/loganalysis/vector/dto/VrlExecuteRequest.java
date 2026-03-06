@@ -16,7 +16,7 @@ public class VrlExecuteRequest {
     private String logSample;
     
     /**
-     * 解析方式: parse_json, parse_syslog, parse_regex, parse_kv, parse_grok
+     * 解析方式: auto, parse_json, parse_syslog, parse_regex, parse_kv, parse_grok
      */
     @NotBlank(message = "解析方式不能为空")
     private String parseMethod;

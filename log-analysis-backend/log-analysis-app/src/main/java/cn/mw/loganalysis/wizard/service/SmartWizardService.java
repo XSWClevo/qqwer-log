@@ -61,7 +61,7 @@ public class SmartWizardService {
         // 识别格式
         String format = identifyFormat(request.getParseMethod());
 
-        return ParseLogResponse.success(format, fields);
+        return ParseLogResponse.success(format, fields, vrlResponse.getExecutedScript());
     }
 
     /**
@@ -71,6 +71,8 @@ public class SmartWizardService {
         switch (parseMethod) {
             case "parse_json":
                 return "JSON";
+            case "auto":
+                return "自动识别";
             case "parse_syslog":
                 return "Syslog RFC 5424";
             case "parse_kv":

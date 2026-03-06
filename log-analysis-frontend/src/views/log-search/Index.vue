@@ -1535,16 +1535,60 @@ const viewDetail = (row: LogEntry) => {
 
 const contextTableRef = ref<any>(null)
 
+const padNumber = (value: number, length = 2) => String(value).padStart(length, '0')
+const parseTimestampPart = (value: unknown): number | null => {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+const normalizeRequestTimestamp = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    const [yearRaw, monthRaw, dayRaw, hourRaw = 0, minuteRaw = 0, secondRaw = 0, nanoRaw = 0] = value
+    const year = parseTimestampPart(yearRaw)
+    const month = parseTimestampPart(monthRaw)
+    const day = parseTimestampPart(dayRaw)
+    const hour = parseTimestampPart(hourRaw) ?? 0
+    const minute = parseTimestampPart(minuteRaw) ?? 0
+    const second = parseTimestampPart(secondRaw) ?? 0
+    const nano = parseTimestampPart(nanoRaw) ?? 0
+    const millis = Math.floor(nano / 1_000_000)
+
+    if ([year, month, day].some((part) => part == null)) {
+      return ''
+    }
+
+    const base = `${year}-${padNumber(month)}-${padNumber(day)} ${padNumber(hour)}:${padNumber(minute)}:${padNumber(second)}`
+    return millis > 0 ? `${base}.${padNumber(millis, 3)}` : base
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return [
+      value.getFullYear(),
+      padNumber(value.getMonth() + 1),
+      padNumber(value.getDate())
+    ].join('-') + ` ${padNumber(value.getHours())}:${padNumber(value.getMinutes())}:${padNumber(value.getSeconds())}`
+  }
+
+  return String(value ?? '').trim()
+}
+
 const viewContext = async (row: LogEntry) => {
   contextTargetLog.value = row
   contextVisible.value = true
   contextLoading.value = true
 
+  const normalizedTimestamp = normalizeRequestTimestamp(row.timestamp)
+  if (!normalizedTimestamp) {
+    ElMessage.error('无法识别该日志的时间戳，无法查询上下文')
+    contextLoading.value = false
+    return
+  }
+
   try {
     const { data } = await queryLogContext({
       datasourceId: selectedDatasource.value || undefined,
       logId: row.id,
-      timestamp: row.timestamp,
+      timestamp: normalizedTimestamp,
       beforeCount: 50,
       afterCount: 50,
       fieldFilters: buildFieldFilters() // 使用统一函数，包含侧边栏和高级筛选

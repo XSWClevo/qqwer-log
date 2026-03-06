@@ -343,8 +343,6 @@ public class TableManagementService {
         yaml.append("batch:\n");
         yaml.append("  max_events: 1000\n");
         yaml.append("  timeout_secs: 10\n");
-        yaml.append("encoding:\n");
-        yaml.append("  codec: json\n");
 
         request.setConfigYaml(yaml.toString());
 

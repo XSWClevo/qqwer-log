@@ -29,6 +29,11 @@ public class ParseLogResponse {
      */
     private List<ParsedFieldDTO> fields;
 
+    /**
+     * 可复用的 VRL 脚本
+     */
+    private String vrlScript;
+
     @Data
     public static class ParsedFieldDTO {
         /**
@@ -65,11 +70,12 @@ public class ParseLogResponse {
         private String reason;
     }
 
-    public static ParseLogResponse success(String format, List<ParsedFieldDTO> fields) {
+    public static ParseLogResponse success(String format, List<ParsedFieldDTO> fields, String vrlScript) {
         ParseLogResponse response = new ParseLogResponse();
         response.setSuccess(true);
         response.setFormat(format);
         response.setFields(fields);
+        response.setVrlScript(vrlScript);
         return response;
     }
 

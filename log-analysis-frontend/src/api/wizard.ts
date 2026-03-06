@@ -5,7 +5,7 @@ import request from '@/utils/request'
  */
 export interface ParseLogRequest {
   logSample: string
-  parseMethod: 'parse_json' | 'parse_syslog' | 'parse_regex' | 'parse_kv' | 'parse_key_value' | 'parse_grok' | 'custom'
+  parseMethod: 'auto' | 'parse_json' | 'parse_syslog' | 'parse_regex' | 'parse_kv' | 'parse_key_value' | 'parse_grok' | 'custom'
   regexPattern?: string
   grokPattern?: string
   customVrl?: string
@@ -48,6 +48,7 @@ export interface ParseLogResponse {
   error?: string
   format?: string
   fields?: ParsedFieldDTO[]
+  vrlScript?: string
 }
 
 /**

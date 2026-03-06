@@ -75,11 +75,15 @@ public class VrlExecuteService {
                 if (exitCode != 0) {
                     // 解析错误信息
                     String errorMsg = stderr.isEmpty() ? stdout : stderr;
-                    return VrlExecuteResponse.error(parseErrorMessage(errorMsg));
+                    VrlExecuteResponse errorResponse = VrlExecuteResponse.error(parseErrorMessage(errorMsg));
+                    errorResponse.setExecutedScript(vrlScript);
+                    return errorResponse;
                 }
-                
+
                 // 解析输出结果
-                return parseOutput(stdout);
+                VrlExecuteResponse response = parseOutput(stdout);
+                response.setExecutedScript(vrlScript);
+                return response;
                 
             } finally {
                 // 清理临时文件
@@ -105,22 +109,36 @@ public class VrlExecuteService {
      */
     private String buildVrlScript(VrlExecuteRequest request) {
         StringBuilder script = new StringBuilder();
-        
-        // 第一步：尝试 syslog 预解析，提取真正的 message
-        script.append("# 尝试 syslog 预解析\n");
+
+        // 第一步：保留原始日志，并尝试 syslog 预解析
+        script.append("# 保留原始日志并尝试 syslog 预解析\n");
         script.append("raw_message = .message\n");
-        script.append("syslog_result = parse_syslog(.message) ?? null\n");
+        script.append(".raw = raw_message\n");
+        script.append("target_message = raw_message\n");
+        script.append("syslog_result = parse_syslog(raw_message) ?? null\n");
         script.append("if syslog_result != null {\n");
         script.append("  . = merge!(., syslog_result)\n");
+        script.append("  if exists(.message) && is_string(.message) {\n");
+        script.append("    target_message = .message\n");
+        script.append("  }\n");
         script.append("}\n");
-        
+
         // 第二步：根据用户选择的解析方式解析 target_message
         script.append("# 使用用户选择的方式解析消息内容\n");
-        
+
         switch (request.getParseMethod()) {
+            case "auto":
+                script.append("parsed = parse_json(target_message) ?? parse_key_value(target_message) ?? null\n");
+                script.append("if parsed != null {\n");
+                script.append("  . = merge!(., parsed)\n");
+                script.append("} else if syslog_result == null {\n");
+                script.append("  .parse_error = \"未识别的日志格式，请尝试正则或自定义 VRL\"\n");
+                script.append("}\n");
+                break;
+
             case "parse_json":
-                // 链式尝试：JSON -> KV -> 原样保留
-                script.append("parsed = parse_json(.message) ?? parse_key_value(.message) ?? null\n");
+                // 兼容 syslog 包裹 JSON 的场景
+                script.append("parsed = parse_json(target_message) ?? parse_key_value(target_message) ?? null\n");
                 script.append("if parsed != null {\n");
                 script.append("  . = merge!(., parsed)\n");
                 script.append("}\n");
@@ -139,8 +157,8 @@ public class VrlExecuteService {
                 if (request.getRegexPattern() == null || request.getRegexPattern().isEmpty()) {
                     throw new IllegalArgumentException("正则表达式不能为空");
                 }
-                String pattern = request.getRegexPattern();
-                script.append(String.format("parsed = parse_regex(.message, r'%s') ?? null\n", pattern));
+                String pattern = escapeSingleQuotedLiteral(request.getRegexPattern());
+                script.append(String.format("parsed = parse_regex(target_message, r'%s') ?? null\n", pattern));
                 script.append("if parsed != null {\n");
                 script.append("  . = merge!(., parsed)\n");
                 script.append("} else {\n");
@@ -150,7 +168,7 @@ public class VrlExecuteService {
                 
             case "parse_kv":
             case "parse_key_value":
-                script.append("parsed = parse_key_value(.message) ?? null\n");
+                script.append("parsed = parse_key_value(target_message) ?? null\n");
                 script.append("if parsed != null {\n");
                 script.append("  . = merge!(., parsed)\n");
                 script.append("}\n");
@@ -160,7 +178,8 @@ public class VrlExecuteService {
                 if (request.getGrokPattern() == null || request.getGrokPattern().isEmpty()) {
                     throw new IllegalArgumentException("Grok 模式不能为空");
                 }
-                script.append(String.format("parsed = parse_grok(target_message, \"%%{%s}\") ?? null\n", request.getGrokPattern()));
+                script.append(String.format("parsed = parse_grok(target_message, \"%%{%s}\") ?? null\n",
+                    escapeDoubleQuotedLiteral(request.getGrokPattern())));
                 script.append("if parsed != null {\n");
                 script.append("  . = merge!(., parsed)\n");
                 script.append("} else {\n");
@@ -195,6 +214,14 @@ public class VrlExecuteService {
         script.append("}\n");
         
         return script.toString();
+    }
+
+    private String escapeSingleQuotedLiteral(String value) {
+        return value.replace("\\", "\\\\").replace("'", "\\'");
+    }
+
+    private String escapeDoubleQuotedLiteral(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
     
     /**

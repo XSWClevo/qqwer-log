@@ -612,7 +612,7 @@
       />
 
       <!-- 智能向导 -->
-      <SmartWizard v-model="showSmartWizard" />
+      <SmartWizard v-model="showSmartWizard" @created="handleWizardCreated" />
     </div>
   </AppLayout>
 </template>
@@ -662,6 +662,12 @@ interface ParseFieldItem extends ParsedField {
   editing?: boolean
   newName?: string
   deleted?: boolean
+}
+
+interface WizardCreatedPayload {
+  tableName: string
+  remapComponentId?: string
+  sinkComponentId?: string
 }
 
 const parsePreview = reactive({
@@ -990,11 +996,29 @@ watch(() => form.configYaml, (newVal) => {
 
 const fetchList = async () => {
   loading.value = true
+  let loaded = false
   try {
-    const res = await configComponentApi.getList(filters.keyword, filters.componentType)
-    components.value = res.data || []
+    const res = await configComponentApi.getList(filters.keyword)
+    components.value = Array.isArray((res as any)?.data)
+      ? (res as any).data
+      : Array.isArray(res)
+        ? res
+        : []
+    loaded = true
   } catch { ElMessage.error('加载组件列表失败') }
   finally { loading.value = false }
+  return loaded
+}
+
+const handleWizardCreated = async (payload: WizardCreatedPayload) => {
+  filters.keyword = ''
+  filters.componentTypes = []
+  const loaded = await fetchList()
+
+  const createdIds = [payload.remapComponentId, payload.sinkComponentId].filter(Boolean)
+  if (loaded && createdIds.length > 0) {
+    ElMessage.success(`组件库已刷新，${payload.tableName} 的新组件已出现在列表顶部`)
+  }
 }
 
 // 加载数据源列表

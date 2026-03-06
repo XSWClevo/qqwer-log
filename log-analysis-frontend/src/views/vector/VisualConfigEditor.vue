@@ -150,10 +150,46 @@
 
       <!-- 画布区域 -->
       <div class="canvas-area" ref="canvasRef" @drop="onDrop" @dragover.prevent @dblclick="onCanvasDblClick">
+        <div class="canvas-toolbar">
+          <div class="toolbar-overview">
+            <div class="overview-chip">
+              <span>节点</span>
+              <strong>{{ nodes.length }}</strong>
+            </div>
+            <div class="overview-chip">
+              <span>Source</span>
+              <strong>{{ sourceNodeCount }}</strong>
+            </div>
+            <div class="overview-chip">
+              <span>Transform</span>
+              <strong>{{ transformNodeCount }}</strong>
+            </div>
+            <div class="overview-chip">
+              <span>Sink</span>
+              <strong>{{ sinkNodeCount }}</strong>
+            </div>
+          </div>
+          <div class="toolbar-actions">
+            <el-button size="small" @click="arrangeGraph">整理布局</el-button>
+            <el-button size="small" @click="fitCanvas">适配视图</el-button>
+            <el-button size="small" @click="centerCanvas">居中</el-button>
+            <el-button size="small" @click="zoomCanvas(-0.1)">-</el-button>
+            <span class="zoom-indicator">{{ zoomPercent }}%</span>
+            <el-button size="small" @click="zoomCanvas(0.1)">+</el-button>
+          </div>
+        </div>
+
         <div v-if="nodes.length === 0" class="canvas-placeholder">
           <el-icon :size="48"><Share /></el-icon>
           <p>从左侧拖拽组件到画布开始构建</p>
           <p class="hint">或双击画布快速添加组件</p>
+        </div>
+
+        <div v-else class="status-legend">
+          <span><i class="legend-dot normal"></i>运行</span>
+          <span><i class="legend-dot warning"></i>告警</span>
+          <span><i class="legend-dot error"></i>异常</span>
+          <span><i class="legend-dot stopped"></i>停止</span>
         </div>
       </div>
 
@@ -341,6 +377,7 @@ const quickAddPosition = ref({ x: 0, y: 0 })
 const showYamlPreview = ref(false)
 const generatedYaml = ref('')
 const nodes = ref<any[]>([])
+const zoomPercent = ref(100)
 
 // 部署相关
 const showDeployDialog = ref(false)
@@ -371,6 +408,9 @@ const customSinks = ref<ComponentItem[]>([])
 
 // 组件引用数量（用于显示共享标记）
 const componentReferenceCounts = ref<Record<string, number>>({})
+const sourceNodeCount = computed(() => nodes.value.filter(node => node.getData?.()?.category === 'source').length)
+const transformNodeCount = computed(() => nodes.value.filter(node => node.getData?.()?.category === 'transform').length)
+const sinkNodeCount = computed(() => nodes.value.filter(node => node.getData?.()?.category === 'sink').length)
 
 // 内置默认组件
 const defaultSources: ComponentItem[] = [
@@ -541,6 +581,11 @@ const getThemeColors = () => {
   }
 }
 
+const syncViewportState = () => {
+  if (!graph) return
+  zoomPercent.value = Math.round(graph.zoom() * 100)
+}
+
 const initGraph = () => {
   if (!canvasRef.value) return
 
@@ -551,6 +596,12 @@ const initGraph = () => {
     autoResize: true,
     background: { color: themeColors.canvasBg },
     grid: { visible: true, type: 'dot', size: 20, args: { color: themeColors.gridColor } },
+    mousewheel: {
+      enabled: true,
+      modifiers: ['ctrl', 'meta'],
+      minScale: 0.4,
+      maxScale: 1.8
+    },
     selecting: {
       enabled: true,
       multiple: true,
@@ -645,6 +696,8 @@ const initGraph = () => {
       }
     }
   })
+
+  syncViewportState()
 
   // 节点点击事件
   graph.on('node:click', ({ node }) => {
@@ -765,6 +818,112 @@ const initGraph = () => {
       graph!.removeCells(cells)
     }
   })
+}
+
+const zoomCanvas = (delta: number) => {
+  if (!graph) return
+  graph.zoom(delta, {
+    minScale: 0.4,
+    maxScale: 1.8
+  })
+  syncViewportState()
+}
+
+const fitCanvas = () => {
+  if (!graph || nodes.value.length === 0) return
+  graph.zoomToFit({
+    padding: 48,
+    maxScale: 1
+  })
+  syncViewportState()
+}
+
+const centerCanvas = () => {
+  if (!graph || nodes.value.length === 0) return
+  graph.centerContent()
+  syncViewportState()
+}
+
+const arrangeGraph = () => {
+  if (!graph) return
+
+  const graphNodes = graph.getNodes()
+  if (graphNodes.length === 0) return
+
+  const nodeMap = new Map(graphNodes.map(node => [node.id, node]))
+  const incomingMap = new Map<string, string[]>()
+  graphNodes.forEach(node => incomingMap.set(node.id, []))
+
+  graph.getEdges().forEach(edge => {
+    const sourceId = edge.getSourceCellId()
+    const targetId = edge.getTargetCellId()
+    if (sourceId && targetId && incomingMap.has(targetId)) {
+      incomingMap.get(targetId)!.push(sourceId)
+    }
+  })
+
+  const getCategoryDepth = (node: any) => {
+    const category = node.getData()?.category
+    if (category === 'source') return 0
+    if (category === 'transform') return 1
+    return 2
+  }
+
+  const depthMap = new Map<string, number>()
+  for (let round = 0; round < graphNodes.length; round += 1) {
+    let progressed = false
+    graphNodes.forEach(node => {
+      if (depthMap.has(node.id)) return
+
+      const incoming = (incomingMap.get(node.id) || []).filter(sourceId => nodeMap.has(sourceId))
+      if (incoming.every(sourceId => depthMap.has(sourceId))) {
+        const baseDepth = getCategoryDepth(node)
+        const upstreamDepth = incoming.length
+          ? Math.max(...incoming.map(sourceId => depthMap.get(sourceId) ?? 0)) + 1
+          : baseDepth
+        depthMap.set(node.id, Math.max(baseDepth, upstreamDepth))
+        progressed = true
+      }
+    })
+
+    if (!progressed) {
+      break
+    }
+  }
+
+  graphNodes.forEach(node => {
+    if (!depthMap.has(node.id)) {
+      depthMap.set(node.id, getCategoryDepth(node))
+    }
+  })
+
+  const columns = new Map<number, any[]>()
+  graphNodes.forEach(node => {
+    const depth = depthMap.get(node.id) ?? 0
+    if (!columns.has(depth)) {
+      columns.set(depth, [])
+    }
+    columns.get(depth)!.push(node)
+  })
+
+  const startX = 80
+  const startY = 100
+  const columnGap = 260
+  const rowGap = 140
+
+  Array.from(columns.entries())
+    .sort(([leftDepth], [rightDepth]) => leftDepth - rightDepth)
+    .forEach(([depth, columnNodes]) => {
+      columnNodes
+        .sort((left, right) => (left.getPosition()?.y || 0) - (right.getPosition()?.y || 0))
+        .forEach((node, index) => {
+          node.position(startX + depth * columnGap, startY + index * rowGap)
+        })
+    })
+
+  centerCanvas()
+  fitCanvas()
+  ElMessage.success('已按数据流方向整理布局')
 }
 
 const createNode = (category: string, comp: any, x: number, y: number) => {
@@ -993,7 +1152,8 @@ const createNode = (category: string, comp: any, x: number, y: number) => {
     }
   })
 
-  nodes.value.push(node)
+  nodes.value = graph!.getNodes()
+  syncViewportState()
   return node
 }
 
@@ -1388,6 +1548,7 @@ const loadConfig = async () => {
       
       // 更新所有节点的主题颜色
       updateGraphTheme()
+      syncViewportState()
     }
   } catch {
     ElMessage.error('加载配置失败')
@@ -1694,8 +1855,13 @@ const fetchComponentStatus = async () => {
     }
     
     // 调用后端接口获取组件状态
-    console.log('调用 API，machineId:', targetHosts[0])
-    const res = await vectorMetricsApi.getComponentStatus(targetHosts[0]) as any
+    const [targetHostId] = targetHosts
+    if (!targetHostId) {
+      return
+    }
+
+    console.log('调用 API，machineId:', targetHostId)
+    const res = await vectorMetricsApi.getComponentStatus(targetHostId) as any
     const responseData = res.data || res
     
     console.log('组件状态响应:', responseData)
@@ -1992,6 +2158,71 @@ onBeforeUnmount(() => {
   flex: 1;
   position: relative;
   overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(34, 197, 94, 0.08), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.08), transparent 24%);
+
+  .canvas-toolbar {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    right: 16px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    pointer-events: none;
+  }
+
+  .toolbar-overview,
+  .toolbar-actions,
+  .status-legend {
+    pointer-events: auto;
+    backdrop-filter: blur(14px);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  }
+
+  .toolbar-overview,
+  .toolbar-actions {
+    border-radius: 999px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .overview-chip {
+    min-width: 70px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    span {
+      font-size: 11px;
+      color: var(--macos-text-tertiary);
+      line-height: 1;
+    }
+
+    strong {
+      font-size: 14px;
+      color: var(--macos-text-primary);
+      line-height: 1.2;
+    }
+  }
+
+  .zoom-indicator {
+    min-width: 48px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--macos-text-secondary);
+    font-weight: 600;
+  }
 
   .canvas-placeholder {
     position: absolute;
@@ -2002,6 +2233,49 @@ onBeforeUnmount(() => {
     color: var(--macos-text-tertiary);
     p { margin: 12px 0 0; }
     .hint { font-size: 12px; color: var(--macos-text-tertiary); }
+  }
+
+  .status-legend {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    z-index: 2;
+    border-radius: 999px;
+    padding: 10px 14px;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    color: var(--macos-text-secondary);
+    font-size: 12px;
+
+    span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+  }
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+
+  &.normal {
+    background: #67c23a;
+  }
+
+  &.warning {
+    background: #e6a23c;
+  }
+
+  &.error {
+    background: #f56c6c;
+  }
+
+  &.stopped {
+    background: #909399;
   }
 }
 
@@ -2065,6 +2339,26 @@ onBeforeUnmount(() => {
   overflow: auto;
   height: calc(100% - 32px);
   white-space: pre-wrap;
+}
+
+@media (max-width: 1200px) {
+  .canvas-area {
+    .canvas-toolbar {
+      flex-direction: column;
+      align-items: flex-start;
+      right: auto;
+    }
+
+    .toolbar-overview,
+    .toolbar-actions,
+    .status-legend {
+      border-radius: 18px;
+    }
+
+    .toolbar-overview {
+      flex-wrap: wrap;
+    }
+  }
 }
 </style>
 

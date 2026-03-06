@@ -34,6 +34,11 @@ public class VrlExecuteResponse {
      * 原始输出
      */
     private String rawOutput;
+
+    /**
+     * 实际执行的 VRL 脚本
+     */
+    private String executedScript;
     
     @Data
     public static class ParsedField {
