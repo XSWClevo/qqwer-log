@@ -120,7 +120,7 @@
                     >
                       <div class="conversation-main">
                         <div class="conversation-title-row">
-                          <strong>{{ conversation.title || '未命名对话' }}</strong>
+                          <strong>{{ formatConversationLabel(conversation) }}</strong>
                           <el-tag
                             v-if="conversation.datasourceType"
                             size="small"
@@ -130,9 +130,8 @@
                             {{ conversation.datasourceType }}
                           </el-tag>
                         </div>
-                        <p>{{ conversation.preview || '暂无摘要' }}</p>
                         <div class="conversation-meta">
-                          <span>{{ conversation.datasourceName || '未绑定数据源' }}</span>
+                          <span>{{ truncateText(conversation.datasourceName || '未绑定数据源', 15) }}</span>
                           <span>{{ formatConversationTime(conversation.lastMessageAt || conversation.updatedAt) }}</span>
                         </div>
                       </div>
@@ -205,6 +204,7 @@
               <div class="chat-toolbar-main">
                 <div class="chat-eyebrow">当前会话</div>
                 <h2>{{ currentConversationTitle }}</h2>
+                <p class="chat-toolbar-subtitle">{{ currentConversationSubtitle }}</p>
                 <div class="toolbar-tags">
                   <el-tag size="small" type="success" effect="dark">
                     {{ currentConversationState }}
@@ -664,6 +664,18 @@ const formatConversationTime = (value?: string) => {
   return date.toLocaleString('zh-CN')
 }
 
+const truncateText = (value?: string, maxLength = 15) => {
+  const normalized = (value || '').trim()
+  if (!normalized) {
+    return ''
+  }
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized
+}
+
+const formatConversationLabel = (conversation: AgentConversationSummary) => {
+  return truncateText(conversation.title || conversation.preview || '未命名对话', 15) || '未命名对话'
+}
+
 const escapeHtml = (value: string) => {
   return value
     .replace(/&/g, '&amp;')
@@ -1089,49 +1101,58 @@ watch(selectedDatasourceId, (value, oldValue) => {
   --agent-ink: #0f172a;
   --agent-muted: #5f6f85;
   --agent-border: rgba(94, 116, 146, 0.18);
-  --agent-card: rgba(255, 255, 255, 0.78);
-  --agent-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
-  padding: 24px;
+  --agent-card: rgba(255, 255, 255, 0.84);
+  --agent-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  padding: clamp(12px, 1.4vw, 20px);
+  height: 100%;
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  overflow: auto;
   font-family: 'Avenir Next', 'PingFang SC', 'Noto Sans SC', sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(14, 165, 233, 0.16), transparent 28%),
-    radial-gradient(circle at right center, rgba(16, 185, 129, 0.12), transparent 24%),
-    linear-gradient(180deg, #f8fbff 0%, #f2f6fb 100%);
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.14), transparent 26%),
+    radial-gradient(circle at right center, rgba(16, 185, 129, 0.09), transparent 22%),
+    linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+  scrollbar-gutter: stable;
 }
 
 .hero-shell {
-  border-radius: 28px;
-  padding: 28px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
-  gap: 18px;
+  border-radius: 26px;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex-shrink: 0;
   color: #f8fafc;
   background:
-    linear-gradient(135deg, rgba(8, 47, 73, 0.94), rgba(15, 118, 110, 0.92)),
+    linear-gradient(135deg, rgba(8, 47, 73, 0.96), rgba(15, 118, 110, 0.94)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
-  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 26px 60px rgba(15, 23, 42, 0.12);
 }
 
 .hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  max-width: 980px;
 
   h1 {
     margin: 0;
-    font-size: 34px;
-    line-height: 1.05;
+    font-size: clamp(24px, 2.5vw, 32px);
+    line-height: 1.02;
     letter-spacing: -0.03em;
   }
 
   p {
     margin: 0;
-    max-width: 760px;
-    line-height: 1.8;
+    max-width: 900px;
+    line-height: 1.6;
+    font-size: 14px;
     color: rgba(226, 232, 240, 0.9);
   }
 }
@@ -1146,30 +1167,36 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .hero-metrics {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .metric-card {
-  border-radius: 22px;
-  padding: 18px;
-  background: rgba(255, 255, 255, 0.1);
+  min-height: 82px;
+  border-radius: 18px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(226, 232, 240, 0.16);
   backdrop-filter: blur(8px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  justify-content: space-between;
 
   strong {
-    font-size: 20px;
+    font-size: 18px;
+    line-height: 1.2;
   }
 
   small {
     color: rgba(226, 232, 240, 0.82);
+    line-height: 1.45;
+    font-size: 12px;
   }
 }
 
 .metric-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1178,10 +1205,12 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: minmax(290px, 320px) minmax(0, 1fr);
+  gap: 18px;
   min-height: 0;
   flex: 1;
+  align-items: start;
+  overflow: visible;
 }
 
 .left-rail,
@@ -1192,16 +1221,23 @@ watch(selectedDatasourceId, (value, oldValue) => {
 .left-rail {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  overflow: visible;
+  padding-right: 4px;
 }
 
 .panel-card,
 .chat-card {
   border: 1px solid var(--agent-border);
-  border-radius: 24px;
+  border-radius: 22px;
   background: var(--agent-card);
   backdrop-filter: blur(16px);
   box-shadow: var(--agent-shadow);
+}
+
+.panel-card :deep(.el-card__header),
+.chat-card :deep(.el-card__header) {
+  padding-bottom: 8px;
 }
 
 .panel-header {
@@ -1257,13 +1293,15 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .history-card :deep(.el-card__body) {
-  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .history-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .history-skeleton {
@@ -1279,21 +1317,21 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .draft-card,
 .conversation-item {
-  border-radius: 20px;
+  border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.8);
   transition: 0.2s ease;
 }
 
 .draft-card {
-  padding: 16px;
+  padding: 12px 14px;
   cursor: pointer;
 
   p {
-    margin: 8px 0 0;
+    margin: 6px 0 0;
     color: var(--agent-muted);
-    line-height: 1.6;
-    font-size: 13px;
+    line-height: 1.5;
+    font-size: 12px;
   }
 
   &.active,
@@ -1315,14 +1353,14 @@ watch(selectedDatasourceId, (value, oldValue) => {
 .conversation-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .conversation-item {
-  padding: 14px;
+  padding: 10px 12px;
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
 
   &:hover {
@@ -1340,17 +1378,6 @@ watch(selectedDatasourceId, (value, oldValue) => {
 .conversation-main {
   min-width: 0;
   flex: 1;
-
-  p {
-    margin: 8px 0 0;
-    color: var(--agent-muted);
-    line-height: 1.6;
-    font-size: 13px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
 }
 
 .conversation-title-row {
@@ -1363,6 +1390,8 @@ watch(selectedDatasourceId, (value, oldValue) => {
     color: var(--agent-ink);
     min-width: 0;
     flex: 1;
+    font-size: 13px;
+    line-height: 1.35;
   }
 }
 
@@ -1371,17 +1400,25 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .conversation-meta {
-  margin-top: 10px;
+  margin-top: 6px;
   display: flex;
   justify-content: space-between;
   gap: 10px;
   color: #94a3b8;
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.conversation-meta span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .delete-btn {
   color: #94a3b8;
   align-self: center;
+  opacity: 0.8;
 }
 
 .prompt-grid {
@@ -1412,42 +1449,59 @@ watch(selectedDatasourceId, (value, oldValue) => {
   margin: 0;
   padding-left: 18px;
   color: #475569;
-  line-height: 1.75;
+  line-height: 1.65;
+  font-size: 13px;
+}
+
+.chat-panel {
+  min-height: 0;
+  display: flex;
 }
 
 .chat-card {
   height: 100%;
+  min-height: 0;
 
   :deep(.el-card__body) {
     height: 100%;
-    min-height: 780px;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 14px;
+    padding: 18px 20px;
   }
 }
 
 .chat-toolbar {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   align-items: flex-start;
-  padding-bottom: 16px;
+  padding-bottom: 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  flex-shrink: 0;
 }
 
 .chat-toolbar-main {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 
   h2 {
     margin: 0;
-    font-size: 28px;
+    font-size: clamp(20px, 1.8vw, 26px);
     line-height: 1.05;
     color: var(--agent-ink);
     letter-spacing: -0.02em;
   }
+}
+
+.chat-toolbar-subtitle {
+  margin: 0;
+  max-width: 760px;
+  color: #64748b;
+  line-height: 1.55;
+  font-size: 13px;
 }
 
 .chat-eyebrow {
@@ -1475,11 +1529,12 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .message-list {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding-right: 4px;
+  gap: 16px;
+  padding: 6px 6px 0 2px;
 }
 
 .message-row {
@@ -1497,10 +1552,10 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .message-avatar {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   flex-shrink: 0;
-  border-radius: 15px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1514,20 +1569,24 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .message-stack {
-  width: min(100%, 960px);
+  width: min(100%, 780px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+}
+
+.message-row.user .message-stack {
+  width: min(100%, 620px);
 }
 
 .message-bubble {
-  border-radius: 22px;
-  padding: 16px 18px;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+  border-radius: 20px;
+  padding: 14px 16px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
 
   &.assistant {
     color: var(--agent-ink);
-    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
+    background: linear-gradient(180deg, rgba(252, 253, 255, 0.98), rgba(244, 247, 251, 0.98));
     border: 1px solid rgba(148, 163, 184, 0.18);
   }
 
@@ -1542,8 +1601,8 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .message-role {
-  margin-bottom: 8px;
-  font-size: 12px;
+  margin-bottom: 6px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1551,7 +1610,8 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .message-text {
-  line-height: 1.75;
+  line-height: 1.68;
+  font-size: 14px;
 }
 
 .plain-text {
@@ -1676,7 +1736,7 @@ watch(selectedDatasourceId, (value, oldValue) => {
 .tool-call-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .message-actions {
@@ -1690,13 +1750,13 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .tool-call-card,
 .result-panel {
-  border-radius: 20px;
+  border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .tool-call-card {
-  padding: 14px;
+  padding: 12px;
 }
 
 .tool-call-header {
@@ -1723,7 +1783,7 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .result-panel {
-  padding: 18px;
+  padding: 16px;
 }
 
 .result-header {
@@ -1753,9 +1813,12 @@ watch(selectedDatasourceId, (value, oldValue) => {
 .composer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   border-top: 1px solid rgba(148, 163, 184, 0.16);
-  padding-top: 18px;
+  padding-top: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.86) 36%, rgba(255, 255, 255, 0.96) 100%);
+  flex-shrink: 0;
 }
 
 .composer-footer {
@@ -1777,15 +1840,30 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 @media (max-width: 1280px) {
-  .hero-shell,
+  .agent-page {
+    height: auto;
+    overflow: auto;
+  }
+
+  .hero-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workspace-grid {
     grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .left-rail {
+    overflow: visible;
   }
 }
 
 @media (max-width: 768px) {
   .agent-page {
     padding: 14px;
+    height: auto;
+    overflow: auto;
   }
 
   .hero-shell,
@@ -1804,6 +1882,10 @@ watch(selectedDatasourceId, (value, oldValue) => {
     width: 100%;
   }
 
+  .hero-metrics {
+    grid-template-columns: 1fr;
+  }
+
   .message-row,
   .message-row.user {
     flex-direction: column;
@@ -1815,6 +1897,10 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
   .conversation-item {
     padding-right: 10px;
+  }
+
+  .chat-card :deep(.el-card__body) {
+    padding: 18px;
   }
 }
 </style>
