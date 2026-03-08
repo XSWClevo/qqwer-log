@@ -45,7 +45,7 @@ public class ComponentStatusService {
         status.lastUpdated = LocalDateTime.now();
         
         if (metrics.getComponentMetrics() != null) {
-            log.info("收到组件指标: machineId={}, components={}", machineId, metrics.getComponentMetrics().keySet());
+            log.debug("收到组件指标: machineId={}, components={}", machineId, metrics.getComponentMetrics().keySet());
             metrics.getComponentMetrics().forEach((name, componentMetrics) -> {
                 String componentStatus = componentMetrics.getStatus();
                 if (componentStatus == null) {

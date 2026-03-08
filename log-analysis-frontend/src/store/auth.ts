@@ -1,17 +1,33 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { User, LoginRequest } from '@/types/auth'
+import type { User, LoginRequest, LoginResponse } from '@/types/auth'
 import { login as loginApi, logout as logoutApi, getUserInfo } from '@/api/auth'
 import { ElMessage } from 'element-plus'
+import { clearStoredAuthTokens, readStoredJwtToken, isLikelyJwtToken } from '@/utils/jwt'
 
 export const useAuthStore = defineStore('auth', () => {
+  if (!isLikelyJwtToken(localStorage.getItem('accessToken')) && localStorage.getItem('accessToken')) {
+    clearStoredAuthTokens()
+  }
+
+  const normalizeLoginUser = (userInfo: LoginResponse['userInfo']): User => ({
+    id: userInfo.id,
+    username: userInfo.username,
+    email: userInfo.email,
+    fullName: userInfo.fullName,
+    role: userInfo.role,
+    enabled: true,
+    createdAt: '',
+    updatedAt: ''
+  })
+
   // 状态
-  const accessToken = ref<string>(localStorage.getItem('accessToken') || '')
-  const refreshToken = ref<string>(localStorage.getItem('refreshToken') || '')
+  const accessToken = ref<string>(readStoredJwtToken('accessToken'))
+  const refreshToken = ref<string>(readStoredJwtToken('refreshToken'))
   const user = ref<User | null>(null)
 
   // 计算属性
-  const isAuthenticated = computed(() => !!accessToken.value)
+  const isAuthenticated = computed(() => isLikelyJwtToken(accessToken.value))
 
   // 登录
   const login = async (loginData: LoginRequest) => {
@@ -22,7 +38,7 @@ export const useAuthStore = defineStore('auth', () => {
       // 保存token
       accessToken.value = data.accessToken
       refreshToken.value = data.refreshToken
-      user.value = data.user
+      user.value = normalizeLoginUser(data.userInfo)
 
       // 存储到localStorage
       localStorage.setItem('accessToken', data.accessToken)
@@ -49,8 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = null
 
       // 清除localStorage
-      localStorage.removeItem('accessToken')
-      localStorage.removeItem('refreshToken')
+      clearStoredAuthTokens()
 
       ElMessage.success('已登出')
     }

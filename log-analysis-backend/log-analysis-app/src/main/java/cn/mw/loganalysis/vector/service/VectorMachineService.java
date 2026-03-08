@@ -188,7 +188,7 @@ public class VectorMachineService extends ServiceImpl<VectorMachineMapper, Vecto
         machine.setStatus(status);
         machine.setLastHeartbeat(LocalDateTime.now());
         vectorMachineMapper.updateById(machine);
-        log.info("更新机器状态: {} -> {}", machine.getName(), status);
+        log.debug("更新机器状态: {} -> {}", machine.getName(), status);
     }
 
     /**

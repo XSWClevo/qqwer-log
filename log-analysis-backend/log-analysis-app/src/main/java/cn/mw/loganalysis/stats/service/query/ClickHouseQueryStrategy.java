@@ -1,5 +1,6 @@
 package cn.mw.loganalysis.stats.service.query;
 
+import cn.mw.loganalysis.common.util.DateTimeUtils;
 import cn.mw.loganalysis.stats.dto.LogContextRequest;
 import cn.mw.loganalysis.stats.dto.LogQueryRequest;
 import cn.mw.loganalysis.stats.dto.StatsQueryRequest;
@@ -37,6 +38,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
 
     // 使用 ClickHouseOperationStrategy 的共享连接池
     private final ClickHouseOperationStrategy operationStrategy;
+    private final ClickHouseMcpQueryService clickHouseMcpQueryService;
 
     // 自定义线程池用于统计查询
     private final ExecutorService statsQueryExecutor = new ThreadPoolExecutor(
@@ -66,6 +68,18 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     @Override
     public List<FieldInfo> getTableSchema(DatasourceConnectionConfig config) {
         log.info("ClickHouse getTableSchema: table={}", config.getTable());
+
+        if (clickHouseMcpQueryService.shouldUse(config)) {
+            try {
+                return getTableSchemaViaMcp(config);
+            } catch (Exception ex) {
+                if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
+                    log.warn("ClickHouse MCP 获取表结构失败，回退 JDBC: {}", ex.getMessage());
+                } else {
+                    throw ex;
+                }
+            }
+        }
 
         JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
         String tableName = config.getTable();
@@ -128,6 +142,18 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryLogs(LogQueryRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryLogs: table={}, endpoint={}", config.getTable(), config.getEndpoint());
 
+        if (clickHouseMcpQueryService.shouldUse(config)) {
+            try {
+                return queryLogsViaMcp(request, config);
+            } catch (Exception ex) {
+                if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
+                    log.warn("ClickHouse MCP 查询日志失败，回退 JDBC: {}", ex.getMessage());
+                } else {
+                    throw ex;
+                }
+            }
+        }
+
         JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
         String tableName = config.getTable();
 
@@ -137,8 +163,8 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
            .append(" WHERE timestamp >= ? AND timestamp <= ? ");
 
         List<Object> params = new ArrayList<>();
-        params.add(request.getStartTime());
-        params.add(request.getEndTime());
+        params.add(DateTimeUtils.format(request.getStartTime()));
+        params.add(DateTimeUtils.format(request.getEndTime()));
 
         // 添加字段过滤
         addFieldFilters(sql, params, request.getFieldFilters());
@@ -158,7 +184,8 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
         params.add(request.getPageSize());
         params.add((request.getPageNum() - 1) * request.getPageSize());
 
-        log.debug("Executing SQL: {}", sql);
+        log.info("ClickHouse queryLogs data SQL: template={}, params={}, rendered={}",
+                sql, params, SqlDebugFormatter.render(sql.toString(), params));
 
         // 执行查询
         List<Map<String, Object>> data = jdbcTemplate.queryForList(sql.toString(), params.toArray());
@@ -182,6 +209,18 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     @Override
     public Map<String, Object> queryLogContext(LogContextRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryLogContext: logId={}", request.getLogId());
+
+        if (clickHouseMcpQueryService.shouldUse(config)) {
+            try {
+                return queryLogContextViaMcp(request, config);
+            } catch (Exception ex) {
+                if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
+                    log.warn("ClickHouse MCP 查询上下文失败，回退 JDBC: {}", ex.getMessage());
+                } else {
+                    throw ex;
+                }
+            }
+        }
 
         JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
         String tableName = config.getTable();
@@ -220,6 +259,18 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     @Override
     public Map<String, Object> queryStats(StatsQueryRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryStats: dimensions={}", request.getDimensions());
+
+        if (clickHouseMcpQueryService.shouldUse(config)) {
+            try {
+                return queryStatsViaMcp(request, config);
+            } catch (Exception ex) {
+                if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
+                    log.warn("ClickHouse MCP 统计查询失败，回退 JDBC: {}", ex.getMessage());
+                } else {
+                    throw ex;
+                }
+            }
+        }
 
         // 1. 参数验证
         if (request.getDimensions() == null || request.getDimensions().isEmpty()) {
@@ -352,6 +403,18 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryTimeSeries(StatsQueryRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryTimeSeries: granularity={}", request.getGranularity());
 
+        if (clickHouseMcpQueryService.shouldUse(config)) {
+            try {
+                return queryTimeSeriesViaMcp(request, config);
+            } catch (Exception ex) {
+                if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
+                    log.warn("ClickHouse MCP 时序查询失败，回退 JDBC: {}", ex.getMessage());
+                } else {
+                    throw ex;
+                }
+            }
+        }
+
         JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
         String tableName = config.getTable();
 
@@ -390,19 +453,200 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
         return operationStrategy.getJdbcTemplate(config);
     }
 
+    private List<FieldInfo> getTableSchemaViaMcp(DatasourceConnectionConfig config) {
+        String database = StringUtils.hasText(config.getDatabase()) ? config.getDatabase() : "default";
+        String sql = SqlDebugFormatter.render(
+                "SELECT name, type FROM system.columns WHERE database = ? AND table = ? ORDER BY position",
+                List.of(database, config.getTable())
+        );
+        log.info("ClickHouse MCP schema SQL: {}", sql);
+
+        List<Map<String, Object>> rows = clickHouseMcpQueryService.executeSelect(sql, config);
+        List<FieldInfo> fields = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            String name = stringify(row.get("name"));
+            String type = stringify(row.get("type"));
+            fields.add(FieldInfo.builder()
+                    .name(name)
+                    .type(type)
+                    .label(name)
+                    .isTimestamp(isTimestampType(type))
+                    .isStatsDimension(isStatsDimensionType(type))
+                    .isContentField(isContentField(name))
+                    .build());
+        }
+        log.info("Found {} fields in table {} via MCP", fields.size(), config.getTable());
+        return fields;
+    }
+
+    private Map<String, Object> queryLogsViaMcp(LogQueryRequest request, DatasourceConnectionConfig config) {
+        String tableName = config.getTable();
+
+        StringBuilder countSql = new StringBuilder();
+        countSql.append("SELECT count(*) FROM ").append(tableName)
+                .append(" WHERE timestamp >= ? AND timestamp <= ?");
+        List<Object> countParams = new ArrayList<>();
+        countParams.add(DateTimeUtils.format(request.getStartTime()));
+        countParams.add(DateTimeUtils.format(request.getEndTime()));
+        addFieldFilters(countSql, countParams, request.getFieldFilters());
+        addMessageConditions(countSql, countParams, request.getMessageConditions(), "message");
+        addMessageConditions(countSql, countParams, request.getRawConditions(), "raw");
+        String renderedCountSql = SqlDebugFormatter.render(countSql.toString(), countParams);
+        log.info("ClickHouse MCP queryLogs count SQL: {}", renderedCountSql);
+        Long total = clickHouseMcpQueryService.executeCount(renderedCountSql, config);
+
+        StringBuilder dataSql = new StringBuilder();
+        dataSql.append("SELECT * FROM ").append(tableName)
+                .append(" WHERE timestamp >= ? AND timestamp <= ? ");
+        List<Object> dataParams = new ArrayList<>();
+        dataParams.add(DateTimeUtils.format(request.getStartTime()));
+        dataParams.add(DateTimeUtils.format(request.getEndTime()));
+        addFieldFilters(dataSql, dataParams, request.getFieldFilters());
+        addMessageConditions(dataSql, dataParams, request.getMessageConditions(), "message");
+        addMessageConditions(dataSql, dataParams, request.getRawConditions(), "raw");
+        dataSql.append("ORDER BY timestamp DESC ");
+        dataSql.append("LIMIT ? OFFSET ?");
+        dataParams.add(request.getPageSize());
+        dataParams.add((request.getPageNum() - 1) * request.getPageSize());
+        String renderedDataSql = SqlDebugFormatter.render(dataSql.toString(), dataParams);
+        log.info("ClickHouse MCP queryLogs data SQL: {}", renderedDataSql);
+
+        List<Map<String, Object>> data = clickHouseMcpQueryService.executeSelect(renderedDataSql, config);
+        data.forEach(row -> {
+            if (row.get("timestamp") != null) {
+                row.put("timestamp", row.get("timestamp").toString());
+            }
+        });
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("total", total != null ? total : 0);
+        result.put("pageNum", request.getPageNum());
+        result.put("pageSize", request.getPageSize());
+        result.put("data", data);
+        return result;
+    }
+
+    private Map<String, Object> queryLogContextViaMcp(LogContextRequest request, DatasourceConnectionConfig config) {
+        String tableName = config.getTable();
+        List<Map<String, Object>> beforeLogs = new ArrayList<>();
+        List<Map<String, Object>> afterLogs = new ArrayList<>();
+
+        if (request.getBeforeCount() != null && request.getBeforeCount() > 0) {
+            String beforeSql = SqlDebugFormatter.render(
+                    String.format("SELECT * FROM %s WHERE timestamp < ? ORDER BY timestamp DESC LIMIT ?", tableName),
+                    List.of(request.getTimestamp(), request.getBeforeCount())
+            );
+            log.info("ClickHouse MCP context before SQL: {}", beforeSql);
+            beforeLogs = clickHouseMcpQueryService.executeSelect(beforeSql, config);
+            Collections.reverse(beforeLogs);
+        }
+
+        if (request.getAfterCount() != null && request.getAfterCount() > 0) {
+            String afterSql = SqlDebugFormatter.render(
+                    String.format("SELECT * FROM %s WHERE timestamp > ? ORDER BY timestamp ASC LIMIT ?", tableName),
+                    List.of(request.getTimestamp(), request.getAfterCount())
+            );
+            log.info("ClickHouse MCP context after SQL: {}", afterSql);
+            afterLogs = clickHouseMcpQueryService.executeSelect(afterSql, config);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("beforeLogs", beforeLogs);
+        result.put("afterLogs", afterLogs);
+        result.put("totalBefore", beforeLogs.size());
+        result.put("totalAfter", afterLogs.size());
+        return result;
+    }
+
+    private Map<String, Object> queryStatsViaMcp(StatsQueryRequest request, DatasourceConnectionConfig config) {
+        if (request.getDimensions() == null || request.getDimensions().isEmpty()) {
+            return buildEmptyResult();
+        }
+
+        List<String> validDimensions = request.getDimensions().stream()
+                .filter(dim -> !isInvalidStatsDimension(dim))
+                .toList();
+        if (validDimensions.isEmpty()) {
+            return buildEmptyResult();
+        }
+
+        String tableName = config.getTable();
+        String sql = validDimensions.stream()
+                .map(dim -> String.format(
+                        "SELECT '%s' as dimension, `%s` as value, count(*) as count FROM %s WHERE timestamp >= ? AND timestamp <= ? GROUP BY `%s` ORDER BY count DESC LIMIT 10",
+                        dim, dim, tableName, dim
+                ))
+                .collect(Collectors.joining(" UNION ALL "));
+        List<Object> params = new ArrayList<>();
+        for (int i = 0; i < validDimensions.size(); i++) {
+            params.add(request.getStartTime());
+            params.add(request.getEndTime());
+        }
+        String renderedSql = SqlDebugFormatter.render(sql, params);
+        log.info("ClickHouse MCP stats SQL: {}", renderedSql);
+
+        List<Map<String, Object>> results = clickHouseMcpQueryService.executeSelect(renderedSql, config);
+        Map<String, List<Map<String, Object>>> statsData = new HashMap<>();
+        for (String dimension : validDimensions) {
+            statsData.put(dimension, new ArrayList<>());
+        }
+        for (Map<String, Object> row : results) {
+            String dimension = stringify(row.get("dimension"));
+            Map<String, Object> data = new HashMap<>();
+            data.put("value", row.get("value"));
+            data.put("count", row.get("count"));
+            List<Map<String, Object>> dimensionList = statsData.get(dimension);
+            if (dimensionList != null) {
+                dimensionList.add(data);
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("dimensions", validDimensions);
+        result.put("metrics", request.getMetrics());
+        result.put("data", statsData);
+        return result;
+    }
+
+    private Map<String, Object> queryTimeSeriesViaMcp(StatsQueryRequest request, DatasourceConnectionConfig config) {
+        String tableName = config.getTable();
+        String granularityFunc = getGranularityFunction(request.getGranularity());
+        String sql = SqlDebugFormatter.render(
+                String.format("SELECT %s as time_bucket, count(*) as count FROM %s WHERE timestamp >= ? AND timestamp <= ? GROUP BY time_bucket ORDER BY time_bucket",
+                        granularityFunc, tableName),
+                List.of(request.getStartTime(), request.getEndTime())
+        );
+        log.info("ClickHouse MCP timeseries SQL: {}", sql);
+
+        List<Map<String, Object>> series = clickHouseMcpQueryService.executeSelect(sql, config);
+        series.forEach(point -> {
+            if (point.get("time_bucket") != null) {
+                point.put("timestamp", point.get("time_bucket").toString());
+                point.remove("time_bucket");
+            }
+        });
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("granularity", request.getGranularity());
+        result.put("series", series);
+        return result;
+    }
+
     private Long queryTotalCount(JdbcTemplate jdbcTemplate, String tableName, LogQueryRequest request) {
         StringBuilder countSql = new StringBuilder();
         countSql.append("SELECT count(*) FROM ").append(tableName)
                 .append(" WHERE timestamp >= ? AND timestamp <= ?");
 
         List<Object> params = new ArrayList<>();
-        params.add(request.getStartTime());
-        params.add(request.getEndTime());
+        params.add(DateTimeUtils.format(request.getStartTime()));
+        params.add(DateTimeUtils.format(request.getEndTime()));
 
         addFieldFilters(countSql, params, request.getFieldFilters());
         addMessageConditions(countSql, params, request.getMessageConditions(), "message");
         addMessageConditions(countSql, params, request.getRawConditions(), "raw");
 
+        log.info("ClickHouse queryLogs count SQL: template={}, params={}, rendered={}",
+                countSql, params, SqlDebugFormatter.render(countSql.toString(), params));
         return jdbcTemplate.queryForObject(countSql.toString(), Long.class, params.toArray());
     }
 
@@ -525,6 +769,18 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public Object executeRawSQL(String sql, DatasourceConnectionConfig connectionConfig) {
         log.info("执行原始SQL: {}", sql);
 
+        if (clickHouseMcpQueryService.shouldUse(connectionConfig) && isReadOnlySql(sql)) {
+            try {
+                return clickHouseMcpQueryService.executeSelect(sql, connectionConfig);
+            } catch (Exception ex) {
+                if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
+                    log.warn("ClickHouse MCP 执行原始 SQL 失败，回退 JDBC: {}", ex.getMessage());
+                } else {
+                    throw ex;
+                }
+            }
+        }
+
         String jdbcUrl = buildJdbcUrl(connectionConfig);
         String username = connectionConfig.getUsername() != null ? connectionConfig.getUsername() : "default";
         String password = connectionConfig.getPassword() != null ? connectionConfig.getPassword() : "";
@@ -584,5 +840,21 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
         }
 
         return url.toString();
+    }
+
+    private String stringify(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private boolean isReadOnlySql(String sql) {
+        if (!StringUtils.hasText(sql)) {
+            return false;
+        }
+        String normalized = sql.trim().toLowerCase(Locale.ROOT);
+        return normalized.startsWith("select")
+                || normalized.startsWith("show")
+                || normalized.startsWith("describe")
+                || normalized.startsWith("explain")
+                || normalized.startsWith("with");
     }
 }

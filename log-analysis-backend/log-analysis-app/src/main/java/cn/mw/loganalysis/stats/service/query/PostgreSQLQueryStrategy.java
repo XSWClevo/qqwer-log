@@ -117,7 +117,8 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
         params.add(request.getPageSize());
         params.add((request.getPageNum() - 1) * request.getPageSize());
 
-        log.debug("Executing SQL: {}", sql);
+        log.info("PostgreSQL queryLogs data SQL: template={}, params={}, rendered={}",
+                sql, params, SqlDebugFormatter.render(sql.toString(), params));
 
         List<Map<String, Object>> data = jdbcTemplate.queryForList(sql.toString(), params.toArray());
 
@@ -269,6 +270,8 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
         addMessageConditions(countSql, params, request.getMessageConditions(), "message");
         addMessageConditions(countSql, params, request.getRawConditions(), "raw");
 
+        log.info("PostgreSQL queryLogs count SQL: template={}, params={}, rendered={}",
+                countSql, params, SqlDebugFormatter.render(countSql.toString(), params));
         return jdbcTemplate.queryForObject(countSql.toString(), Long.class, params.toArray());
 
     }

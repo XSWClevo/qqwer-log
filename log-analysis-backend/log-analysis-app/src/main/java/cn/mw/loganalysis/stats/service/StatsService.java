@@ -3,6 +3,7 @@ package cn.mw.loganalysis.stats.service;
 import cn.mw.loganalysis.stats.dto.LogContextRequest;
 import cn.mw.loganalysis.stats.dto.LogQueryRequest;
 import cn.mw.loganalysis.stats.dto.StatsQueryRequest;
+import cn.mw.loganalysis.stats.service.query.SqlDebugFormatter;
 import com.baomidou.dynamic.datasource.annotation.DS;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,7 +66,8 @@ public class StatsService {
         params.add(request.getPageSize());
         params.add((request.getPageNum() - 1) * request.getPageSize());
 
-        log.debug("Executing SQL: {}", sql);
+        log.info("Default ClickHouse queryLogs data SQL: template={}, params={}, rendered={}",
+                sql, params, SqlDebugFormatter.render(sql.toString(), params));
 
         // 执行查询
         List<Map<String, Object>> data = jdbcTemplate.query(
@@ -338,6 +340,8 @@ public class StatsService {
         // 添加raw条件
         addMessageConditions(countSql, countParams, request.getRawConditions(), "raw");
 
+        log.info("Default ClickHouse queryLogs count SQL: template={}, params={}, rendered={}",
+                countSql, countParams, SqlDebugFormatter.render(countSql.toString(), countParams));
         return jdbcTemplate.queryForObject(countSql.toString(), Long.class, countParams.toArray());
     }
 

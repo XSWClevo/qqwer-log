@@ -110,7 +110,7 @@ public class MachineMetricsService {
             }
 
             metricsMapper.insert(entity);
-            log.info("指标已写入 ClickHouse: machineId={}, cpu={}%, mem={}%",
+            log.debug("指标已写入 ClickHouse: machineId={}, cpu={}%, mem={}%",
                     machineId, request.getCpuUsagePercent(), request.getMemoryUsagePercent());
         } catch (Exception e) {
             log.error("写入 ClickHouse 失败: machineId={}", machineId, e);

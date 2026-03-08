@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
+import { clearStoredAuthTokens, isLikelyJwtToken } from '@/utils/jwt'
 
 // 创建axios实例
 const service: AxiosInstance = axios.create({
@@ -16,8 +17,10 @@ service.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // 从localStorage获取token
     const token = localStorage.getItem('accessToken')
-    if (token && config.headers) {
+    if (isLikelyJwtToken(token) && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
+    } else if (token) {
+      clearStoredAuthTokens()
     }
     return config
   },
@@ -39,8 +42,7 @@ service.interceptors.response.use(
       // 401: 未授权，需要重新登录
       if (res.code === 401) {
         // 清除token
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('refreshToken')
+        clearStoredAuthTokens()
         // 跳转到登录页
         window.location.href = '/login'
       }
@@ -59,8 +61,7 @@ service.interceptors.response.use(
       switch (status) {
         case 401:
           ElMessage.error('未授权，请重新登录')
-          localStorage.removeItem('accessToken')
-          localStorage.removeItem('refreshToken')
+          clearStoredAuthTokens()
           window.location.href = '/login'
           break
         case 403:

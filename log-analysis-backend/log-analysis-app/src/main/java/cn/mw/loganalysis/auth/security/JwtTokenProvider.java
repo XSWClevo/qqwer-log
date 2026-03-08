@@ -7,6 +7,7 @@ import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -75,6 +76,10 @@ public class JwtTokenProvider {
      * 验证令牌
      */
     public boolean validateToken(String token) {
+        if (!looksLikeJwt(token)) {
+            log.debug("Skipping JWT validation for malformed bearer token");
+            return false;
+        }
         try {
             SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
             Jwts.parser()
@@ -83,9 +88,20 @@ public class JwtTokenProvider {
                     .parseSignedClaims(token);
             return true;
         } catch (Exception e) {
-            log.error("JWT validation failed: {}", e.getMessage());
+            log.warn("JWT validation failed: {}", e.getMessage());
             return false;
         }
+    }
+
+    private boolean looksLikeJwt(String token) {
+        if (!StringUtils.hasText(token)) {
+            return false;
+        }
+        String trimmed = token.trim();
+        if ("undefined".equalsIgnoreCase(trimmed) || "null".equalsIgnoreCase(trimmed)) {
+            return false;
+        }
+        return trimmed.chars().filter(ch -> ch == '.').count() == 2;
     }
 
     /**

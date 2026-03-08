@@ -21,7 +21,13 @@ export interface LoginResponse {
   refreshToken: string
   tokenType: string
   expiresIn: number
-  user: User
+  userInfo: {
+    id: number
+    username: string
+    email: string
+    fullName: string
+    role: string
+  }
 }
 
 export interface ApiResponse<T = any> {

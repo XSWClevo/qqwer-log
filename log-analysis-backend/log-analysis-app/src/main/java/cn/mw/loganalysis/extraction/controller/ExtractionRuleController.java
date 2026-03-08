@@ -1,5 +1,6 @@
 package cn.mw.loganalysis.extraction.controller;
 
+import cn.mw.loganalysis.common.exception.UnauthorizedException;
 import cn.mw.loganalysis.common.response.Result;
 import cn.mw.loganalysis.extraction.dto.CreateExtractionRuleRequest;
 import cn.mw.loganalysis.extraction.dto.TestExtractionRuleRequest;
@@ -14,6 +15,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -41,9 +43,10 @@ public class ExtractionRuleController {
         resourceIdSpEL = "#result.data.id"
     )
     public Result<ExtractionRule> createRule(@Valid @RequestBody CreateExtractionRuleRequest request,
-                                             @RequestHeader("X-User-Id") Long userId) {
+                                             @RequestHeader(value = "X-User-Id", required = false) Long userId,
+                                             Authentication authentication) {
         log.info("Creating extraction rule: {}", request.getName());
-        ExtractionRule rule = extractionRuleService.createRule(request, userId);
+        ExtractionRule rule = extractionRuleService.createRule(request, resolveUserId(authentication, userId));
         return Result.success(rule);
     }
 
@@ -114,5 +117,18 @@ public class ExtractionRuleController {
             request.getTestLog()
         );
         return Result.success(result);
+    }
+
+    private Long resolveUserId(Authentication authentication, Long headerUserId) {
+        if (authentication != null) {
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof Long userId) {
+                return userId;
+            }
+        }
+        if (headerUserId != null) {
+            return headerUserId;
+        }
+        throw new UnauthorizedException("未获取到当前登录用户信息");
     }
 }

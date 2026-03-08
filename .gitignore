@@ -45,6 +45,7 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+log-analysis-backend/log-analysis-app/src/main/resources/application-local.yml
 
 # Docker volumes
 data/

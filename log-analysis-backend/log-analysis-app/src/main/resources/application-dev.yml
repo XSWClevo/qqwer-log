@@ -67,6 +67,25 @@ spring:
       group-id: log-analysis-group
       auto-offset-reset: earliest
 
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+          ssl:
+            enable: ${MAIL_SMTP_SSL:false}
+          connectiontimeout: 10000
+          timeout: 15000
+          writetimeout: 15000
+
 # MyBatis Plus配置
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
@@ -104,6 +123,44 @@ ai:
     url: ${AI_SERVICE_URL:http://localhost:8001}  # AI服务地址
     timeout: 60000  # 超时时间(毫秒) - 60秒，适配AI查询等长时间操作
 
+agent:
+  llm:
+    enabled: ${AGENT_LLM_ENABLED:true}
+    manual-chat-model: ${AGENT_LLM_MANUAL_CHAT_MODEL:false}
+    fallback-on-error: ${AGENT_LLM_FALLBACK_ON_ERROR:true}
+    max-history-messages: ${AGENT_LLM_MAX_HISTORY_MESSAGES:6}
+  mcp:
+    clickhouse:
+      enabled: ${AGENT_CLICKHOUSE_MCP_ENABLED:false}
+      fallback-to-jdbc-on-error: true
+      executable: ${AGENT_CLICKHOUSE_MCP_EXECUTABLE:}
+      request-timeout: 30s
+      startup-timeout: 10s
+      verify-ssl: true
+      connect-timeout-seconds: 10
+      send-receive-timeout-seconds: 30
+  email:
+    from: ${AGENT_EMAIL_FROM:${MAIL_USERNAME:}}
+
+# LangChain4j OpenAI 兼容协议说明：
+# - chat-completions: 默认，适用于标准 /v1/chat/completions
+# - responses: 适用于只支持 /v1/responses 的中转站
+# - DashScope/Qwen: 也走 chat-completions，base-url 使用
+#   https://dashscope.aliyuncs.com/compatible-mode/v1
+# 生产环境建议仍通过环境变量或本地忽略文件覆盖，而不是直接把 key 写在这里。
+
+# ClickHouse MCP 使用说明：
+# - 仅对 clickhouse 类型数据源生效
+# - enabled=true 且 executable 非空时，ClickHouse 查询优先走官方 mcp-clickhouse
+# - 后端现在使用官方 Java SDK 的 STDIO client，不再手写 JSON-RPC 协议
+# - arguments 建议放在 application-local.yml，例如:
+#   agent:
+#     mcp:
+#       clickhouse:
+#         executable: uvx
+#         arguments:
+#           - mcp-clickhouse
+
 # Spring Actuator配置
 management:
   endpoints:
@@ -121,6 +178,8 @@ management:
 # 日志配置
 logging:
   level:
+    dev:
+      langchain4j: debug
     root: INFO
     #cn.mw.loganalysis: DEBUG
     #org.springframework.security: DEBUG

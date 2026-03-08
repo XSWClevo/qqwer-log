@@ -174,7 +174,7 @@ public class VectorAgentController {
             // 记录指标历史
             machineMetricsService.recordMetrics(machine.getId(), request);
             
-            log.info("Agent 上报指标: machineId={}, cpu={}%, mem={}%, vectorRunning={}, components={}", 
+            log.debug("Agent 上报指标: machineId={}, cpu={}%, mem={}%, vectorRunning={}, components={}",
                     machine.getId(),
                     request.getCpuUsagePercent(), 
                     request.getMemoryUsagePercent(),
