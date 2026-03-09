@@ -131,9 +131,11 @@ agent:
     max-history-messages: ${AGENT_LLM_MAX_HISTORY_MESSAGES:6}
   mcp:
     clickhouse:
-      enabled: ${AGENT_CLICKHOUSE_MCP_ENABLED:false}
+      enabled: ${AGENT_CLICKHOUSE_MCP_ENABLED:true}
       fallback-to-jdbc-on-error: true
-      executable: ${AGENT_CLICKHOUSE_MCP_EXECUTABLE:}
+      executable: ${AGENT_CLICKHOUSE_MCP_EXECUTABLE:uvx}
+      arguments:
+        - mcp-clickhouse
       request-timeout: 30s
       startup-timeout: 10s
       verify-ssl: true

@@ -17,6 +17,12 @@ import java.util.Map;
 public class AgentToolCall {
 
     /**
+     * 本次 tool call 的唯一标识。
+     * 流式场景下，前端依赖这个值把 "开始执行" 和 "执行完成" 两个事件关联到同一次工具调用。
+     */
+    private String toolCallId;
+
+    /**
      * 工具编码
      */
     private String toolName;

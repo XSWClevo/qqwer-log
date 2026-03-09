@@ -11,12 +11,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +32,6 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
 
     private final UserOperationLogMapper operationLogMapper;
     private final OperationLogConverter operationLogConverter;
-    private final JdbcTemplate jdbcTemplate;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -100,75 +97,17 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
 
     @Override
     public List<OperationStatsDTO> statsByOperationType(String startTime, String endTime) {
-        String sql = """
-            SELECT
-                operation_type AS name,
-                COUNT(*) AS count,
-                SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
-                SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
-                ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
-            FROM user_operation_logs
-            WHERE created_at >= ?::timestamp AND created_at <= ?::timestamp
-            GROUP BY operation_type
-            ORDER BY count DESC
-            """;
-
-        return jdbcTemplate.query(sql, (rs, rowNum) -> OperationStatsDTO.builder()
-            .name(rs.getString("name"))
-            .count(rs.getLong("count"))
-            .successCount(rs.getLong("success_count"))
-            .failureCount(rs.getLong("failure_count"))
-            .successRate(rs.getDouble("success_rate"))
-            .build(), startTime, endTime);
+        return operationLogMapper.selectStatsByOperationType(startTime, endTime);
     }
 
     @Override
     public List<OperationStatsDTO> statsByModule(String startTime, String endTime) {
-        String sql = """
-            SELECT
-                module AS name,
-                COUNT(*) AS count,
-                SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
-                SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
-                ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
-            FROM user_operation_logs
-            WHERE created_at >= ?::timestamp AND created_at <= ?::timestamp
-            GROUP BY module
-            ORDER BY count DESC
-            """;
-
-        return jdbcTemplate.query(sql, (rs, rowNum) -> OperationStatsDTO.builder()
-            .name(rs.getString("name"))
-            .count(rs.getLong("count"))
-            .successCount(rs.getLong("success_count"))
-            .failureCount(rs.getLong("failure_count"))
-            .successRate(rs.getDouble("success_rate"))
-            .build(), startTime, endTime);
+        return operationLogMapper.selectStatsByModule(startTime, endTime);
     }
 
     @Override
     public List<OperationStatsDTO> statsByUser(String startTime, String endTime, int limit) {
-        String sql = """
-            SELECT
-                username AS name,
-                COUNT(*) AS count,
-                SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
-                SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
-                ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
-            FROM user_operation_logs
-            WHERE created_at >= ?::timestamp AND created_at <= ?::timestamp
-            GROUP BY username
-            ORDER BY count DESC
-            LIMIT ?
-            """;
-
-        return jdbcTemplate.query(sql, (rs, rowNum) -> OperationStatsDTO.builder()
-            .name(rs.getString("name"))
-            .count(rs.getLong("count"))
-            .successCount(rs.getLong("success_count"))
-            .failureCount(rs.getLong("failure_count"))
-            .successRate(rs.getDouble("success_rate"))
-            .build(), startTime, endTime, limit);
+        return operationLogMapper.selectStatsByUser(startTime, endTime, limit);
     }
 
     @Override
@@ -193,12 +132,7 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
         }
 
         // 检测 3: 批量删除 (5分钟内删除 > 10次)
-        String deleteSql = """
-            SELECT COUNT(*) FROM user_operation_logs
-            WHERE user_id = ? AND operation_type = 'DELETE'
-            AND created_at >= ? AND created_at <= ?
-            """;
-        Long deleteCount = jdbcTemplate.queryForObject(deleteSql, Long.class, userId, fiveMinutesAgo, now);
+        Long deleteCount = operationLogMapper.countDeleteOperationsByUserIdAndTime(userId, fiveMinutesAgo, now);
         if (deleteCount != null && deleteCount > 10) {
             alerts.put("BATCH_DELETE",
                 String.format("用户 %d 在5分钟内删除 %d 次，可能是误操作或恶意行为", userId, deleteCount));
@@ -215,16 +149,10 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
 
         try {
             // 1. 复制数据到归档表
-            String insertSql = """
-                INSERT INTO user_operation_logs_archive
-                SELECT * FROM user_operation_logs
-                WHERE created_at < ?
-                """;
-            int archivedCount = jdbcTemplate.update(insertSql, cutoffDate);
+            int archivedCount = operationLogMapper.insertArchiveBefore(cutoffDate);
 
             // 2. 删除主表旧数据
-            String deleteSql = "DELETE FROM user_operation_logs WHERE created_at < ?";
-            jdbcTemplate.update(deleteSql, cutoffDate);
+            operationLogMapper.deleteLogsBefore(cutoffDate);
 
             log.info("Successfully archived {} operation logs before {}", archivedCount, cutoffDate);
             return archivedCount;

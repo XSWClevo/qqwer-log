@@ -8,25 +8,24 @@ import cn.mw.loganalysis.agent.dto.AgentConversationEntry;
 import cn.mw.loganalysis.agent.dto.AgentConversationSummary;
 import cn.mw.loganalysis.agent.dto.AgentResult;
 import cn.mw.loganalysis.agent.dto.AgentToolCall;
+import cn.mw.loganalysis.agent.entity.AgentConversation;
+import cn.mw.loganalysis.agent.entity.AgentConversationMessage;
+import cn.mw.loganalysis.agent.mapper.AgentConversationMapper;
+import cn.mw.loganalysis.agent.mapper.AgentConversationMessageMapper;
 import cn.mw.loganalysis.vector.entity.ConfigComponent;
 import cn.mw.loganalysis.vector.service.ConfigComponentService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 /**
  * 智能助手历史会话持久化服务。
@@ -48,7 +47,8 @@ public class AgentConversationHistoryService {
     private static final TypeReference<List<AgentToolCall>> TOOL_CALL_LIST_TYPE = new TypeReference<>() {};
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
 
-    private final JdbcTemplate jdbcTemplate;
+    private final AgentConversationMapper conversationMapper;
+    private final AgentConversationMessageMapper messageMapper;
     private final ObjectMapper objectMapper;
     private final ConfigComponentService configComponentService;
     private final AtomicBoolean schemaReady = new AtomicBoolean(false);
@@ -142,22 +142,9 @@ public class AgentConversationHistoryService {
             return Collections.emptyList();
         }
 
-        return jdbcTemplate.query("""
-                SELECT id,
-                       title,
-                       preview,
-                       datasource_id,
-                       datasource_name,
-                       datasource_type,
-                       message_count,
-                       created_at,
-                       updated_at,
-                       last_message_at
-                FROM agent_conversations
-                WHERE user_id = ?
-                ORDER BY last_message_at DESC, updated_at DESC
-                LIMIT 100
-                """, summaryRowMapper(), userId);
+        return conversationMapper.selectRecentByUserId(userId).stream()
+                .map(this::mapConversationSummary)
+                .collect(Collectors.toList());
     }
 
     public AgentConversationDetail getConversation(Long userId, String sessionId) {
@@ -169,38 +156,15 @@ public class AgentConversationHistoryService {
             return null;
         }
 
-        List<AgentConversationSummary> summaries = jdbcTemplate.query("""
-                SELECT id,
-                       title,
-                       preview,
-                       datasource_id,
-                       datasource_name,
-                       datasource_type,
-                       message_count,
-                       created_at,
-                       updated_at,
-                       last_message_at
-                FROM agent_conversations
-                WHERE user_id = ? AND id = ?
-                LIMIT 1
-                """, summaryRowMapper(), userId, sessionId);
-        if (summaries.isEmpty()) {
+        AgentConversation conversation = conversationMapper.selectOwnedConversation(userId, sessionId);
+        if (conversation == null) {
             return null;
         }
 
-        AgentConversationSummary summary = summaries.get(0);
-        List<AgentConversationEntry> messages = jdbcTemplate.query("""
-                SELECT id,
-                       role,
-                       content,
-                       tool_calls_json,
-                       result_json,
-                       suggestions_json,
-                       created_at
-                FROM agent_conversation_messages
-                WHERE conversation_id = ?
-                ORDER BY created_at ASC, id ASC
-                """, this::mapConversationEntry, sessionId);
+        AgentConversationSummary summary = mapConversationSummary(conversation);
+        List<AgentConversationEntry> messages = messageMapper.selectByConversationId(sessionId).stream()
+                .map(this::mapConversationEntry)
+                .collect(Collectors.toList());
 
         AgentConversationDetail detail = new AgentConversationDetail();
         detail.setSessionId(summary.getSessionId());
@@ -223,36 +187,29 @@ public class AgentConversationHistoryService {
             return;
         }
 
-        jdbcTemplate.update("DELETE FROM agent_conversations WHERE user_id = ? AND id = ?", userId, sessionId);
+        conversationMapper.deleteOwnedConversation(userId, sessionId);
     }
 
     private List<AgentChatMessage> loadChatHistory(Long userId, String sessionId) {
-        return jdbcTemplate.query("""
-                SELECT role, content
-                FROM agent_conversation_messages m
-                JOIN agent_conversations c ON c.id = m.conversation_id
-                WHERE c.user_id = ? AND c.id = ?
-                ORDER BY m.created_at ASC, m.id ASC
-                """, (rs, rowNum) -> {
-            AgentChatMessage message = new AgentChatMessage();
-            message.setRole(rs.getString("role"));
-            message.setContent(rs.getString("content"));
-            return message;
-        }, userId, sessionId);
+        AgentConversation conversation = conversationMapper.selectOwnedConversation(userId, sessionId);
+        if (conversation == null) {
+            return Collections.emptyList();
+        }
+        return messageMapper.selectByConversationId(sessionId).stream()
+                .map(record -> {
+                    AgentChatMessage message = new AgentChatMessage();
+                    message.setRole(record.getRole());
+                    message.setContent(record.getContent());
+                    return message;
+                })
+                .collect(Collectors.toList());
     }
 
     private void upsertConversation(Long userId, ConversationIdentity identity, String userMessage) {
         String sessionId = identity.sessionId();
         String title = abbreviate(StringUtils.hasText(userMessage) ? userMessage : "新对话", MAX_TITLE_LENGTH);
 
-        jdbcTemplate.update("""
-                INSERT INTO agent_conversations (
-                    id, user_id, title, preview, datasource_id, datasource_name, datasource_type,
-                    message_count, created_at, updated_at, last_message_at
-                )
-                VALUES (?, ?, ?, '', ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (id) DO NOTHING
-                """,
+        conversationMapper.insertIfAbsent(
                 sessionId,
                 userId,
                 title,
@@ -268,19 +225,14 @@ public class AgentConversationHistoryService {
                                List<AgentToolCall> toolCalls,
                                AgentResult result,
                                List<String> suggestions) {
-        jdbcTemplate.update("""
-                INSERT INTO agent_conversation_messages (
-                    conversation_id, role, content, tool_calls_json, result_json, suggestions_json, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """,
-                sessionId,
-                role,
-                content,
-                writeJson(toolCalls),
-                writeJson(result),
-                writeJson(suggestions)
-        );
+        messageMapper.insert(AgentConversationMessage.builder()
+                .conversationId(sessionId)
+                .role(role)
+                .content(content)
+                .toolCallsJson(writeJson(toolCalls))
+                .resultJson(writeJson(result))
+                .suggestionsJson(writeJson(suggestions))
+                .build());
     }
 
     private void updateConversationAfterTurn(String sessionId,
@@ -288,29 +240,14 @@ public class AgentConversationHistoryService {
                                              String titleSeed,
                                              String previewSeed,
                                              int addedMessages) {
-        jdbcTemplate.update("""
-                UPDATE agent_conversations
-                SET title = CASE
-                                WHEN message_count = 0 OR title IS NULL OR title = '' OR title = '新对话'
-                                    THEN ?
-                                ELSE title
-                            END,
-                    preview = ?,
-                    datasource_id = COALESCE(?, datasource_id),
-                    datasource_name = COALESCE(?, datasource_name),
-                    datasource_type = COALESCE(?, datasource_type),
-                    message_count = message_count + ?,
-                    updated_at = CURRENT_TIMESTAMP,
-                    last_message_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
+        conversationMapper.updateAfterTurn(
+                sessionId,
                 abbreviate(titleSeed, MAX_TITLE_LENGTH),
                 abbreviate(previewSeed, MAX_PREVIEW_LENGTH),
                 identity.datasourceId(),
                 identity.datasourceName(),
                 identity.datasourceType(),
-                addedMessages,
-                sessionId
+                addedMessages
         );
     }
 
@@ -351,35 +288,31 @@ public class AgentConversationHistoryService {
         );
     }
 
-    private AgentConversationSummary mapConversationSummary(ResultSet rs, int rowNum) throws SQLException {
+    private AgentConversationSummary mapConversationSummary(AgentConversation conversation) {
         return AgentConversationSummary.builder()
-                .sessionId(rs.getString("id"))
-                .title(rs.getString("title"))
-                .preview(rs.getString("preview"))
-                .datasourceId(rs.getString("datasource_id"))
-                .datasourceName(rs.getString("datasource_name"))
-                .datasourceType(rs.getString("datasource_type"))
-                .messageCount(rs.getInt("message_count"))
-                .createdAt(toLocalDateTime(rs, "created_at"))
-                .updatedAt(toLocalDateTime(rs, "updated_at"))
-                .lastMessageAt(toLocalDateTime(rs, "last_message_at"))
+                .sessionId(conversation.getId())
+                .title(conversation.getTitle())
+                .preview(conversation.getPreview())
+                .datasourceId(conversation.getDatasourceId())
+                .datasourceName(conversation.getDatasourceName())
+                .datasourceType(conversation.getDatasourceType())
+                .messageCount(conversation.getMessageCount())
+                .createdAt(conversation.getCreatedAt())
+                .updatedAt(conversation.getUpdatedAt())
+                .lastMessageAt(conversation.getLastMessageAt())
                 .build();
     }
 
-    private AgentConversationEntry mapConversationEntry(ResultSet rs, int rowNum) throws SQLException {
+    private AgentConversationEntry mapConversationEntry(AgentConversationMessage message) {
         return AgentConversationEntry.builder()
-                .id(rs.getLong("id"))
-                .role(rs.getString("role"))
-                .content(rs.getString("content"))
-                .toolCalls(readToolCalls(rs.getString("tool_calls_json")))
-                .result(readResult(rs.getString("result_json")))
-                .suggestions(readStringList(rs.getString("suggestions_json")))
-                .createdAt(toLocalDateTime(rs, "created_at"))
+                .id(message.getId())
+                .role(message.getRole())
+                .content(message.getContent())
+                .toolCalls(readToolCalls(message.getToolCallsJson()))
+                .result(readResult(message.getResultJson()))
+                .suggestions(readStringList(message.getSuggestionsJson()))
+                .createdAt(message.getCreatedAt())
                 .build();
-    }
-
-    private RowMapper<AgentConversationSummary> summaryRowMapper() {
-        return this::mapConversationSummary;
     }
 
     private List<AgentToolCall> readToolCalls(String json) {
@@ -429,11 +362,6 @@ public class AgentConversationHistoryService {
         }
     }
 
-    private LocalDateTime toLocalDateTime(ResultSet rs, String column) throws SQLException {
-        Timestamp timestamp = rs.getTimestamp(column);
-        return timestamp != null ? timestamp.toLocalDateTime() : null;
-    }
-
     private String abbreviate(String text, int maxLength) {
         if (!StringUtils.hasText(text)) {
             return "";
@@ -454,37 +382,11 @@ public class AgentConversationHistoryService {
 
     private void ensureSchema() {
         if (schemaReady.compareAndSet(false, true)) {
-            jdbcTemplate.execute("""
-                    CREATE TABLE IF NOT EXISTS agent_conversations (
-                        id VARCHAR(64) PRIMARY KEY,
-                        user_id BIGINT NOT NULL,
-                        title VARCHAR(255) NOT NULL,
-                        preview TEXT,
-                        datasource_id VARCHAR(36),
-                        datasource_name VARCHAR(255),
-                        datasource_type VARCHAR(50),
-                        message_count INTEGER NOT NULL DEFAULT 0,
-                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        last_message_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """);
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_conversations_user_last_message ON agent_conversations(user_id, last_message_at DESC)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_conversations_user_updated_at ON agent_conversations(user_id, updated_at DESC)");
-
-            jdbcTemplate.execute("""
-                    CREATE TABLE IF NOT EXISTS agent_conversation_messages (
-                        id BIGSERIAL PRIMARY KEY,
-                        conversation_id VARCHAR(64) NOT NULL REFERENCES agent_conversations(id) ON DELETE CASCADE,
-                        role VARCHAR(20) NOT NULL,
-                        content TEXT,
-                        tool_calls_json TEXT,
-                        result_json TEXT,
-                        suggestions_json TEXT,
-                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """);
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_conversation_messages_conversation_time ON agent_conversation_messages(conversation_id, created_at ASC, id ASC)");
+            conversationMapper.ensureTable();
+            conversationMapper.ensureUserLastMessageIndex();
+            conversationMapper.ensureUserUpdatedAtIndex();
+            messageMapper.ensureTable();
+            messageMapper.ensureConversationTimeIndex();
 
             log.info("智能助手历史记录表结构已就绪");
         }

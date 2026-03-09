@@ -4,8 +4,7 @@ import cn.mw.loganalysis.agent.service.LangChain4jLogAnalysisAgentExecutor;
 import dev.langchain4j.http.client.spring.restclient.SpringRestClient;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
-import dev.langchain4j.model.openai.OpenAiChatModel;
-import dev.langchain4j.model.openai.OpenAiChatRequestParameters;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,9 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
@@ -38,7 +35,7 @@ public class LangChain4jAgentConfiguration {
     private static final Logger log = LoggerFactory.getLogger(LangChain4jAgentConfiguration.class);
 
 
-    @Bean("responsesStreamingChatModel")
+    @Bean({"responsesStreamingChatModel", "activeStreamingChatModel"})
     @ConditionalOnProperty(prefix = "agent.llm", name = "enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnProperty(prefix = "langchain4j.open-ai.chat-model", name = "api-key")
     @ConditionalOnProperty(prefix = "langchain4j.open-ai.chat-model", name = "wire-api", havingValue = "responses")
@@ -80,6 +77,38 @@ public class LangChain4jAgentConfiguration {
         }
 
         log.info("创建 LangChain4j Responses StreamingChatModel Bean: model={}, baseUrl={}",
+                properties.getModelName(), properties.getBaseUrl());
+        return builder.build();
+    }
+
+    @Bean("activeStreamingChatModel")
+    @ConditionalOnProperty(prefix = "agent.llm", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "langchain4j.open-ai.chat-model", name = "api-key")
+    @ConditionalOnProperty(prefix = "langchain4j.open-ai.chat-model", name = "wire-api", havingValue = "chat-completions", matchIfMissing = true)
+    public OpenAiStreamingChatModel chatCompletionsStreamingChatModel(LangChain4jChatModelProperties properties,
+                                                                      ObjectProvider<RestClient.Builder> restClientBuilderProvider,
+                                                                      ObjectProvider<ChatModelListener> chatModelListeners) {
+        /**
+         * 流式聊天页不能只依赖同步 ChatModel。
+         * 当前项目的同步 /api/agent/chat 仍可继续走 ChatModel，
+         * 但新增的 /api/agent/chat/stream 需要一个真正的 StreamingChatModel 才能把 token 持续推给前端。
+         */
+        var builder = OpenAiStreamingChatModel.builder()
+                .httpClientBuilder(SpringRestClient.builder()
+                        .restClientBuilder(restClientBuilderProvider.getIfAvailable(RestClient::builder)))
+                .apiKey(properties.getApiKey())
+                .baseUrl(properties.getBaseUrl())
+                .modelName(properties.getModelName())
+                .listeners(chatModelListeners.orderedStream().toList());
+
+        if (properties.getLogRequests() != null) {
+            builder.logRequests(properties.getLogRequests());
+        }
+        if (properties.getLogResponses() != null) {
+            builder.logResponses(properties.getLogResponses());
+        }
+
+        log.info("创建 LangChain4j Chat Completions StreamingChatModel Bean: model={}, baseUrl={}",
                 properties.getModelName(), properties.getBaseUrl());
         return builder.build();
     }

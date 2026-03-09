@@ -11,6 +11,7 @@ import cn.mw.loganalysis.vector.service.ConfigComponentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.yaml.snakeyaml.Yaml;
@@ -18,6 +19,8 @@ import org.yaml.snakeyaml.Yaml;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 动态日志查询服务
@@ -28,8 +31,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DynamicLogQueryService {
 
+    private static final Pattern SHELL_STYLE_PLACEHOLDER =
+            Pattern.compile("\\$\\{([A-Za-z0-9_.-]+)(?::-([^}]*))?}");
+
     private final ConfigComponentService configComponentService;
     private final List<LogQueryStrategy> queryStrategies;
+    private final Environment environment;
 
     /**
      * 获取数据源的表结构（字段列表）
@@ -186,12 +193,18 @@ public class DynamicLogQueryService {
         builder.table(getStringValue(config, "table", "logs"));
         
         // 解析认证信息
+        String username = null;
+        String password = null;
         Object auth = config.get("auth");
         if (auth instanceof Map) {
             Map<String, Object> authMap = (Map<String, Object>) auth;
-            builder.username(getStringValue(authMap, "user", null));
-            builder.password(getStringValue(authMap, "password", null));
+            username = getStringValue(authMap, "user", null);
+            password = getStringValue(authMap, "password", null);
         }
+        builder.username(firstNonBlank(username, getConfiguredProperty(
+                "spring.datasource.dynamic.datasource.clickhouse.username", "default")));
+        builder.password(firstNonBlank(password, getConfiguredProperty(
+                "spring.datasource.dynamic.datasource.clickhouse.password", "")));
         
         // 检查 TLS
         Object tls = config.get("tls");
@@ -349,7 +362,33 @@ public class DynamicLogQueryService {
         if (value == null) {
             return defaultValue;
         }
-        return value.toString();
+        String resolved = resolveTemplateValue(value.toString());
+        return org.apache.commons.lang3.StringUtils.isNotBlank(resolved) ? resolved : defaultValue;
+    }
+
+    private String resolveTemplateValue(String rawValue) {
+        if (org.apache.commons.lang3.StringUtils.isBlank(rawValue) || !rawValue.contains("${")) {
+            return rawValue;
+        }
+        Matcher matcher = SHELL_STYLE_PLACEHOLDER.matcher(rawValue);
+        StringBuffer resolved = new StringBuffer();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            String defaultValue = matcher.group(2);
+            String replacement = getConfiguredProperty(key, defaultValue);
+            matcher.appendReplacement(resolved, Matcher.quoteReplacement(replacement != null ? replacement : ""));
+        }
+        matcher.appendTail(resolved);
+        return resolved.toString();
+    }
+
+    private String getConfiguredProperty(String key, String defaultValue) {
+        String configuredValue = environment.getProperty(key);
+        return org.apache.commons.lang3.StringUtils.isNotBlank(configuredValue) ? configuredValue : defaultValue;
+    }
+
+    private String firstNonBlank(String primaryValue, String fallbackValue) {
+        return org.apache.commons.lang3.StringUtils.isNotBlank(primaryValue) ? primaryValue : fallbackValue;
     }
 
     /**

@@ -4,6 +4,7 @@ import cn.mw.loganalysis.agent.config.LangChain4jChatModelProperties;
 import cn.mw.loganalysis.agent.dto.AgentChatRequest;
 import cn.mw.loganalysis.agent.dto.AgentChatResponse;
 import cn.mw.loganalysis.agent.dto.AgentChatMessage;
+import cn.mw.loganalysis.agent.dto.AgentStreamEvent;
 import cn.mw.loganalysis.agent.dto.AgentResult;
 import cn.mw.loganalysis.agent.dto.AgentToolCall;
 import cn.mw.loganalysis.agent.dto.AgentConversationDetail;
@@ -26,6 +27,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -92,59 +94,82 @@ public class LogAnalysisAgentService {
     private boolean fallbackOnError;
 
     public AgentChatResponse chat(AgentChatRequest request, Long userId) {
-        AgentChatRequest hydratedRequest = conversationHistoryService.hydrateRequestHistory(request, userId);
-        AgentConversationMemoryService.PreparedAgentChatRequest preparedRequest = conversationMemoryService.prepare(hydratedRequest);
+        AgentConversationMemoryService.PreparedAgentChatRequest preparedRequest = prepareEffectiveRequest(request, userId);
+        AgentChatRequest effectiveRequest = preparedRequest.request();
+        String sessionId = preparedRequest.sessionId();
+        AgentChatResponse response;
+        try {
+            response = executePreparedChat(effectiveRequest, false, null);
+        } catch (IOException ex) {
+            log.error("同步智能助手请求意外触发流式写出异常, datasourceId={}, message={}",
+                    effectiveRequest.getDatasourceId(), effectiveRequest.getMessage(), ex);
+            response = buildErrorResponse("智能助手处理失败: " + ex.getMessage());
+        }
+        return finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), response);
+    }
+
+    /**
+     * 流式聊天入口。
+     *
+     * 这层不直接参与 LLM token 生成，只负责：
+     * 1. 准备 session/history
+     * 2. 发出 started/done 这两个协议级事件
+     * 3. 在最终完成后统一落 memory 和历史记录
+     *
+     * 具体 token/tool 事件由 executor 在调用模型时持续发出。
+     */
+    public void streamChat(AgentChatRequest request, Long userId, AgentStreamEventEmitter emitter) throws IOException {
+        AgentConversationMemoryService.PreparedAgentChatRequest preparedRequest = prepareEffectiveRequest(request, userId);
         AgentChatRequest effectiveRequest = preparedRequest.request();
         String sessionId = preparedRequest.sessionId();
 
+        emitter.emit(AgentStreamEvent.started(sessionId));
+        AgentChatResponse response = executePreparedChat(effectiveRequest, true, emitter);
+        AgentChatResponse finalizedResponse = finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), response);
+        emitter.emit(AgentStreamEvent.done(finalizedResponse));
+    }
+
+    private AgentConversationMemoryService.PreparedAgentChatRequest prepareEffectiveRequest(AgentChatRequest request, Long userId) {
+        AgentChatRequest hydratedRequest = conversationHistoryService.hydrateRequestHistory(request, userId);
+        return conversationMemoryService.prepare(hydratedRequest);
+    }
+
+    private AgentChatResponse executePreparedChat(AgentChatRequest effectiveRequest,
+                                                  boolean streamMode,
+                                                  AgentStreamEventEmitter emitter) throws IOException {
         if (llmEnabled) {
-            /**
-             * ObjectProvider#getIfAvailable() 返回 null 的含义很直接：
-             * Spring 容器里当前没有 LangChain4jLogAnalysisAgentExecutor 这个 Bean。
-             *
-             * 常见原因只有几类：
-             * 1. agent.llm.enabled=false，直接关闭了 LLM 链路
-             * 2. 当前协议对应的模型 Bean 没创建成功，例如未配置 api-key
-             * 3. executor 自身因为协议和模型不匹配而未注册成功
-             *
-             * 这里用可选获取而不是直接注入，就是为了让“未配置模型”时仍然能回退到规则版。
-             */
             LangChain4jLogAnalysisAgentExecutor llmExecutor = llmExecutorProvider.getIfAvailable();
             if (llmExecutor != null) {
                 try {
-                    AgentChatResponse response = llmExecutor.chat(effectiveRequest);
-                    return finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), response);
+                    return streamMode
+                            ? llmExecutor.streamChat(effectiveRequest, emitter)
+                            : llmExecutor.chat(effectiveRequest);
                 } catch (Exception ex) {
                     String llmFailureMessage = describeLlmFailure(ex);
                     log.error("LangChain4j 智能助手处理失败, datasourceId={}, message={}",
                             effectiveRequest.getDatasourceId(), effectiveRequest.getMessage(), ex);
                     log.warn("LangChain4j 智能助手已回退到规则版: {}", llmFailureMessage);
                     if (!fallbackOnError) {
-                        return finalizeResponse(userId, sessionId, effectiveRequest.getMessage(),
-                                buildErrorResponse("智能助手处理失败: " + llmFailureMessage));
+                        return buildErrorResponse("智能助手处理失败: " + llmFailureMessage);
                     }
                 }
-            } else if (llmUnavailableLogged.compareAndSet(false, true)) {
-                log.info("LangChain4j 执行器未注册，当前请求回退到规则版。诊断信息: llmEnabled={}, wireApi={}, apiKeyPresent={}, chatModelPresent={}, responsesModelPresent={}, chatModelBeans={}, responsesModelBeans={}, executorBeans={}",
-                        llmEnabled,
-                        chatModelProperties.getWireApi(),
-                        StringUtils.hasText(chatModelProperties.getApiKey()),
-                        chatModelProvider.getIfAvailable() != null,
-                        responsesStreamingChatModelProvider.getIfAvailable() != null,
-                        Arrays.toString(applicationContext.getBeanNamesForType(ChatModel.class)),
-                        Arrays.toString(applicationContext.getBeanNamesForType(OpenAiResponsesStreamingChatModel.class)),
-                        Arrays.toString(applicationContext.getBeanNamesForType(LangChain4jLogAnalysisAgentExecutor.class)));
+            } else {
+                logLlmUnavailableOnce();
             }
         }
+        return executeRuleChat(effectiveRequest, emitter);
+    }
 
+    private AgentChatResponse executeRuleChat(AgentChatRequest effectiveRequest,
+                                              AgentStreamEventEmitter emitter) throws IOException {
         String message = normalizeMessage(effectiveRequest.getMessage());
         if (!StringUtils.hasText(effectiveRequest.getDatasourceId())) {
-            return finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), buildErrorResponse("请选择一个可查询的数据源后再提问"));
+            return buildErrorResponse("请选择一个可查询的数据源后再提问");
         }
 
         ConfigComponent datasource = configComponentService.getById(effectiveRequest.getDatasourceId());
         if (datasource == null) {
-            return finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), buildErrorResponse("选中的数据源不存在"));
+            return buildErrorResponse("选中的数据源不存在");
         }
 
         String effectiveMessage = enrichMessageWithHistory(message, effectiveRequest.getHistory());
@@ -162,10 +187,11 @@ public class LogAnalysisAgentService {
                 case TEXT2SQL -> handleText2SqlIntent(effectiveMessage, effectiveRequest.getDatasourceId(), datasource.getName());
                 case LOGS -> handleLogsIntent(effectiveMessage, effectiveRequest.getDatasourceId(), datasource.getName());
             };
-            return finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), response);
+            emitCompletedToolCalls(response, emitter);
+            return response;
         } catch (Exception ex) {
             log.error("智能助手处理失败, datasourceId={}, message={}", effectiveRequest.getDatasourceId(), effectiveRequest.getMessage(), ex);
-            return finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), buildErrorResponse("处理失败: " + ex.getMessage()));
+            return buildErrorResponse("处理失败: " + ex.getMessage());
         } finally {
             AgentExecutionContextHolder.clear();
         }
@@ -396,6 +422,15 @@ public class LogAnalysisAgentService {
         conversationMemoryService.forget(sessionId);
     }
 
+    private void emitCompletedToolCalls(AgentChatResponse response, AgentStreamEventEmitter emitter) throws IOException {
+        if (emitter == null || response == null || response.getToolCalls() == null) {
+            return;
+        }
+        for (AgentToolCall toolCall : response.getToolCalls()) {
+            emitter.emit(AgentStreamEvent.toolFinished(toolCall));
+        }
+    }
+
     /**
      * 所有对外返回都在这里补上 sessionId，并把本轮 user/assistant 文本写入 memory。
      *
@@ -436,6 +471,20 @@ public class LogAnalysisAgentService {
         }
         ConfigComponent datasource = configComponentService.getById(datasourceId);
         return datasource != null ? datasource.getVectorType() : null;
+    }
+
+    private void logLlmUnavailableOnce() {
+        if (llmUnavailableLogged.compareAndSet(false, true)) {
+            log.info("LangChain4j 执行器未注册，当前请求回退到规则版。诊断信息: llmEnabled={}, wireApi={}, apiKeyPresent={}, chatModelPresent={}, responsesModelPresent={}, chatModelBeans={}, responsesModelBeans={}, executorBeans={}",
+                    llmEnabled,
+                    chatModelProperties.getWireApi(),
+                    StringUtils.hasText(chatModelProperties.getApiKey()),
+                    chatModelProvider.getIfAvailable() != null,
+                    responsesStreamingChatModelProvider.getIfAvailable() != null,
+                    Arrays.toString(applicationContext.getBeanNamesForType(ChatModel.class)),
+                    Arrays.toString(applicationContext.getBeanNamesForType(OpenAiResponsesStreamingChatModel.class)),
+                    Arrays.toString(applicationContext.getBeanNamesForType(LangChain4jLogAnalysisAgentExecutor.class)));
+        }
     }
 
     private AgentIntent detectIntent(String message, String datasourceType) {

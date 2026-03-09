@@ -441,6 +441,17 @@
                 </div>
 
                 <div class="composer-actions">
+                  <div class="streaming-toggle">
+                    <span>流式返回</span>
+                    <el-switch
+                      v-model="streamingEnabled"
+                      size="small"
+                      inline-prompt
+                      active-text="开"
+                      inactive-text="关"
+                      :disabled="sending"
+                    />
+                  </div>
                   <el-button plain @click="draft = ''">清空</el-button>
                   <el-button type="primary" :loading="sending" @click="handleSend()">
                     <el-icon><Promotion /></el-icon>
@@ -483,12 +494,14 @@ import {
   getAgentConversation,
   listAgentConversations,
   sendAgentEmail,
+  streamChatWithAgent,
   type AgentChatResponse,
   type AgentConversationDetail,
   type AgentConversationEntry,
   type AgentConversationSummary,
   type AgentEmailResponse,
   type AgentResult,
+  type AgentStreamEvent,
   type AgentToolCall
 } from '@/api/agent'
 import { configComponentApi, type ConfigComponent } from '@/api/vector'
@@ -518,6 +531,15 @@ const quickPrompts = [
   '最近1天的数据有多少条',
   '按 severity 统计最近24小时数量'
 ]
+const STREAMING_PREFERENCE_KEY = 'agent-streaming-enabled'
+
+const readStreamingPreference = () => {
+  if (typeof window === 'undefined') {
+    return true
+  }
+  const stored = window.localStorage.getItem(STREAMING_PREFERENCE_KEY)
+  return stored == null ? true : stored !== 'false'
+}
 
 const datasourceLoading = ref(false)
 const historyLoading = ref(false)
@@ -532,6 +554,7 @@ const selectedDatasourceId = ref('')
 const selectedConversationId = ref('')
 const sessionId = ref('')
 const draft = ref('')
+const streamingEnabled = ref(readStreamingPreference())
 const messageContainerRef = ref<HTMLElement>()
 const suppressDatasourceReset = ref(false)
 
@@ -847,6 +870,61 @@ const buildAssistantEntry = (response?: AgentChatResponse): ChatEntry => ({
   suggestions: response?.suggestions || []
 })
 
+const upsertStreamingToolCall = (entry: ChatEntry, incoming?: AgentToolCall) => {
+  if (!incoming) {
+    return
+  }
+  const list = [...(entry.toolCalls || [])]
+  const index = list.findIndex((item) => {
+    if (incoming.toolCallId && item.toolCallId) {
+      return incoming.toolCallId === item.toolCallId
+    }
+    return item.toolName === incoming.toolName && item.status === 'running'
+  })
+
+  if (index >= 0) {
+    list[index] = { ...list[index], ...incoming }
+  } else {
+    list.push({ ...incoming })
+  }
+  entry.toolCalls = list
+}
+
+const applyStreamEvent = (entry: ChatEntry, event: AgentStreamEvent) => {
+  switch (event.type) {
+    case 'started':
+      if (event.sessionId) {
+        sessionId.value = event.sessionId
+        selectedConversationId.value = event.sessionId
+      }
+      break
+    case 'token':
+      if (event.delta) {
+        entry.loading = false
+        entry.content += event.delta
+      }
+      break
+    case 'tool_started':
+    case 'tool_finished':
+      upsertStreamingToolCall(entry, event.toolCall)
+      break
+    case 'done':
+      if (event.response?.sessionId) {
+        sessionId.value = event.response.sessionId
+        selectedConversationId.value = event.response.sessionId
+      }
+      Object.assign(entry, buildAssistantEntry(event.response), { id: entry.id })
+      break
+    case 'error':
+      entry.loading = false
+      entry.content = entry.content
+        ? `${entry.content}\n\n${event.message || '流式响应失败'}`
+        : (event.message || '流式响应失败')
+      break
+  }
+  void scrollToBottom()
+}
+
 const mapConversationMessages = (entries?: AgentConversationEntry[]): ChatEntry[] => {
   if (!entries?.length) {
     return [buildWelcomeEntry()]
@@ -1049,26 +1127,34 @@ const handleSend = async (preset?: string) => {
   await scrollToBottom()
 
   try {
-    const response = unwrapResult<AgentChatResponse>(
-      await chatWithAgent({
+    const payload = {
         message: content,
         datasourceId: selectedDatasourceId.value,
         sessionId: sessionId.value
-      }) as ApiResult<AgentChatResponse>
-    )
+      }
 
-    if (response?.sessionId) {
-      sessionId.value = response.sessionId
-      selectedConversationId.value = response.sessionId
+    let response: AgentChatResponse
+    if (streamingEnabled.value) {
+      response = await streamChatWithAgent(payload, {
+        onEvent: (event) => applyStreamEvent(pendingEntry, event)
+      })
+    } else {
+      response = unwrapResult<AgentChatResponse>(
+        await chatWithAgent(payload) as ApiResult<AgentChatResponse>
+      )
+      if (response.sessionId) {
+        sessionId.value = response.sessionId
+        selectedConversationId.value = response.sessionId
+      }
     }
 
     Object.assign(pendingEntry, buildAssistantEntry(response), { id: pendingEntry.id })
     await loadConversationList()
   } catch (error: any) {
-    Object.assign(pendingEntry, {
-      loading: false,
-      content: error?.message || '请求失败，请稍后重试。'
-    })
+    pendingEntry.loading = false
+    pendingEntry.content = pendingEntry.content
+      ? `${pendingEntry.content}\n\n${error?.message || '请求失败，请稍后重试。'}`
+      : (error?.message || '请求失败，请稍后重试。')
   } finally {
     sending.value = false
     await scrollToBottom()
@@ -1081,6 +1167,13 @@ onMounted(async () => {
   if (conversations.value[0]) {
     await openConversation(conversations.value[0])
   }
+})
+
+watch(streamingEnabled, (value) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.localStorage.setItem(STREAMING_PREFERENCE_KEY, String(value))
 })
 
 watch(selectedDatasourceId, (value, oldValue) => {
@@ -1837,6 +1930,17 @@ watch(selectedDatasourceId, (value, oldValue) => {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.streaming-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 @media (max-width: 1280px) {

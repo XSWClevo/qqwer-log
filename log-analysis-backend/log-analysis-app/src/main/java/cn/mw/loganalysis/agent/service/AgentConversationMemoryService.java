@@ -151,11 +151,11 @@ public class AgentConversationMemoryService {
             return;
         }
 
-        AgentChatMessage last = history.get(history.size() - 1);
+        AgentChatMessage last = history.getLast();
         if (last != null
                 && "user".equalsIgnoreCase(last.getRole())
                 && currentMessage.trim().equals(last.getContent() != null ? last.getContent().trim() : null)) {
-            history.remove(history.size() - 1);
+            history.removeLast();
         }
     }
 

@@ -2,11 +2,16 @@ package cn.mw.loganalysis.operationlog.mapper;
 
 import cn.mw.loganalysis.operationlog.entity.UserOperationLog;
 import cn.mw.loganalysis.operationlog.enums.OperationType;
+import cn.mw.loganalysis.operationlog.dto.response.OperationStatsDTO;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.dynamic.datasource.annotation.DS;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -129,29 +134,76 @@ public interface UserOperationLogMapper extends BaseMapper<UserOperationLog> {
         return selectCount(wrapper) > 0;
     }
 
-    /**
-     * 统计按操作类型分组
-     *
-     * @param startTime 开始时间
-     * @param endTime 结束时间
-     * @return 统计结果 (需要在 Service 层使用原生 SQL 实现)
-     */
-    default List<UserOperationLog> selectGroupByOperationType(LocalDateTime startTime, LocalDateTime endTime) {
-        // 此方法需要在 Service 层使用原生 SQL 或聚合查询实现
-        // 这里仅提供接口定义
-        throw new UnsupportedOperationException("请在 Service 层使用原生 SQL 实现统计查询");
-    }
+    @Select("""
+            SELECT
+                operation_type AS name,
+                COUNT(*) AS count,
+                SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
+                SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
+                ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
+            FROM user_operation_logs
+            WHERE created_at >= #{startTime}::timestamp AND created_at <= #{endTime}::timestamp
+            GROUP BY operation_type
+            ORDER BY count DESC
+            """)
+    List<OperationStatsDTO> selectStatsByOperationType(@Param("startTime") String startTime,
+                                                       @Param("endTime") String endTime);
 
-    /**
-     * 归档旧数据到归档表 (需要在 Service 层实现)
-     *
-     * @param cutoffDate 截止日期 (早于此日期的数据将被归档)
-     * @return 归档的记录数
-     */
-    default int archiveOldLogs(LocalDateTime cutoffDate) {
-        // 此方法需要在 Service 层使用原生 SQL 实现
-        // INSERT INTO user_operation_logs_archive SELECT * FROM user_operation_logs WHERE created_at < ?
-        // DELETE FROM user_operation_logs WHERE created_at < ?
-        throw new UnsupportedOperationException("请在 Service 层使用原生 SQL 实现归档功能");
-    }
+    @Select("""
+            SELECT
+                module AS name,
+                COUNT(*) AS count,
+                SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
+                SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
+                ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
+            FROM user_operation_logs
+            WHERE created_at >= #{startTime}::timestamp AND created_at <= #{endTime}::timestamp
+            GROUP BY module
+            ORDER BY count DESC
+            """)
+    List<OperationStatsDTO> selectStatsByModule(@Param("startTime") String startTime,
+                                                @Param("endTime") String endTime);
+
+    @Select("""
+            SELECT
+                username AS name,
+                COUNT(*) AS count,
+                SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
+                SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
+                ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
+            FROM user_operation_logs
+            WHERE created_at >= #{startTime}::timestamp AND created_at <= #{endTime}::timestamp
+            GROUP BY username
+            ORDER BY count DESC
+            LIMIT #{limit}
+            """)
+    List<OperationStatsDTO> selectStatsByUser(@Param("startTime") String startTime,
+                                              @Param("endTime") String endTime,
+                                              @Param("limit") int limit);
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM user_operation_logs
+            WHERE user_id = #{userId}
+              AND operation_type = 'DELETE'
+              AND created_at >= #{startTime}
+              AND created_at <= #{endTime}
+            """)
+    Long countDeleteOperationsByUserIdAndTime(@Param("userId") Long userId,
+                                              @Param("startTime") LocalDateTime startTime,
+                                              @Param("endTime") LocalDateTime endTime);
+
+    @Insert("""
+            INSERT INTO user_operation_logs_archive
+            SELECT *
+            FROM user_operation_logs
+            WHERE created_at < #{cutoffDate}
+            """)
+    int insertArchiveBefore(@Param("cutoffDate") LocalDateTime cutoffDate);
+
+    @Delete("""
+            DELETE FROM user_operation_logs
+            WHERE created_at < #{cutoffDate}
+            """)
+    int deleteLogsBefore(@Param("cutoffDate") LocalDateTime cutoffDate);
 }
