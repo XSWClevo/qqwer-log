@@ -57,6 +57,7 @@ export function queryFieldStats(data: {
   endTime: string
   dimensions: string[]
   metrics?: string[]
+  useMcp?: boolean
 }) {
   return request<{
     dimensions: string[]

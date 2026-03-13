@@ -57,4 +57,11 @@ public class LogContextRequest {
      * raw字段查询条件列表
      */
     private List<LogQueryRequest.MessageCondition> rawConditions;
+
+    /**
+     * 是否启用 MCP 查询通道（仅 ClickHouse 生效）。
+     * true/空: 允许 MCP
+     * false: 强制走 JDBC
+     */
+    private Boolean useMcp;
 }

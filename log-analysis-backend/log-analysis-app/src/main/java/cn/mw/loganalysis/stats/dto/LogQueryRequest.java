@@ -60,6 +60,13 @@ public class LogQueryRequest {
     private Integer pageSize = 100;
 
     /**
+     * 是否启用 MCP 查询通道（仅 ClickHouse 生效）。
+     * true/空: 允许 MCP
+     * false: 强制走 JDBC
+     */
+    private Boolean useMcp;
+
+    /**
      * 字段过滤器
      */
     @Data

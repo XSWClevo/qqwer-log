@@ -142,7 +142,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryLogs(LogQueryRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryLogs: table={}, endpoint={}", config.getTable(), config.getEndpoint());
 
-        if (clickHouseMcpQueryService.shouldUse(config)) {
+        if (shouldUseMcp(request.getUseMcp(), config)) {
             try {
                 return queryLogsViaMcp(request, config);
             } catch (Exception ex) {
@@ -210,7 +210,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryLogContext(LogContextRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryLogContext: logId={}", request.getLogId());
 
-        if (clickHouseMcpQueryService.shouldUse(config)) {
+        if (shouldUseMcp(request.getUseMcp(), config)) {
             try {
                 return queryLogContextViaMcp(request, config);
             } catch (Exception ex) {
@@ -260,7 +260,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryStats(StatsQueryRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryStats: dimensions={}", request.getDimensions());
 
-        if (clickHouseMcpQueryService.shouldUse(config)) {
+        if (shouldUseMcp(request.getUseMcp(), config)) {
             try {
                 return queryStatsViaMcp(request, config);
             } catch (Exception ex) {
@@ -403,7 +403,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryTimeSeries(StatsQueryRequest request, DatasourceConnectionConfig config) {
         log.info("ClickHouse queryTimeSeries: granularity={}", request.getGranularity());
 
-        if (clickHouseMcpQueryService.shouldUse(config)) {
+        if (shouldUseMcp(request.getUseMcp(), config)) {
             try {
                 return queryTimeSeriesViaMcp(request, config);
             } catch (Exception ex) {
@@ -447,6 +447,13 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     }
 
     // ==================== 私有方法 ====================
+
+    private boolean shouldUseMcp(Boolean useMcp, DatasourceConnectionConfig config) {
+        if (Boolean.FALSE.equals(useMcp)) {
+            return false;
+        }
+        return clickHouseMcpQueryService.shouldUse(config);
+    }
 
     private JdbcTemplate getJdbcTemplate(DatasourceConnectionConfig config) {
         // 使用 OperationStrategy 的共享连接池

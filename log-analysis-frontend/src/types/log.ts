@@ -57,6 +57,9 @@ export interface LogQueryRequest {
   // 分页
   pageNum: number
   pageSize: number
+
+  // 是否启用 MCP（仅 ClickHouse 生效）
+  useMcp?: boolean
 }
 
 // 日志查询响应
@@ -81,6 +84,9 @@ export interface LogContextRequest {
   fieldFilters?: FieldFilter[]
   messageConditions?: MessageCondition[]
   rawConditions?: MessageCondition[]
+
+  // 是否启用 MCP（仅 ClickHouse 生效）
+  useMcp?: boolean
 }
 
 // 日志上下文查询响应

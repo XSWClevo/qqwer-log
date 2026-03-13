@@ -51,4 +51,11 @@ public class StatsQueryRequest {
      * 聚合粒度（hour, day, week, month）
      */
     private String granularity;
+
+    /**
+     * 是否启用 MCP 查询通道（仅 ClickHouse 生效）。
+     * true/空: 允许 MCP
+     * false: 强制走 JDBC
+     */
+    private Boolean useMcp;
 }

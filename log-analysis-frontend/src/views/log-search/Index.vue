@@ -1384,7 +1384,8 @@ const handleSearch = async () => {
       messageConditions: searchForm.messageConditions.length > 0 ? searchForm.messageConditions : undefined,
       rawConditions: searchForm.rawConditions.length > 0 ? searchForm.rawConditions : undefined,
       pageNum: pagination.pageNum,
-      pageSize: pagination.pageSize
+      pageSize: pagination.pageSize,
+      useMcp: false
     }
     const { data } = await queryLogs(params)
     logs.value = data.data
@@ -1413,7 +1414,8 @@ const loadTimeSeries = async () => {
       datasourceId: selectedDatasource.value || undefined,
       startTime, 
       endTime, 
-      granularity 
+      granularity,
+      useMcp: false
     })
     timeSeriesData.value = data.series || []
   } catch (error) {
@@ -1437,7 +1439,8 @@ const loadFieldStats = async () => {
       startTime,
       endTime,
       dimensions,
-      metrics: ['count']
+      metrics: ['count'],
+      useMcp: false
     })
     if (data.data) {
       fieldStats.value.forEach(stat => {
@@ -1591,7 +1594,8 @@ const viewContext = async (row: LogEntry) => {
       timestamp: normalizedTimestamp,
       beforeCount: 50,
       afterCount: 50,
-      fieldFilters: buildFieldFilters() // 使用统一函数，包含侧边栏和高级筛选
+      fieldFilters: buildFieldFilters(), // 使用统一函数，包含侧边栏和高级筛选
+      useMcp: false
     })
     // Combine before + target + after logs and sort by timestamp
     const allLogs = [

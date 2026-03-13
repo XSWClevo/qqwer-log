@@ -239,7 +239,12 @@
               </div>
             </div>
 
-            <div v-loading="conversationLoading" ref="messageContainerRef" class="message-list">
+            <div
+              v-loading="conversationLoading"
+              ref="messageContainerRef"
+              class="message-list"
+              @scroll="handleMessageScroll"
+            >
               <div v-for="entry in messages" :key="entry.id" class="message-row" :class="entry.role">
                 <div class="message-avatar">
                   <el-icon v-if="entry.role === 'assistant'"><Cpu /></el-icon>
@@ -422,9 +427,10 @@
 
             <div class="composer">
               <el-input
+                ref="composerInputRef"
                 v-model="draft"
                 type="textarea"
-                :rows="3"
+                :autosize="{ minRows: 3, maxRows: 6 }"
                 resize="none"
                 placeholder="例如：最近1小时错误日志；查看字段结构；按 severity 统计最近24小时数量"
                 @keydown.enter.exact.prevent="handleSend()"
@@ -556,7 +562,10 @@ const sessionId = ref('')
 const draft = ref('')
 const streamingEnabled = ref(readStreamingPreference())
 const messageContainerRef = ref<HTMLElement>()
+const composerInputRef = ref<any>()
 const suppressDatasourceReset = ref(false)
+const autoScrollEnabled = ref(true)
+const autoScrollThreshold = 80
 
 const createSessionId = () => `agent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
@@ -943,8 +952,40 @@ const mapConversationMessages = (entries?: AgentConversationEntry[]): ChatEntry[
 const scrollToBottom = async () => {
   await nextTick()
   const container = messageContainerRef.value
-  if (container) {
+  if (!container) {
+    return
+  }
+  if (autoScrollEnabled.value) {
     container.scrollTop = container.scrollHeight
+  }
+}
+
+const forceScrollToBottom = async () => {
+  await nextTick()
+  const container = messageContainerRef.value
+  if (!container) {
+    return
+  }
+  container.scrollTop = container.scrollHeight
+}
+
+const isNearBottom = () => {
+  const container = messageContainerRef.value
+  if (!container) {
+    return true
+  }
+  const distance = container.scrollHeight - container.scrollTop - container.clientHeight
+  return distance <= autoScrollThreshold
+}
+
+const handleMessageScroll = () => {
+  autoScrollEnabled.value = isNearBottom()
+}
+
+const focusComposerInput = async () => {
+  await nextTick()
+  if (composerInputRef.value?.focus) {
+    composerInputRef.value.focus()
   }
 }
 
@@ -996,7 +1037,8 @@ const startNewConversation = (showMessage = false) => {
   if (showMessage) {
     ElMessage.success('已开始新对话')
   }
-  void scrollToBottom()
+  void forceScrollToBottom()
+  void focusComposerInput()
 }
 
 const usePrompt = (prompt: string) => {
@@ -1031,7 +1073,8 @@ const openConversation = async (conversation: AgentConversationSummary) => {
     await nextTick()
     suppressDatasourceReset.value = false
     conversationLoading.value = false
-    await scrollToBottom()
+    await forceScrollToBottom()
+    await focusComposerInput()
   }
 }
 
@@ -1124,7 +1167,7 @@ const handleSend = async (preset?: string) => {
   }
 
   messages.value.push(userEntry, pendingEntry)
-  await scrollToBottom()
+  await forceScrollToBottom()
 
   try {
     const payload = {
@@ -1167,6 +1210,7 @@ onMounted(async () => {
   if (conversations.value[0]) {
     await openConversation(conversations.value[0])
   }
+  await focusComposerInput()
 })
 
 watch(streamingEnabled, (value) => {
