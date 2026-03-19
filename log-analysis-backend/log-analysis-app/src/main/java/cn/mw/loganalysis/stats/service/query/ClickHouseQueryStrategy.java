@@ -4,10 +4,18 @@ import cn.mw.loganalysis.common.util.DateTimeUtils;
 import cn.mw.loganalysis.stats.dto.LogContextRequest;
 import cn.mw.loganalysis.stats.dto.LogQueryRequest;
 import cn.mw.loganalysis.stats.dto.StatsQueryRequest;
+import cn.mw.loganalysis.stats.mapper.ClickHouseQueryMapper;
+import cn.mw.loganalysis.stats.mapper.param.ContextLogQueryParam;
+import cn.mw.loganalysis.stats.mapper.param.DimensionStatsQueryParam;
+import cn.mw.loganalysis.stats.mapper.param.LogQuerySqlParam;
+import cn.mw.loganalysis.stats.mapper.param.TimeSeriesQueryParam;
+import cn.mw.loganalysis.stats.service.query.support.DynamicMyBatisUtils;
+import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -16,7 +24,6 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Statement;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,8 +37,6 @@ import java.util.stream.Collectors;
 @Component
 @RequiredArgsConstructor
 public class ClickHouseQueryStrategy implements LogQueryStrategy {
-
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     // 查询超时时间（秒）
     private static final int QUERY_TIMEOUT_SECONDS = 30;
@@ -74,38 +79,26 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
                 return getTableSchemaViaMcp(config);
             } catch (Exception ex) {
                 if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
-                    log.warn("ClickHouse MCP 获取表结构失败，回退 JDBC: {}", ex.getMessage());
+                    log.warn("ClickHouse MCP 获取表结构失败，回退 MyBatis: {}", ex.getMessage());
                 } else {
                     throw ex;
                 }
             }
         }
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
-        String database = config.getDatabase();
-
-        // 查询表结构
-        String sql = "SELECT name, type FROM system.columns WHERE database = ? AND table = ?";
-        
-        List<FieldInfo> fields = jdbcTemplate.query(sql, 
-            new Object[]{database != null ? database : "default", tableName},
-            (rs, rowNum) -> {
-                String name = rs.getString("name");
-                String type = rs.getString("type");
-                
-                return FieldInfo.builder()
-                        .name(name)
-                        .type(type)
-                        .label(name) // 默认使用字段名作为显示名
-                        .isTimestamp(isTimestampType(type))
-                        .isStatsDimension(isStatsDimensionType(type))
-                        .isContentField(isContentField(name))
-                        .build();
-            }
+        String database = StringUtils.hasText(config.getDatabase()) ? config.getDatabase() : "default";
+        List<FieldInfo> fields = DynamicMyBatisUtils.execute(
+                getSqlSessionFactory(config),
+                ClickHouseQueryMapper.class,
+                mapper -> StatsQueryMapperUtils.toFieldInfoList(
+                        mapper.selectTableSchemaRows(database, config.getTable()),
+                        this::isTimestampType,
+                        this::isStatsDimensionType,
+                        this::isContentField
+                )
         );
 
-        log.info("Found {} fields in table {}", fields.size(), tableName);
+        log.info("Found {} fields in table {}", fields.size(), config.getTable());
         return fields;
     }
 
@@ -147,63 +140,38 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
                 return queryLogsViaMcp(request, config);
             } catch (Exception ex) {
                 if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
-                    log.warn("ClickHouse MCP 查询日志失败，回退 JDBC: {}", ex.getMessage());
+                    log.warn("ClickHouse MCP 查询日志失败，回退 MyBatis: {}", ex.getMessage());
                 } else {
                     throw ex;
                 }
             }
         }
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
+        int pageSize = Math.max(ObjectUtils.defaultIfNull(request.getPageSize(), 100), 1);
+        int pageNum = Math.max(ObjectUtils.defaultIfNull(request.getPageNum(), 1), 1);
+        LogQuerySqlParam queryParam = LogQuerySqlParam.builder()
+                .tableName(StatsQueryMapperUtils.quoteClickHouseIdentifier(config.getTable()))
+                .startTime(DateTimeUtils.format(request.getStartTime()))
+                .endTime(DateTimeUtils.format(request.getEndTime()))
+                .pageSize(pageSize)
+                .offset((pageNum - 1) * pageSize)
+                .fieldFilters(StatsQueryMapperUtils.buildClickHouseFieldFilters(request.getFieldFilters()))
+                .messageConditions(StatsQueryMapperUtils.buildMessageConditions(request.getMessageConditions()))
+                .rawConditions(StatsQueryMapperUtils.buildMessageConditions(request.getRawConditions()))
+                .build();
 
-        // 构建 SQL
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT * FROM ").append(tableName)
-           .append(" WHERE timestamp >= ? AND timestamp <= ? ");
+        return DynamicMyBatisUtils.execute(getSqlSessionFactory(config), ClickHouseQueryMapper.class, mapper -> {
+            Long total = mapper.countLogs(queryParam);
+            List<Map<String, Object>> data = mapper.selectLogs(queryParam);
+            StatsQueryMapperUtils.normalizeTimestampField(data, "timestamp");
 
-        List<Object> params = new ArrayList<>();
-        params.add(DateTimeUtils.format(request.getStartTime()));
-        params.add(DateTimeUtils.format(request.getEndTime()));
-
-        // 添加字段过滤
-        addFieldFilters(sql, params, request.getFieldFilters());
-
-        // 添加 message 条件
-        addMessageConditions(sql, params, request.getMessageConditions(), "message");
-
-        // 添加 raw 条件
-        addMessageConditions(sql, params, request.getRawConditions(), "raw");
-
-        // 查询总数
-        Long total = queryTotalCount(jdbcTemplate, tableName, request);
-
-        // 排序和分页
-        sql.append("ORDER BY timestamp DESC ");
-        sql.append("LIMIT ? OFFSET ?");
-        params.add(request.getPageSize());
-        params.add((request.getPageNum() - 1) * request.getPageSize());
-
-        log.info("ClickHouse queryLogs data SQL: template={}, params={}, rendered={}",
-                sql, params, SqlDebugFormatter.render(sql.toString(), params));
-
-        // 执行查询
-        List<Map<String, Object>> data = jdbcTemplate.queryForList(sql.toString(), params.toArray());
-
-        // 格式化时间戳
-        data.forEach(row -> {
-            if (row.get("timestamp") != null) {
-                row.put("timestamp", row.get("timestamp").toString());
-            }
+            Map<String, Object> result = new HashMap<>();
+            result.put("total", total != null ? total : 0);
+            result.put("pageNum", pageNum);
+            result.put("pageSize", pageSize);
+            result.put("data", data);
+            return result;
         });
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("total", total != null ? total : 0);
-        result.put("pageNum", request.getPageNum());
-        result.put("pageSize", request.getPageSize());
-        result.put("data", data);
-
-        return result;
     }
 
     @Override
@@ -215,45 +183,52 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
                 return queryLogContextViaMcp(request, config);
             } catch (Exception ex) {
                 if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
-                    log.warn("ClickHouse MCP 查询上下文失败，回退 JDBC: {}", ex.getMessage());
+                    log.warn("ClickHouse MCP 查询上下文失败，回退 MyBatis: {}", ex.getMessage());
                 } else {
                     throw ex;
                 }
             }
         }
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
+        String tableName = StatsQueryMapperUtils.quoteClickHouseIdentifier(config.getTable());
+        String timestamp = DateTimeUtils.format(request.getTimestamp());
 
-        List<Map<String, Object>> beforeLogs = new ArrayList<>();
-        List<Map<String, Object>> afterLogs = new ArrayList<>();
+        return DynamicMyBatisUtils.execute(getSqlSessionFactory(config), ClickHouseQueryMapper.class, mapper -> {
+            List<Map<String, Object>> beforeLogs = new ArrayList<>();
+            List<Map<String, Object>> afterLogs = new ArrayList<>();
 
-        // 查询之前的日志
-        if (request.getBeforeCount() != null && request.getBeforeCount() > 0) {
-            String beforeSql = String.format(
-                "SELECT * FROM %s WHERE timestamp < ? ORDER BY timestamp DESC LIMIT ?",
-                tableName
-            );
-            beforeLogs = jdbcTemplate.queryForList(beforeSql, request.getTimestamp(), request.getBeforeCount());
-            Collections.reverse(beforeLogs);
-        }
+            if (request.getBeforeCount() != null && request.getBeforeCount() > 0) {
+                beforeLogs = mapper.selectContextBeforeLogs(ContextLogQueryParam.builder()
+                        .tableName(tableName)
+                        .timestamp(timestamp)
+                        .limit(request.getBeforeCount())
+                        .fieldFilters(Collections.emptyList())
+                        .messageConditions(Collections.emptyList())
+                        .rawConditions(Collections.emptyList())
+                        .build());
+                Collections.reverse(beforeLogs);
+                StatsQueryMapperUtils.normalizeTimestampField(beforeLogs, "timestamp");
+            }
 
-        // 查询之后的日志
-        if (request.getAfterCount() != null && request.getAfterCount() > 0) {
-            String afterSql = String.format(
-                "SELECT * FROM %s WHERE timestamp > ? ORDER BY timestamp ASC LIMIT ?",
-                tableName
-            );
-            afterLogs = jdbcTemplate.queryForList(afterSql, request.getTimestamp(), request.getAfterCount());
-        }
+            if (request.getAfterCount() != null && request.getAfterCount() > 0) {
+                afterLogs = mapper.selectContextAfterLogs(ContextLogQueryParam.builder()
+                        .tableName(tableName)
+                        .timestamp(timestamp)
+                        .limit(request.getAfterCount())
+                        .fieldFilters(Collections.emptyList())
+                        .messageConditions(Collections.emptyList())
+                        .rawConditions(Collections.emptyList())
+                        .build());
+                StatsQueryMapperUtils.normalizeTimestampField(afterLogs, "timestamp");
+            }
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("beforeLogs", beforeLogs);
-        result.put("afterLogs", afterLogs);
-        result.put("totalBefore", beforeLogs.size());
-        result.put("totalAfter", afterLogs.size());
-
-        return result;
+            Map<String, Object> result = new HashMap<>();
+            result.put("beforeLogs", beforeLogs);
+            result.put("afterLogs", afterLogs);
+            result.put("totalBefore", beforeLogs.size());
+            result.put("totalAfter", afterLogs.size());
+            return result;
+        });
     }
 
     @Override
@@ -265,7 +240,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
                 return queryStatsViaMcp(request, config);
             } catch (Exception ex) {
                 if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
-                    log.warn("ClickHouse MCP 统计查询失败，回退 JDBC: {}", ex.getMessage());
+                    log.warn("ClickHouse MCP 统计查询失败，回退 MyBatis: {}", ex.getMessage());
                 } else {
                     throw ex;
                 }
@@ -291,15 +266,26 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
             log.warn("过滤了不适合统计的维度: {} -> {}", request.getDimensions(), validDimensions);
         }
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
+        String tableName = StatsQueryMapperUtils.quoteClickHouseIdentifier(config.getTable());
+        String startTime = DateTimeUtils.format(request.getStartTime());
+        String endTime = DateTimeUtils.format(request.getEndTime());
 
-        // 3. 使用批量查询（UNION ALL）替代并发查询
-        long startTime = System.currentTimeMillis();
-        Map<String, List<Map<String, Object>>> statsData =
-            queryDimensionsBatch(jdbcTemplate, tableName, validDimensions, request);
-        long duration = System.currentTimeMillis() - startTime;
-        log.info("批量查询耗时: {}ms", duration);
+        Map<String, List<Map<String, Object>>> statsData = DynamicMyBatisUtils.execute(
+                getSqlSessionFactory(config),
+                ClickHouseQueryMapper.class,
+                mapper -> {
+                    Map<String, List<Map<String, Object>>> data = new HashMap<>();
+                    for (String dimension : validDimensions) {
+                        data.put(dimension, mapper.selectDimensionStats(DimensionStatsQueryParam.builder()
+                                .tableName(tableName)
+                                .startTime(startTime)
+                                .endTime(endTime)
+                                .dimensionExpression(StatsQueryMapperUtils.quoteClickHouseIdentifier(dimension))
+                                .build()));
+                    }
+                    return data;
+                }
+        );
 
         // 4. 构建返回结果
         Map<String, Object> result = new HashMap<>();
@@ -329,67 +315,6 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     }
 
     /**
-     * 批量查询所有维度（使用 UNION ALL + PREWHERE + LIMIT BY）
-     * 性能优化：
-     * 1. UNION ALL: 减少数据库往返次数（3 个维度从 3 次 → 1 次）
-     * 2. PREWHERE: ClickHouse 特有优化，在读取前过滤
-     * 3. LIMIT BY: 限制每个分组的结果数量，减少排序开销
-     * 4. 缓存: 5 分钟缓存，重复查询 < 10ms
-     */
-    private Map<String, List<Map<String, Object>>> queryDimensionsBatch(
-            JdbcTemplate jdbcTemplate,
-            String tableName,
-            List<String> dimensions,
-            StatsQueryRequest request) {
-
-        log.debug("批量查询维度: {}", dimensions);
-
-        // 构建 UNION ALL 查询，使用 PREWHERE 优化
-        // 使用反引号包裹字段名，支持中文和特殊字符
-        String sql = dimensions.stream()
-            .map(dim -> String.format(
-                "SELECT '%s' as dimension, `%s` as value, count(*) as count " +
-                "FROM %s " +
-                "PREWHERE timestamp >= ? AND timestamp <= ? " +
-                "GROUP BY `%s` " +
-                "ORDER BY count DESC " +
-                "LIMIT 10",
-                dim, dim, tableName, dim
-            ))
-            .collect(Collectors.joining(" UNION ALL "));
-
-        // 准备参数（每个维度需要 2 个参数：startTime, endTime）
-        List<Object> params = new ArrayList<>();
-        for (int i = 0; i < dimensions.size(); i++) {
-            params.add(request.getStartTime());
-            params.add(request.getEndTime());
-        }
-
-        // 执行查询
-        List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, params.toArray());
-
-        // 按维度分组
-        Map<String, List<Map<String, Object>>> statsData = new HashMap<>();
-        for (String dimension : dimensions) {
-            statsData.put(dimension, new ArrayList<>());
-        }
-
-        for (Map<String, Object> row : results) {
-            String dimension = (String) row.get("dimension");
-            Map<String, Object> data = new HashMap<>();
-            data.put("value", row.get("value"));
-            data.put("count", row.get("count"));
-
-            List<Map<String, Object>> dimensionList = statsData.get(dimension);
-            if (dimensionList != null) {
-                dimensionList.add(data);
-            }
-        }
-
-        return statsData;
-    }
-
-    /**
      * 构建空结果
      */
     private Map<String, Object> buildEmptyResult() {
@@ -408,36 +333,24 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
                 return queryTimeSeriesViaMcp(request, config);
             } catch (Exception ex) {
                 if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
-                    log.warn("ClickHouse MCP 时序查询失败，回退 JDBC: {}", ex.getMessage());
+                    log.warn("ClickHouse MCP 时序查询失败，回退 MyBatis: {}", ex.getMessage());
                 } else {
                     throw ex;
                 }
             }
         }
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
-
-        String granularityFunc = getGranularityFunction(request.getGranularity());
-
-        String sql = String.format(
-            "SELECT %s as time_bucket, count(*) as count FROM %s " +
-            "WHERE timestamp >= ? AND timestamp <= ? " +
-            "GROUP BY time_bucket ORDER BY time_bucket",
-            granularityFunc, tableName
+        List<Map<String, Object>> series = DynamicMyBatisUtils.execute(
+                getSqlSessionFactory(config),
+                ClickHouseQueryMapper.class,
+                mapper -> mapper.selectTimeSeries(TimeSeriesQueryParam.builder()
+                        .tableName(StatsQueryMapperUtils.quoteClickHouseIdentifier(config.getTable()))
+                        .startTime(DateTimeUtils.format(request.getStartTime()))
+                        .endTime(DateTimeUtils.format(request.getEndTime()))
+                        .timeBucketExpression(StatsQueryMapperUtils.getClickHouseTimeBucketExpression(request.getGranularity()))
+                        .build())
         );
-
-        List<Map<String, Object>> series = jdbcTemplate.queryForList(
-            sql, request.getStartTime(), request.getEndTime()
-        );
-
-        // 格式化时间
-        series.forEach(point -> {
-            if (point.get("time_bucket") != null) {
-                point.put("timestamp", point.get("time_bucket").toString());
-                point.remove("time_bucket");
-            }
-        });
+        StatsQueryMapperUtils.renameAndNormalizeTimestampField(series, "time_bucket", "timestamp");
 
         Map<String, Object> result = new HashMap<>();
         result.put("granularity", request.getGranularity());
@@ -455,9 +368,8 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
         return clickHouseMcpQueryService.shouldUse(config);
     }
 
-    private JdbcTemplate getJdbcTemplate(DatasourceConnectionConfig config) {
-        // 使用 OperationStrategy 的共享连接池
-        return operationStrategy.getJdbcTemplate(config);
+    private SqlSessionFactory getSqlSessionFactory(DatasourceConnectionConfig config) {
+        return operationStrategy.getSqlSessionFactory(config);
     }
 
     private List<FieldInfo> getTableSchemaViaMcp(DatasourceConnectionConfig config) {
@@ -637,24 +549,6 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
         result.put("granularity", request.getGranularity());
         result.put("series", series);
         return result;
-    }
-
-    private Long queryTotalCount(JdbcTemplate jdbcTemplate, String tableName, LogQueryRequest request) {
-        StringBuilder countSql = new StringBuilder();
-        countSql.append("SELECT count(*) FROM ").append(tableName)
-                .append(" WHERE timestamp >= ? AND timestamp <= ?");
-
-        List<Object> params = new ArrayList<>();
-        params.add(DateTimeUtils.format(request.getStartTime()));
-        params.add(DateTimeUtils.format(request.getEndTime()));
-
-        addFieldFilters(countSql, params, request.getFieldFilters());
-        addMessageConditions(countSql, params, request.getMessageConditions(), "message");
-        addMessageConditions(countSql, params, request.getRawConditions(), "raw");
-
-        log.info("ClickHouse queryLogs count SQL: template={}, params={}, rendered={}",
-                countSql, params, SqlDebugFormatter.render(countSql.toString(), params));
-        return jdbcTemplate.queryForObject(countSql.toString(), Long.class, params.toArray());
     }
 
     private void addFieldFilters(StringBuilder sql, List<Object> params, List<LogQueryRequest.FieldFilter> filters) {

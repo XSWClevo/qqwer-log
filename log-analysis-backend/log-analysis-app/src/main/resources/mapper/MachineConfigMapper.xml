@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.mw.loganalysis.vector.mapper.MachineConfigMapper">
+
+    <select id="selectDeployedConfigsByMachineId" resultType="cn.mw.loganalysis.vector.entity.VisualConfig">
+        SELECT vc.*
+        FROM vector_visual_configs vc
+        JOIN vector_machine_configs mc ON vc.id = mc.config_id
+        WHERE mc.machine_id = #{machineId}
+          AND mc.status IN ('deployed', 'pending')
+    </select>
+
+</mapper>

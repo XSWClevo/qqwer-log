@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.mw.loganalysis.vector.mapper.SharedComponentMapper">
+
+    <select id="countReferences" resultType="int">
+        SELECT COUNT(*)
+        FROM vector_config_component_refs
+        WHERE shared_component_id = #{componentId}
+    </select>
+
+    <select id="selectReferencingConfigNames" resultType="java.lang.String">
+        SELECT vc.name
+        FROM vector_visual_configs vc
+        JOIN vector_config_component_refs cr ON vc.id = cr.config_id
+        WHERE cr.shared_component_id = #{componentId}
+    </select>
+
+</mapper>

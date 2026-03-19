@@ -5,14 +5,16 @@ import cn.mw.loganalysis.datasource.dto.DatasourceTestResult;
 import cn.mw.loganalysis.datasource.dto.UpdateDatasourceRequest;
 import cn.mw.loganalysis.datasource.entity.Datasource;
 import cn.mw.loganalysis.datasource.mapper.DatasourceMapper;
+import cn.mw.loganalysis.stats.mapper.DatabaseProbeMapper;
+import cn.mw.loganalysis.stats.service.query.support.DynamicMyBatisUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.apache.ibatis.session.SqlSessionFactory;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -186,11 +188,9 @@ public class DatasourceService {
             dataSource.setUsername(datasource.getUsername());
             dataSource.setPassword(datasource.getPassword());
 
-            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-
-            // 执行简单查询测试连接
-            String testQuery = getTestQuery(datasource.getType());
-            String version = jdbcTemplate.queryForObject(testQuery, String.class);
+            SqlSessionFactory sqlSessionFactory = DynamicMyBatisUtils.buildSqlSessionFactory(dataSource, DatabaseProbeMapper.class);
+            String version = DynamicMyBatisUtils.execute(sqlSessionFactory, DatabaseProbeMapper.class,
+                    mapper -> supportsVersionProbe(datasource.getType()) ? mapper.selectVersion() : mapper.selectOne());
 
             long responseTime = System.currentTimeMillis() - startTime;
 
@@ -253,19 +253,14 @@ public class DatasourceService {
         }
     }
 
-    /**
-     * 获取测试查询语句
-     */
-    private String getTestQuery(String type) {
-        switch (type.toLowerCase()) {
-            case "clickhouse":
-                return "SELECT version()";
-            case "postgresql":
-                return "SELECT version()";
-            case "mysql":
-                return "SELECT version()";
-            default:
-                return "SELECT 1";
+    private boolean supportsVersionProbe(String type) {
+        if (!StringUtils.hasText(type)) {
+            return false;
         }
+
+        return switch (type.toLowerCase()) {
+            case "clickhouse", "postgresql", "mysql" -> true;
+            default -> false;
+        };
     }
 }

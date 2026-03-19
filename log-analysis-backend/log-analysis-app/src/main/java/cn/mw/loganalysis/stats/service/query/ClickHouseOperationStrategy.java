@@ -1,12 +1,17 @@
 package cn.mw.loganalysis.stats.service.query;
 
+import cn.mw.loganalysis.stats.mapper.ClickHouseQueryMapper;
+import cn.mw.loganalysis.stats.service.query.support.DynamicMyBatisUtils;
+import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -23,6 +28,7 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
 
     // 连接池缓存：按 endpoint + database 缓存，支持多个表共用连接池
     private final Map<String, HikariDataSource> dataSourceCache = new ConcurrentHashMap<>();
+    private final Map<String, SqlSessionFactory> sqlSessionFactoryCache = new ConcurrentHashMap<>();
 
     @Override
     public String getSupportedType() {
@@ -33,10 +39,11 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
     public ConnectionTestResult testConnection(DatasourceConnectionConfig config) {
         long startTime = System.currentTimeMillis();
         try {
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-            
-            // 测试连接并获取版本
-            String version = jdbcTemplate.queryForObject("SELECT version()", String.class);
+            String version = DynamicMyBatisUtils.execute(
+                    getSqlSessionFactory(config),
+                    ClickHouseQueryMapper.class,
+                    ClickHouseQueryMapper::selectVersion
+            );
             
             long responseTime = System.currentTimeMillis() - startTime;
             
@@ -59,44 +66,42 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
     @Override
     public TableCheckResult checkTable(DatasourceConnectionConfig config) {
         try {
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
             String tableName = config.getTable();
             String database = config.getDatabase() != null ? config.getDatabase() : "default";
 
-            // 检查表是否存在
-            String checkSql = "SELECT count(*) FROM system.tables WHERE database = ? AND name = ?";
-            Long count = jdbcTemplate.queryForObject(checkSql, Long.class, database, tableName);
+            return DynamicMyBatisUtils.execute(getSqlSessionFactory(config), ClickHouseQueryMapper.class, mapper -> {
+                Long count = mapper.countTables(database, tableName);
 
-            if (count == null || count == 0) {
+                if (count == null || count == 0) {
+                    return TableCheckResult.builder()
+                            .exists(false)
+                            .tableName(tableName)
+                            .message("表不存在")
+                            .build();
+                }
+
+                List<FieldInfo> fields = mapper.selectTableSchemaRows(database, tableName).stream()
+                        .map(row -> {
+                            String name = String.valueOf(row.get("name"));
+                            String type = String.valueOf(row.get("type"));
+                            return FieldInfo.builder()
+                                    .name(name)
+                                    .type(type)
+                                    .label(name)
+                                    .build();
+                        })
+                        .toList();
+
+                Long rowCount = mapper.countTableRows(StatsQueryMapperUtils.qualifyClickHouseTable(database, tableName));
+
                 return TableCheckResult.builder()
-                        .exists(false)
+                        .exists(true)
                         .tableName(tableName)
-                        .message("表不存在")
+                        .message("表存在")
+                        .fields(fields)
+                        .rowCount(rowCount)
                         .build();
-            }
-
-            // 获取字段信息
-            String columnsSql = "SELECT name, type FROM system.columns WHERE database = ? AND table = ?";
-            List<FieldInfo> fields = jdbcTemplate.query(columnsSql, 
-                new Object[]{database, tableName},
-                (rs, rowNum) -> FieldInfo.builder()
-                        .name(rs.getString("name"))
-                        .type(rs.getString("type"))
-                        .label(rs.getString("name"))
-                        .build()
-            );
-
-            // 获取行数
-            String countSql = "SELECT count(*) FROM " + database + "." + tableName;
-            Long rowCount = jdbcTemplate.queryForObject(countSql, Long.class);
-
-            return TableCheckResult.builder()
-                    .exists(true)
-                    .tableName(tableName)
-                    .message("表存在")
-                    .fields(fields)
-                    .rowCount(rowCount)
-                    .build();
+            });
 
         } catch (Exception e) {
             log.error("检查表失败: {}", e.getMessage());
@@ -173,15 +178,16 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
     public CreateTableResult createTable(DatasourceConnectionConfig config, TableSchema schema) {
         try {
             String sql = generateCreateTableSQL(config, schema);
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-            
-            jdbcTemplate.execute(sql);
-            
-            return CreateTableResult.builder()
-                    .success(true)
-                    .message("建表成功")
-                    .executedSQL(sql)
-                    .build();
+            try (Connection connection = getDataSource(config).getConnection();
+                 Statement statement = connection.createStatement()) {
+                statement.execute(sql);
+
+                return CreateTableResult.builder()
+                        .success(true)
+                        .message("建表成功")
+                        .executedSQL(sql)
+                        .build();
+            }
         } catch (Exception e) {
             log.error("建表失败: {}", e.getMessage());
             return CreateTableResult.builder()
@@ -232,50 +238,22 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
     @Override
     public List<String> listTables(DatasourceConnectionConfig config) {
         try {
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
             String database = config.getDatabase() != null ? config.getDatabase() : "default";
-            
-            String sql = "SELECT name FROM system.tables WHERE database = ? ORDER BY name";
-            return jdbcTemplate.queryForList(sql, String.class, database);
+            return DynamicMyBatisUtils.execute(
+                    getSqlSessionFactory(config),
+                    ClickHouseQueryMapper.class,
+                    mapper -> mapper.selectTables(database)
+            );
         } catch (Exception e) {
             log.error("获取表列表失败: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
 
-    /**
-     * 获取 JdbcTemplate（按 endpoint + database 缓存连接池）
-     */
-    public JdbcTemplate getJdbcTemplate(DatasourceConnectionConfig config) {
-        // 缓存键：endpoint + database（不包含 table）
-        String cacheKey = config.getEndpoint() + "_" + (config.getDatabase() != null ? config.getDatabase() : "default");
-
-        HikariDataSource dataSource = dataSourceCache.computeIfAbsent(cacheKey, k -> {
-            HikariConfig hikariConfig = new HikariConfig();
-            
-            String jdbcUrl = buildJdbcUrl(config);
-            hikariConfig.setJdbcUrl(jdbcUrl);
-            hikariConfig.setDriverClassName("com.clickhouse.jdbc.ClickHouseDriver");
-            
-            if (StringUtils.hasText(config.getUsername())) {
-                hikariConfig.setUsername(config.getUsername());
-            }
-            if (StringUtils.hasText(config.getPassword())) {
-                hikariConfig.setPassword(config.getPassword());
-            }
-
-            hikariConfig.setMaximumPoolSize(5);
-            hikariConfig.setMinimumIdle(1);
-            hikariConfig.setConnectionTimeout(30000);
-            hikariConfig.setIdleTimeout(600000);
-            hikariConfig.setMaxLifetime(1800000);
-            hikariConfig.setPoolName("ClickHouse-" + cacheKey.hashCode());
-
-            log.info("Creating ClickHouse connection pool: {}", jdbcUrl);
-            return new HikariDataSource(hikariConfig);
-        });
-
-        return new JdbcTemplate(dataSource);
+    public SqlSessionFactory getSqlSessionFactory(DatasourceConnectionConfig config) {
+        String cacheKey = getCacheKey(config);
+        return sqlSessionFactoryCache.computeIfAbsent(cacheKey,
+                key -> DynamicMyBatisUtils.buildSqlSessionFactory(getDataSource(config), ClickHouseQueryMapper.class));
     }
 
     private String buildJdbcUrl(DatasourceConnectionConfig config) {
@@ -301,5 +279,38 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
     public void closeAllConnections() {
         dataSourceCache.values().forEach(HikariDataSource::close);
         dataSourceCache.clear();
+        sqlSessionFactoryCache.clear();
+    }
+
+    private String getCacheKey(DatasourceConnectionConfig config) {
+        return config.getEndpoint() + "_" + (config.getDatabase() != null ? config.getDatabase() : "default");
+    }
+
+    private HikariDataSource getDataSource(DatasourceConnectionConfig config) {
+        String cacheKey = getCacheKey(config);
+        return dataSourceCache.computeIfAbsent(cacheKey, k -> {
+            HikariConfig hikariConfig = new HikariConfig();
+
+            String jdbcUrl = buildJdbcUrl(config);
+            hikariConfig.setJdbcUrl(jdbcUrl);
+            hikariConfig.setDriverClassName("com.clickhouse.jdbc.ClickHouseDriver");
+
+            if (StringUtils.hasText(config.getUsername())) {
+                hikariConfig.setUsername(config.getUsername());
+            }
+            if (StringUtils.hasText(config.getPassword())) {
+                hikariConfig.setPassword(config.getPassword());
+            }
+
+            hikariConfig.setMaximumPoolSize(5);
+            hikariConfig.setMinimumIdle(1);
+            hikariConfig.setConnectionTimeout(30000);
+            hikariConfig.setIdleTimeout(600000);
+            hikariConfig.setMaxLifetime(1800000);
+            hikariConfig.setPoolName("ClickHouse-" + cacheKey.hashCode());
+
+            log.info("Creating ClickHouse connection pool: {}", jdbcUrl);
+            return new HikariDataSource(hikariConfig);
+        });
     }
 }

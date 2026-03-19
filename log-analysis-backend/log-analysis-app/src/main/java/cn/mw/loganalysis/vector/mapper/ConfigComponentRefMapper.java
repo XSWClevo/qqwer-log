@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
@@ -45,8 +44,5 @@ public interface ConfigComponentRefMapper extends BaseMapper<ConfigComponentRef>
     /**
      * 查询配置引用的共享组件详情
      */
-    @Select("SELECT sc.* FROM vector_shared_components sc " +
-            "JOIN vector_config_component_refs cr ON sc.id = cr.shared_component_id " +
-            "WHERE cr.config_id = #{configId}")
     List<cn.mw.loganalysis.vector.entity.SharedComponent> selectSharedComponentsByConfigId(@Param("configId") String configId);
 }

@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Select;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -117,12 +116,10 @@ public interface VectorLogMapper extends BaseMapper<VectorLog> {
     /**
      * 获取所有主机列表（去重）
      */
-    @Select("SELECT DISTINCT hostname FROM vector_logs WHERE hostname != '' ORDER BY hostname")
     List<String> selectDistinctHostnames();
 
     /**
      * 获取所有IP地址列表（去重）
      */
-    @Select("SELECT DISTINCT ip_address FROM vector_logs WHERE ip_address != '' ORDER BY ip_address")
     List<String> selectDistinctIpAddresses();
 }

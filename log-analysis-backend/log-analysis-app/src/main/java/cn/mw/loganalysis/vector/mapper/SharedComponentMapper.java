@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
@@ -39,14 +38,10 @@ public interface SharedComponentMapper extends BaseMapper<SharedComponent> {
     /**
      * 查询组件被引用的次数
      */
-    @Select("SELECT COUNT(*) FROM vector_config_component_refs WHERE shared_component_id = #{componentId}")
     int countReferences(@Param("componentId") String componentId);
 
     /**
      * 查询引用该组件的配置名称
      */
-    @Select("SELECT vc.name FROM vector_visual_configs vc " +
-            "JOIN vector_config_component_refs cr ON vc.id = cr.config_id " +
-            "WHERE cr.shared_component_id = #{componentId}")
     List<String> selectReferencingConfigNames(@Param("componentId") String componentId);
 }

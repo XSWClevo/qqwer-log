@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.mw.loganalysis.stats.mapper.PostgreSqlQueryMapper">
+
+    <sql id="DynamicFiltersAndConditions">
+        <if test="fieldFilters != null and fieldFilters.size() > 0">
+            <foreach collection="fieldFilters" item="filter">
+                <if test="filter.values != null and filter.values.size() > 0">
+                    <choose>
+                        <when test="filter.type == 'include'">
+                            AND ${filter.columnExpression} IN
+                            <foreach collection="filter.values" item="value" open="(" separator="," close=")">
+                                #{value}
+                            </foreach>
+                        </when>
+                        <when test="filter.type == 'exclude'">
+                            AND ${filter.columnExpression} NOT IN
+                            <foreach collection="filter.values" item="value" open="(" separator="," close=")">
+                                #{value}
+                            </foreach>
+                        </when>
+                    </choose>
+                </if>
+            </foreach>
+        </if>
+        <if test="messageConditions != null and messageConditions.size() > 0">
+            <foreach collection="messageConditions" item="condition">
+                <if test="condition.value != null and condition.value != ''">
+                    <choose>
+                        <when test="condition.operator == 'contains'">
+                            AND message ILIKE concat('%', #{condition.value}, '%')
+                        </when>
+                        <when test="condition.operator == 'notcontains'">
+                            AND message NOT ILIKE concat('%', #{condition.value}, '%')
+                        </when>
+                        <when test="condition.operator == 'equals'">
+                            AND message = #{condition.value}
+                        </when>
+                        <when test="condition.operator == 'notequals'">
+                            AND message != #{condition.value}
+                        </when>
+                        <otherwise>
+                            AND message ILIKE concat('%', #{condition.value}, '%')
+                        </otherwise>
+                    </choose>
+                </if>
+            </foreach>
+        </if>
+        <if test="rawConditions != null and rawConditions.size() > 0">
+            <foreach collection="rawConditions" item="condition">
+                <if test="condition.value != null and condition.value != ''">
+                    <choose>
+                        <when test="condition.operator == 'contains'">
+                            AND raw ILIKE concat('%', #{condition.value}, '%')
+                        </when>
+                        <when test="condition.operator == 'notcontains'">
+                            AND raw NOT ILIKE concat('%', #{condition.value}, '%')
+                        </when>
+                        <when test="condition.operator == 'equals'">
+                            AND raw = #{condition.value}
+                        </when>
+                        <when test="condition.operator == 'notequals'">
+                            AND raw != #{condition.value}
+                        </when>
+                        <otherwise>
+                            AND raw ILIKE concat('%', #{condition.value}, '%')
+                        </otherwise>
+                    </choose>
+                </if>
+            </foreach>
+        </if>
+    </sql>
+
+    <select id="selectVersion" resultType="java.lang.String">
+        SELECT version()
+    </select>
+
+    <select id="countTables" resultType="java.lang.Long">
+        SELECT count(*)
+        FROM information_schema.tables
+        WHERE table_name = #{tableName}
+    </select>
+
+    <select id="selectTableSchemaRows" resultType="java.util.HashMap">
+        SELECT column_name AS name, data_type AS type
+        FROM information_schema.columns
+        WHERE table_name = #{tableName}
+        ORDER BY ordinal_position
+    </select>
+
+    <select id="countTableRows" resultType="java.lang.Long">
+        SELECT count(*)
+        FROM ${tableName}
+    </select>
+
+    <select id="selectTables" resultType="java.lang.String">
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+        ORDER BY table_name
+    </select>
+
+    <select id="selectLogs" resultType="java.util.HashMap">
+        SELECT *
+        FROM ${tableName}
+        WHERE timestamp &gt;= CAST(#{startTime} AS timestamp)
+          AND timestamp &lt;= CAST(#{endTime} AS timestamp)
+        <include refid="DynamicFiltersAndConditions"/>
+        ORDER BY timestamp DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="countLogs" resultType="java.lang.Long">
+        SELECT count(*)
+        FROM ${tableName}
+        WHERE timestamp &gt;= CAST(#{startTime} AS timestamp)
+          AND timestamp &lt;= CAST(#{endTime} AS timestamp)
+        <include refid="DynamicFiltersAndConditions"/>
+    </select>
+
+    <select id="selectContextBeforeLogs" resultType="java.util.HashMap">
+        SELECT *
+        FROM ${tableName}
+        WHERE timestamp &lt; CAST(#{timestamp} AS timestamp)
+        <include refid="DynamicFiltersAndConditions"/>
+        ORDER BY timestamp DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectContextAfterLogs" resultType="java.util.HashMap">
+        SELECT *
+        FROM ${tableName}
+        WHERE timestamp &gt; CAST(#{timestamp} AS timestamp)
+        <include refid="DynamicFiltersAndConditions"/>
+        ORDER BY timestamp ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectDimensionStats" resultType="java.util.HashMap">
+        SELECT ${dimensionExpression} AS value, count(*) AS count
+        FROM ${tableName}
+        WHERE timestamp &gt;= CAST(#{startTime} AS timestamp)
+          AND timestamp &lt;= CAST(#{endTime} AS timestamp)
+        GROUP BY ${dimensionExpression}
+        ORDER BY count DESC
+        LIMIT 10
+    </select>
+
+    <select id="selectTimeSeries" resultType="java.util.HashMap">
+        SELECT ${timeBucketExpression} AS time_bucket, count(*) AS count
+        FROM ${tableName}
+        WHERE timestamp &gt;= CAST(#{startTime} AS timestamp)
+          AND timestamp &lt;= CAST(#{endTime} AS timestamp)
+        GROUP BY time_bucket
+        ORDER BY time_bucket
+    </select>
+
+</mapper>

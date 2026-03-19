@@ -3,26 +3,32 @@ package cn.mw.loganalysis.stats.service.query;
 import cn.mw.loganalysis.stats.dto.LogContextRequest;
 import cn.mw.loganalysis.stats.dto.LogQueryRequest;
 import cn.mw.loganalysis.stats.dto.StatsQueryRequest;
+import cn.mw.loganalysis.stats.mapper.PostgreSqlQueryMapper;
+import cn.mw.loganalysis.stats.mapper.param.ContextLogQueryParam;
+import cn.mw.loganalysis.stats.mapper.param.DimensionStatsQueryParam;
+import cn.mw.loganalysis.stats.mapper.param.LogQuerySqlParam;
+import cn.mw.loganalysis.stats.mapper.param.TimeSeriesQueryParam;
+import cn.mw.loganalysis.stats.service.query.support.DynamicMyBatisUtils;
+import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * PostgreSQL 日志查询策略实现
- * 使用 PostgreSQLOperationStrategy 的共享连接池
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class PostgreSQLQueryStrategy implements LogQueryStrategy {
-
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final PostgreSQLOperationStrategy operationStrategy;
 
@@ -34,60 +40,15 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
     @Override
     public List<FieldInfo> getTableSchema(DatasourceConnectionConfig config) {
         log.info("PostgreSQL getTableSchema: table={}", config.getTable());
-
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
-
-        // 查询表结构
-        String sql = "SELECT column_name, data_type FROM information_schema.columns " +
-                     "WHERE table_name = ? ORDER BY ordinal_position";
-        
-        List<FieldInfo> fields = jdbcTemplate.query(sql, 
-            new Object[]{tableName},
-            (rs, rowNum) -> {
-                String name = rs.getString("column_name");
-                String type = rs.getString("data_type");
-                
-                return FieldInfo.builder()
-                        .name(name)
-                        .type(type)
-                        .label(name)
-                        .isTimestamp(isTimestampType(type))
-                        .isStatsDimension(isStatsDimensionType(type))
-                        .isContentField(isContentField(name))
-                        .build();
-            }
-        );
-
-        log.info("Found {} fields in table {}", fields.size(), tableName);
-        return fields;
-    }
-
-    private boolean isTimestampType(String type) {
-        return type != null && (
-            type.contains("timestamp") || 
-            type.contains("date") ||
-            type.contains("time")
-        );
-    }
-
-    private boolean isStatsDimensionType(String type) {
-        return type != null && (
-            type.contains("character") ||
-            type.contains("varchar") ||
-            type.contains("text") ||
-            type.equals("name")
-        );
-    }
-
-    private boolean isContentField(String name) {
-        return name != null && (
-            name.equalsIgnoreCase("message") ||
-            name.equalsIgnoreCase("raw") ||
-            name.equalsIgnoreCase("content") ||
-            name.equalsIgnoreCase("body") ||
-            name.equalsIgnoreCase("log") ||
-            name.equalsIgnoreCase("text")
+        return DynamicMyBatisUtils.execute(
+                getSqlSessionFactory(config),
+                PostgreSqlQueryMapper.class,
+                mapper -> StatsQueryMapperUtils.toFieldInfoList(
+                        mapper.selectTableSchemaRows(config.getTable()),
+                        this::isTimestampType,
+                        this::isStatsDimensionType,
+                        this::isContentField
+                )
         );
     }
 
@@ -95,119 +56,114 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryLogs(LogQueryRequest request, DatasourceConnectionConfig config) {
         log.info("PostgreSQL queryLogs: table={}, endpoint={}", config.getTable(), config.getEndpoint());
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
+        String tableName = StatsQueryMapperUtils.quotePostgreSqlIdentifier(config.getTable());
+        int pageSize = Math.max(ObjectUtils.defaultIfNull(request.getPageSize(), 100), 1);
+        int pageNum = Math.max(ObjectUtils.defaultIfNull(request.getPageNum(), 1), 1);
+        LogQuerySqlParam queryParam = LogQuerySqlParam.builder()
+                .tableName(tableName)
+                .startTime(StatsQueryMapperUtils.format(request.getStartTime()))
+                .endTime(StatsQueryMapperUtils.format(request.getEndTime()))
+                .pageSize(pageSize)
+                .offset((pageNum - 1) * pageSize)
+                .fieldFilters(StatsQueryMapperUtils.buildPostgreSqlFieldFilters(request.getFieldFilters()))
+                .messageConditions(StatsQueryMapperUtils.buildMessageConditions(request.getMessageConditions()))
+                .rawConditions(StatsQueryMapperUtils.buildMessageConditions(request.getRawConditions()))
+                .build();
 
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT * FROM ").append(tableName)
-           .append(" WHERE timestamp >= ?::timestamp AND timestamp <= ?::timestamp ");
+        return DynamicMyBatisUtils.execute(getSqlSessionFactory(config), PostgreSqlQueryMapper.class, mapper -> {
+            Long total = mapper.countLogs(queryParam);
+            List<Map<String, Object>> data = mapper.selectLogs(queryParam);
+            StatsQueryMapperUtils.normalizeTimestampField(data, "timestamp");
 
-        List<Object> params = new ArrayList<>();
-        params.add(request.getStartTime().toString());
-        params.add(request.getEndTime().toString());
-
-        addFieldFilters(sql, params, request.getFieldFilters());
-        addMessageConditions(sql, params, request.getMessageConditions(), "message");
-        addMessageConditions(sql, params, request.getRawConditions(), "raw");
-
-        Long total = queryTotalCount(jdbcTemplate, tableName, request);
-
-        sql.append("ORDER BY timestamp DESC ");
-        sql.append("LIMIT ? OFFSET ?");
-        params.add(request.getPageSize());
-        params.add((request.getPageNum() - 1) * request.getPageSize());
-
-        log.info("PostgreSQL queryLogs data SQL: template={}, params={}, rendered={}",
-                sql, params, SqlDebugFormatter.render(sql.toString(), params));
-
-        List<Map<String, Object>> data = jdbcTemplate.queryForList(sql.toString(), params.toArray());
-
-        data.forEach(row -> {
-            if (row.get("timestamp") != null) {
-                row.put("timestamp", row.get("timestamp").toString());
-            }
+            Map<String, Object> result = new HashMap<>();
+            result.put("total", total != null ? total : 0);
+            result.put("pageNum", pageNum);
+            result.put("pageSize", pageSize);
+            result.put("data", data);
+            return result;
         });
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("total", total != null ? total : 0);
-        result.put("pageNum", request.getPageNum());
-        result.put("pageSize", request.getPageSize());
-        result.put("data", data);
-
-        return result;
     }
 
     @Override
     public Map<String, Object> queryLogContext(LogContextRequest request, DatasourceConnectionConfig config) {
         log.info("PostgreSQL queryLogContext: logId={}", request.getLogId());
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
+        String tableName = StatsQueryMapperUtils.quotePostgreSqlIdentifier(config.getTable());
+        String timestamp = StatsQueryMapperUtils.format(request.getTimestamp());
 
-        List<Map<String, Object>> beforeLogs = new ArrayList<>();
-        List<Map<String, Object>> afterLogs = new ArrayList<>();
+        return DynamicMyBatisUtils.execute(getSqlSessionFactory(config), PostgreSqlQueryMapper.class, mapper -> {
+            List<Map<String, Object>> beforeLogs = new ArrayList<>();
+            List<Map<String, Object>> afterLogs = new ArrayList<>();
 
-        if (request.getBeforeCount() != null && request.getBeforeCount() > 0) {
-            String beforeSql = String.format(
-                "SELECT * FROM %s WHERE timestamp < ?::timestamp ORDER BY timestamp DESC LIMIT ?",
-                tableName
-            );
-            beforeLogs = jdbcTemplate.queryForList(beforeSql, request.getTimestamp().toString(), request.getBeforeCount());
-            Collections.reverse(beforeLogs);
-        }
+            if (request.getBeforeCount() != null && request.getBeforeCount() > 0) {
+                beforeLogs = mapper.selectContextBeforeLogs(ContextLogQueryParam.builder()
+                        .tableName(tableName)
+                        .timestamp(timestamp)
+                        .limit(request.getBeforeCount())
+                        .fieldFilters(Collections.emptyList())
+                        .messageConditions(Collections.emptyList())
+                        .rawConditions(Collections.emptyList())
+                        .build());
+                Collections.reverse(beforeLogs);
+                StatsQueryMapperUtils.normalizeTimestampField(beforeLogs, "timestamp");
+            }
 
-        if (request.getAfterCount() != null && request.getAfterCount() > 0) {
-            String afterSql = String.format(
-                "SELECT * FROM %s WHERE timestamp > ?::timestamp ORDER BY timestamp ASC LIMIT ?",
-                tableName
-            );
-            afterLogs = jdbcTemplate.queryForList(afterSql, request.getTimestamp().toString(), request.getAfterCount());
-        }
+            if (request.getAfterCount() != null && request.getAfterCount() > 0) {
+                afterLogs = mapper.selectContextAfterLogs(ContextLogQueryParam.builder()
+                        .tableName(tableName)
+                        .timestamp(timestamp)
+                        .limit(request.getAfterCount())
+                        .fieldFilters(Collections.emptyList())
+                        .messageConditions(Collections.emptyList())
+                        .rawConditions(Collections.emptyList())
+                        .build());
+                StatsQueryMapperUtils.normalizeTimestampField(afterLogs, "timestamp");
+            }
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("beforeLogs", beforeLogs);
-        result.put("afterLogs", afterLogs);
-        result.put("totalBefore", beforeLogs.size());
-        result.put("totalAfter", afterLogs.size());
-
-        return result;
+            Map<String, Object> result = new HashMap<>();
+            result.put("beforeLogs", beforeLogs);
+            result.put("afterLogs", afterLogs);
+            result.put("totalBefore", beforeLogs.size());
+            result.put("totalAfter", afterLogs.size());
+            return result;
+        });
     }
 
     @Override
     public Map<String, Object> queryStats(StatsQueryRequest request, DatasourceConnectionConfig config) {
         log.info("PostgreSQL queryStats: dimensions={}", request.getDimensions());
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
-
         Map<String, Object> result = new HashMap<>();
-
         if (request.getDimensions() == null || request.getDimensions().isEmpty()) {
             result.put("dimensions", Collections.emptyList());
             result.put("data", Collections.emptyList());
             return result;
         }
 
-        Map<String, List<Map<String, Object>>> statsData = new HashMap<>();
+        String tableName = StatsQueryMapperUtils.quotePostgreSqlIdentifier(config.getTable());
+        String startTime = StatsQueryMapperUtils.format(request.getStartTime());
+        String endTime = StatsQueryMapperUtils.format(request.getEndTime());
 
-        for (String dimension : request.getDimensions()) {
-            String sql = String.format(
-                "SELECT %s as value, count(*) as count FROM %s " +
-                "WHERE timestamp >= ?::timestamp AND timestamp <= ?::timestamp " +
-                "GROUP BY %s ORDER BY count DESC LIMIT 10",
-                dimension, tableName, dimension
-            );
-
-            List<Map<String, Object>> dimensionData = jdbcTemplate.queryForList(
-                sql, request.getStartTime().toString(), request.getEndTime().toString()
-            );
-            statsData.put(dimension, dimensionData);
-        }
+        Map<String, List<Map<String, Object>>> statsData = DynamicMyBatisUtils.execute(
+                getSqlSessionFactory(config),
+                PostgreSqlQueryMapper.class,
+                mapper -> {
+                    Map<String, List<Map<String, Object>>> data = new HashMap<>();
+                    for (String dimension : request.getDimensions()) {
+                        data.put(dimension, mapper.selectDimensionStats(DimensionStatsQueryParam.builder()
+                                .tableName(tableName)
+                                .startTime(startTime)
+                                .endTime(endTime)
+                                .dimensionExpression(StatsQueryMapperUtils.quotePostgreSqlIdentifier(dimension))
+                                .build()));
+                    }
+                    return data;
+                }
+        );
 
         result.put("dimensions", request.getDimensions());
         result.put("metrics", request.getMetrics());
         result.put("data", statsData);
-
         return result;
     }
 
@@ -215,33 +171,23 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
     public Map<String, Object> queryTimeSeries(StatsQueryRequest request, DatasourceConnectionConfig config) {
         log.info("PostgreSQL queryTimeSeries: granularity={}", request.getGranularity());
 
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-        String tableName = config.getTable();
+        TimeSeriesQueryParam queryParam = TimeSeriesQueryParam.builder()
+                .tableName(StatsQueryMapperUtils.quotePostgreSqlIdentifier(config.getTable()))
+                .startTime(StatsQueryMapperUtils.format(request.getStartTime()))
+                .endTime(StatsQueryMapperUtils.format(request.getEndTime()))
+                .timeBucketExpression(StatsQueryMapperUtils.getPostgreSqlTimeBucketExpression(request.getGranularity()))
+                .build();
 
-        String granularityFunc = getGranularityFunction(request.getGranularity());
-
-        String sql = String.format(
-            "SELECT %s as time_bucket, count(*) as count FROM %s " +
-            "WHERE timestamp >= ?::timestamp AND timestamp <= ?::timestamp " +
-            "GROUP BY time_bucket ORDER BY time_bucket",
-            granularityFunc, tableName
+        List<Map<String, Object>> series = DynamicMyBatisUtils.execute(
+                getSqlSessionFactory(config),
+                PostgreSqlQueryMapper.class,
+                mapper -> mapper.selectTimeSeries(queryParam)
         );
-
-        List<Map<String, Object>> series = jdbcTemplate.queryForList(
-            sql, request.getStartTime().toString(), request.getEndTime().toString()
-        );
-
-        series.forEach(point -> {
-            if (point.get("time_bucket") != null) {
-                point.put("timestamp", point.get("time_bucket").toString());
-                point.remove("time_bucket");
-            }
-        });
+        StatsQueryMapperUtils.renameAndNormalizeTimestampField(series, "time_bucket", "timestamp");
 
         Map<String, Object> result = new HashMap<>();
         result.put("granularity", request.getGranularity());
         result.put("series", series);
-
         return result;
     }
 
@@ -250,120 +196,35 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
         return null;
     }
 
-    // ==================== 私有方法 ====================
-
-    private JdbcTemplate getJdbcTemplate(DatasourceConnectionConfig config) {
-        // 使用 OperationStrategy 的共享连接池
-        return operationStrategy.getJdbcTemplate(config);
+    private SqlSessionFactory getSqlSessionFactory(DatasourceConnectionConfig config) {
+        return operationStrategy.getSqlSessionFactory(config);
     }
 
-    private Long queryTotalCount(JdbcTemplate jdbcTemplate, String tableName, LogQueryRequest request) {
-        StringBuilder countSql = new StringBuilder();
-        countSql.append("SELECT count(*) FROM ").append(tableName)
-                .append(" WHERE timestamp >= ?::timestamp AND timestamp <= ?::timestamp");
-
-        List<Object> params = new ArrayList<>();
-        params.add(request.getStartTime().toString());
-        params.add(request.getEndTime().toString());
-
-        addFieldFilters(countSql, params, request.getFieldFilters());
-        addMessageConditions(countSql, params, request.getMessageConditions(), "message");
-        addMessageConditions(countSql, params, request.getRawConditions(), "raw");
-
-        log.info("PostgreSQL queryLogs count SQL: template={}, params={}, rendered={}",
-                countSql, params, SqlDebugFormatter.render(countSql.toString(), params));
-        return jdbcTemplate.queryForObject(countSql.toString(), Long.class, params.toArray());
-
+    private boolean isTimestampType(String type) {
+        return type != null && (
+                type.contains("timestamp")
+                        || type.contains("date")
+                        || type.contains("time")
+        );
     }
 
-    private void addFieldFilters(StringBuilder sql, List<Object> params, List<LogQueryRequest.FieldFilter> filters) {
-        if (filters == null || filters.isEmpty()) {
-            return;
-        }
-
-        for (LogQueryRequest.FieldFilter filter : filters) {
-            if (filter.getValues() == null || filter.getValues().isEmpty()) {
-                continue;
-            }
-
-            String dbField = mapFieldToDbColumn(filter.getField());
-
-            if ("include".equalsIgnoreCase(filter.getType())) {
-                sql.append("AND ").append(dbField).append(" IN (");
-                sql.append(filter.getValues().stream().map(v -> "?").collect(Collectors.joining(", ")));
-                sql.append(") ");
-                params.addAll(filter.getValues());
-            } else if ("exclude".equalsIgnoreCase(filter.getType())) {
-                sql.append("AND ").append(dbField).append(" NOT IN (");
-                sql.append(filter.getValues().stream().map(v -> "?").collect(Collectors.joining(", ")));
-                sql.append(") ");
-                params.addAll(filter.getValues());
-            }
-        }
+    private boolean isStatsDimensionType(String type) {
+        return type != null && (
+                type.contains("character")
+                        || type.contains("varchar")
+                        || type.contains("text")
+                        || type.equals("name")
+        );
     }
 
-    private String mapFieldToDbColumn(String field) {
-        if (field == null) return field;
-        switch (field) {
-            case "levels": return "severity";
-            case "sources": case "source_types": return "source_type";
-            case "hosts": case "hostnames": return "hostname";
-            case "services": case "appnames": return "appname";
-            case "facilities": return "facility";
-            case "procids": return "procid";
-            case "sourceIps": return "source_ip";
-            default: return field;
-        }
-    }
-
-    private void addMessageConditions(StringBuilder sql, List<Object> params,
-                                       List<LogQueryRequest.MessageCondition> conditions, String fieldName) {
-        if (conditions == null || conditions.isEmpty()) {
-            return;
-        }
-
-        for (LogQueryRequest.MessageCondition condition : conditions) {
-            if (condition == null || !StringUtils.hasText(condition.getValue())) {
-                continue;
-            }
-
-            String operator = condition.getOperator();
-            String value = condition.getValue();
-
-            switch (operator) {
-                case "contains":
-                    sql.append("AND ").append(fieldName).append(" ILIKE ? ");
-                    params.add("%" + value + "%");
-                    break;
-                case "notContains":
-                    sql.append("AND ").append(fieldName).append(" NOT ILIKE ? ");
-                    params.add("%" + value + "%");
-                    break;
-                case "equals":
-                    sql.append("AND ").append(fieldName).append(" = ? ");
-                    params.add(value);
-                    break;
-                case "notEquals":
-                    sql.append("AND ").append(fieldName).append(" != ? ");
-                    params.add(value);
-                    break;
-                default:
-                    sql.append("AND ").append(fieldName).append(" ILIKE ? ");
-                    params.add("%" + value + "%");
-            }
-        }
-    }
-
-    private String getGranularityFunction(String granularity) {
-        if (granularity == null || "auto".equals(granularity)) {
-            return "date_trunc('hour', timestamp)";
-        }
-        switch (granularity) {
-            case "1m": return "date_trunc('minute', timestamp)";
-            case "5m": return "date_trunc('minute', timestamp) - (EXTRACT(MINUTE FROM timestamp)::int % 5) * interval '1 minute'";
-            case "1h": return "date_trunc('hour', timestamp)";
-            case "1d": return "date_trunc('day', timestamp)";
-            default: return "date_trunc('hour', timestamp)";
-        }
+    private boolean isContentField(String name) {
+        return name != null && (
+                name.equalsIgnoreCase("message")
+                        || name.equalsIgnoreCase("raw")
+                        || name.equalsIgnoreCase("content")
+                        || name.equalsIgnoreCase("body")
+                        || name.equalsIgnoreCase("log")
+                        || name.equalsIgnoreCase("text")
+        );
     }
 }

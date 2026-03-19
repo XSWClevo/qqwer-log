@@ -2,18 +2,21 @@ package cn.mw.loganalysis.wizard.service;
 
 import cn.mw.loganalysis.datasource.entity.Datasource;
 import cn.mw.loganalysis.datasource.mapper.DatasourceMapper;
+import cn.mw.loganalysis.stats.service.query.support.DynamicMyBatisUtils;
+import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import cn.mw.loganalysis.vector.dto.ConfigComponentRequest;
 import cn.mw.loganalysis.vector.service.ConfigComponentService;
 import cn.mw.loganalysis.wizard.dto.CreateTableRequest;
 import cn.mw.loganalysis.wizard.dto.CreateTableResponse;
+import cn.mw.loganalysis.wizard.mapper.ClickHouseTableMapper;
 import com.clickhouse.jdbc.ClickHouseDataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -49,13 +52,13 @@ public class TableManagementService {
 
             // 3. 提取表名（如果没有提供）
             String tableName = request.getTableName();
-            if (!StringUtils.hasText(tableName)) {
+            if (StringUtils.isBlank(tableName)) {
                 tableName = extractTableName(request.getDdl());
             }
 
             // 4. 创建 Remap Transform 组件
             String remapComponentId = null;
-            if (StringUtils.hasText(request.getVrlScript())) {
+            if (StringUtils.isNotBlank(request.getVrlScript())) {
                 remapComponentId = createRemapComponent(tableName, request.getVrlScript(), request.getParseMethod());
             }
 
@@ -87,21 +90,10 @@ public class TableManagementService {
             throw new RuntimeException("仅支持 ClickHouse 数据源");
         }
 
-        try {
-            String url = buildClickHouseUrl(datasource);
-            Properties properties = new Properties();
-            properties.setProperty("user", datasource.getUsername());
-            properties.setProperty("password", datasource.getPassword());
-
-            ClickHouseDataSource dataSource = new ClickHouseDataSource(url, properties);
-
-            try (Connection conn = dataSource.getConnection();
+        try (Connection conn = buildClickHouseDataSource(datasource).getConnection();
                  Statement stmt = conn.createStatement()) {
-                
-                stmt.execute(ddl);
-                log.info("创建表成功，数据源：{}，DDL：{}", datasourceId, ddl);
-            }
-
+            stmt.execute(ddl);
+            log.info("创建表成功，数据源：{}，DDL：{}", datasourceId, ddl);
         } catch (Exception e) {
             log.error("创建表失败", e);
             throw new RuntimeException("创建表失败: " + e.getMessage(), e);
@@ -122,30 +114,20 @@ public class TableManagementService {
         }
 
         try {
-            String url = buildClickHouseUrl(datasource);
-            Properties properties = new Properties();
-            properties.setProperty("user", datasource.getUsername());
-            properties.setProperty("password", datasource.getPassword());
-
-            ClickHouseDataSource dataSource = new ClickHouseDataSource(url, properties);
-
-            List<Map<String, Object>> tables = new ArrayList<>();
-
-            try (Connection conn = dataSource.getConnection();
-                 Statement stmt = conn.createStatement()) {
-                
-                String sql = String.format("SHOW TABLES FROM %s", datasource.getDatabaseName());
-                ResultSet rs = stmt.executeQuery(sql);
-
-                while (rs.next()) {
-                    Map<String, Object> table = new HashMap<>();
-                    table.put("name", rs.getString(1));
-                    tables.add(table);
-                }
+            String databaseExpression = StatsQueryMapperUtils.quoteClickHouseIdentifier(
+                    StringUtils.defaultIfBlank(datasource.getDatabaseName(), "default"));
+            List<String> tableNames = DynamicMyBatisUtils.execute(
+                    buildSqlSessionFactory(datasource),
+                    ClickHouseTableMapper.class,
+                    mapper -> mapper.selectTables(databaseExpression)
+            );
+            List<Map<String, Object>> tables = new ArrayList<>(tableNames.size());
+            for (String tableName : tableNames) {
+                Map<String, Object> table = new HashMap<>();
+                table.put("name", tableName);
+                tables.add(table);
             }
-
             return tables;
-
         } catch (Exception e) {
             log.error("查询表列表失败", e);
             throw new RuntimeException("查询表列表失败: " + e.getMessage(), e);
@@ -166,35 +148,14 @@ public class TableManagementService {
         }
 
         try {
-            String url = buildClickHouseUrl(datasource);
-            Properties properties = new Properties();
-            properties.setProperty("user", datasource.getUsername());
-            properties.setProperty("password", datasource.getPassword());
-
-            ClickHouseDataSource dataSource = new ClickHouseDataSource(url, properties);
-
-            List<Map<String, Object>> columns = new ArrayList<>();
-
-            try (Connection conn = dataSource.getConnection();
-                 Statement stmt = conn.createStatement()) {
-                
-                String sql = String.format("DESCRIBE TABLE %s.%s", 
-                    datasource.getDatabaseName(), tableName);
-                ResultSet rs = stmt.executeQuery(sql);
-
-                while (rs.next()) {
-                    Map<String, Object> column = new HashMap<>();
-                    column.put("name", rs.getString("name"));
-                    column.put("type", rs.getString("type"));
-                    column.put("default_type", rs.getString("default_type"));
-                    column.put("default_expression", rs.getString("default_expression"));
-                    column.put("comment", rs.getString("comment"));
-                    columns.add(column);
-                }
-            }
-
-            return columns;
-
+            String databaseExpression = StatsQueryMapperUtils.quoteClickHouseIdentifier(
+                    StringUtils.defaultIfBlank(datasource.getDatabaseName(), "default"));
+            String tableExpression = StatsQueryMapperUtils.quoteClickHouseIdentifier(tableName);
+            return DynamicMyBatisUtils.execute(
+                    buildSqlSessionFactory(datasource),
+                    ClickHouseTableMapper.class,
+                    mapper -> mapper.selectTableColumns(databaseExpression, tableExpression)
+            );
         } catch (Exception e) {
             log.error("查询表结构失败", e);
             throw new RuntimeException("查询表结构失败: " + e.getMessage(), e);
@@ -215,35 +176,35 @@ public class TableManagementService {
             throw new RuntimeException("仅支持 ClickHouse 数据源");
         }
 
-        try {
-            String url = buildClickHouseUrl(datasource);
-            Properties properties = new Properties();
-            properties.setProperty("user", datasource.getUsername());
-            properties.setProperty("password", datasource.getPassword());
-
-            ClickHouseDataSource dataSource = new ClickHouseDataSource(url, properties);
-
-            try (Connection conn = dataSource.getConnection();
+        try (Connection conn = buildClickHouseDataSource(datasource).getConnection();
                  Statement stmt = conn.createStatement()) {
-                
-                StringBuilder sql = new StringBuilder();
-                sql.append("ALTER TABLE ").append(datasource.getDatabaseName())
-                   .append(".").append(tableName)
-                   .append(" ADD COLUMN IF NOT EXISTS ")
-                   .append(columnName).append(" ").append(columnType);
-                
-                if (comment != null && !comment.isEmpty()) {
-                    sql.append(" COMMENT '").append(comment.replace("'", "\\'")).append("'");
-                }
+            StringBuilder sql = new StringBuilder();
+            sql.append("ALTER TABLE ").append(datasource.getDatabaseName())
+               .append(".").append(tableName)
+               .append(" ADD COLUMN IF NOT EXISTS ")
+               .append(columnName).append(" ").append(columnType);
 
-                stmt.execute(sql.toString());
-                log.info("添加字段成功，表：{}，字段：{}", tableName, columnName);
+            if (StringUtils.isNotBlank(comment)) {
+                sql.append(" COMMENT '").append(comment.replace("'", "\\'")).append("'");
             }
 
+            stmt.execute(sql.toString());
+            log.info("添加字段成功，表：{}，字段：{}", tableName, columnName);
         } catch (Exception e) {
             log.error("添加字段失败", e);
             throw new RuntimeException("添加字段失败: " + e.getMessage(), e);
         }
+    }
+
+    private SqlSessionFactory buildSqlSessionFactory(Datasource datasource) throws Exception {
+        return DynamicMyBatisUtils.buildSqlSessionFactory(buildClickHouseDataSource(datasource), ClickHouseTableMapper.class);
+    }
+
+    private ClickHouseDataSource buildClickHouseDataSource(Datasource datasource) throws Exception {
+        Properties properties = new Properties();
+        properties.setProperty("user", StringUtils.defaultIfBlank(datasource.getUsername(), "default"));
+        properties.setProperty("password", StringUtils.defaultString(datasource.getPassword()));
+        return new ClickHouseDataSource(buildClickHouseUrl(datasource), properties);
     }
 
     /**
@@ -253,7 +214,7 @@ public class TableManagementService {
         return String.format("jdbc:clickhouse://%s:%d/%s",
             datasource.getHost(),
             datasource.getPort(),
-            datasource.getDatabaseName());
+            StringUtils.defaultIfBlank(datasource.getDatabaseName(), "default"));
     }
 
     /**

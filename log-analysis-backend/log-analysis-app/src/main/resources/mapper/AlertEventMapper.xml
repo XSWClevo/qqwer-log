@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.mw.loganalysis.alert.mapper.AlertEventMapper">
+
+    <select id="getLastTriggeredTime" resultType="java.time.LocalDateTime">
+        SELECT MAX(triggered_at)
+        FROM alert_events
+        WHERE rule_id = #{ruleId}
+    </select>
+
+    <select id="getTriggerCount" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM alert_events
+        WHERE rule_id = #{ruleId}
+    </select>
+
+</mapper>

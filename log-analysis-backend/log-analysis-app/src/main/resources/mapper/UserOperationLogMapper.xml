@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.mw.loganalysis.operationlog.mapper.UserOperationLogMapper">
+
+    <select id="selectStatsByOperationType" resultType="cn.mw.loganalysis.operationlog.dto.response.OperationStatsDTO">
+        SELECT operation_type AS name,
+               COUNT(*) AS count,
+               SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
+               SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
+               ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
+        FROM user_operation_logs
+        WHERE created_at &gt;= CAST(#{startTime} AS timestamp)
+          AND created_at &lt;= CAST(#{endTime} AS timestamp)
+        GROUP BY operation_type
+        ORDER BY count DESC
+    </select>
+
+    <select id="selectStatsByModule" resultType="cn.mw.loganalysis.operationlog.dto.response.OperationStatsDTO">
+        SELECT module AS name,
+               COUNT(*) AS count,
+               SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
+               SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
+               ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
+        FROM user_operation_logs
+        WHERE created_at &gt;= CAST(#{startTime} AS timestamp)
+          AND created_at &lt;= CAST(#{endTime} AS timestamp)
+        GROUP BY module
+        ORDER BY count DESC
+    </select>
+
+    <select id="selectStatsByUser" resultType="cn.mw.loganalysis.operationlog.dto.response.OperationStatsDTO">
+        SELECT username AS name,
+               COUNT(*) AS count,
+               SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END) AS success_count,
+               SUM(CASE WHEN is_success = false THEN 1 ELSE 0 END) AS failure_count,
+               ROUND(SUM(CASE WHEN is_success = true THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 2) AS success_rate
+        FROM user_operation_logs
+        WHERE created_at &gt;= CAST(#{startTime} AS timestamp)
+          AND created_at &lt;= CAST(#{endTime} AS timestamp)
+        GROUP BY username
+        ORDER BY count DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countDeleteOperationsByUserIdAndTime" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM user_operation_logs
+        WHERE user_id = #{userId}
+          AND operation_type = 'DELETE'
+          AND created_at &gt;= #{startTime}
+          AND created_at &lt;= #{endTime}
+    </select>
+
+    <insert id="insertArchiveBefore">
+        INSERT INTO user_operation_logs_archive
+        SELECT *
+        FROM user_operation_logs
+        WHERE created_at &lt; #{cutoffDate}
+    </insert>
+
+    <delete id="deleteLogsBefore">
+        DELETE FROM user_operation_logs
+        WHERE created_at &lt; #{cutoffDate}
+    </delete>
+
+</mapper>

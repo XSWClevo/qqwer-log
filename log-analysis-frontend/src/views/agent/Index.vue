@@ -1310,7 +1310,7 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .metric-card {
   min-height: 82px;
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 12px 16px;
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(226, 232, 240, 0.16);
@@ -1410,7 +1410,7 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .datasource-summary {
   padding: 14px;
-  border-radius: 18px;
+  border-radius: 8px;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.05), rgba(15, 23, 42, 0.02));
   display: flex;
   flex-direction: column;
@@ -1448,13 +1448,13 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .history-skeleton-item {
   height: 88px;
-  border-radius: 18px;
+  border-radius: 8px;
   background: linear-gradient(90deg, rgba(226, 232, 240, 0.55), rgba(241, 245, 249, 0.9));
 }
 
 .draft-card,
 .conversation-item {
-  border-radius: 14px;
+  border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   background: rgba(255, 255, 255, 0.8);
   transition: 0.2s ease;
@@ -1692,17 +1692,17 @@ watch(selectedDatasourceId, (value, oldValue) => {
   width: 42px;
   height: 42px;
   flex-shrink: 0;
-  border-radius: 14px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #0f172a, #1e293b);
+  background: #0f172a;
   color: #fff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .message-row.user .message-avatar {
-  background: linear-gradient(180deg, #0284c7, #0369a1);
+  background: #0284c7;
 }
 
 .message-stack {
@@ -1717,13 +1717,13 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .message-bubble {
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 14px 16px;
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 
   &.assistant {
     color: var(--agent-ink);
-    background: linear-gradient(180deg, rgba(252, 253, 255, 0.98), rgba(244, 247, 251, 0.98));
+    background: #f8fafc;
     border: 1px solid rgba(148, 163, 184, 0.18);
   }
 
@@ -1733,7 +1733,7 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
   &.user {
     color: #fff;
-    background: linear-gradient(180deg, #0ea5e9, #0284c7);
+    background: #0ea5e9;
   }
 }
 
@@ -1887,7 +1887,7 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .tool-call-card,
 .result-panel {
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(255, 255, 255, 0.92);
 }

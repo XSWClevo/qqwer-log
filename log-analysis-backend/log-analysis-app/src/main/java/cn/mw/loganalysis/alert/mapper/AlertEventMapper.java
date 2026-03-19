@@ -8,7 +8,6 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -24,13 +23,11 @@ public interface AlertEventMapper extends BaseMapper<AlertEvent> {
     /**
      * 获取规则最后触发时间
      */
-    @Select("SELECT MAX(triggered_at) FROM alert_events WHERE rule_id = #{ruleId}")
     LocalDateTime getLastTriggeredTime(@Param("ruleId") Long ruleId);
 
     /**
      * 获取规则触发次数
      */
-    @Select("SELECT COUNT(*) FROM alert_events WHERE rule_id = #{ruleId}")
     Long getTriggerCount(@Param("ruleId") Long ruleId);
 
     /**

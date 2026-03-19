@@ -1,12 +1,17 @@
 package cn.mw.loganalysis.stats.service.query;
 
+import cn.mw.loganalysis.stats.mapper.PostgreSqlQueryMapper;
+import cn.mw.loganalysis.stats.service.query.support.DynamicMyBatisUtils;
+import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -22,6 +27,7 @@ import java.util.stream.Collectors;
 public class PostgreSQLOperationStrategy implements DatasourceOperationStrategy {
 
     private final Map<String, HikariDataSource> dataSourceCache = new ConcurrentHashMap<>();
+    private final Map<String, SqlSessionFactory> sqlSessionFactoryCache = new ConcurrentHashMap<>();
 
     @Override
     public String getSupportedType() {
@@ -32,9 +38,11 @@ public class PostgreSQLOperationStrategy implements DatasourceOperationStrategy 
     public ConnectionTestResult testConnection(DatasourceConnectionConfig config) {
         long startTime = System.currentTimeMillis();
         try {
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-            
-            String version = jdbcTemplate.queryForObject("SELECT version()", String.class);
+            String version = DynamicMyBatisUtils.execute(
+                    getSqlSessionFactory(config),
+                    PostgreSqlQueryMapper.class,
+                    PostgreSqlQueryMapper::selectVersion
+            );
             
             long responseTime = System.currentTimeMillis() - startTime;
             
@@ -57,44 +65,40 @@ public class PostgreSQLOperationStrategy implements DatasourceOperationStrategy 
     @Override
     public TableCheckResult checkTable(DatasourceConnectionConfig config) {
         try {
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
             String tableName = config.getTable();
+            return DynamicMyBatisUtils.execute(getSqlSessionFactory(config), PostgreSqlQueryMapper.class, mapper -> {
+                Long count = mapper.countTables(tableName);
 
-            // 检查表是否存在
-            String checkSql = "SELECT count(*) FROM information_schema.tables WHERE table_name = ?";
-            Long count = jdbcTemplate.queryForObject(checkSql, Long.class, tableName);
+                if (count == null || count == 0) {
+                    return TableCheckResult.builder()
+                            .exists(false)
+                            .tableName(tableName)
+                            .message("表不存在")
+                            .build();
+                }
 
-            if (count == null || count == 0) {
+                List<FieldInfo> fields = mapper.selectTableSchemaRows(tableName).stream()
+                        .map(row -> {
+                            String name = String.valueOf(row.get("name"));
+                            String type = String.valueOf(row.get("type"));
+                            return FieldInfo.builder()
+                                    .name(name)
+                                    .type(type)
+                                    .label(name)
+                                    .build();
+                        })
+                        .toList();
+
+                Long rowCount = mapper.countTableRows(StatsQueryMapperUtils.quotePostgreSqlIdentifier(tableName));
+
                 return TableCheckResult.builder()
-                        .exists(false)
+                        .exists(true)
                         .tableName(tableName)
-                        .message("表不存在")
+                        .message("表存在")
+                        .fields(fields)
+                        .rowCount(rowCount)
                         .build();
-            }
-
-            // 获取字段信息
-            String columnsSql = "SELECT column_name, data_type FROM information_schema.columns " +
-                               "WHERE table_name = ? ORDER BY ordinal_position";
-            List<FieldInfo> fields = jdbcTemplate.query(columnsSql, 
-                new Object[]{tableName},
-                (rs, rowNum) -> FieldInfo.builder()
-                        .name(rs.getString("column_name"))
-                        .type(rs.getString("data_type"))
-                        .label(rs.getString("column_name"))
-                        .build()
-            );
-
-            // 获取行数
-            String countSql = "SELECT count(*) FROM " + tableName;
-            Long rowCount = jdbcTemplate.queryForObject(countSql, Long.class);
-
-            return TableCheckResult.builder()
-                    .exists(true)
-                    .tableName(tableName)
-                    .message("表存在")
-                    .fields(fields)
-                    .rowCount(rowCount)
-                    .build();
+            });
 
         } catch (Exception e) {
             log.error("检查表失败: {}", e.getMessage());
@@ -145,20 +149,20 @@ public class PostgreSQLOperationStrategy implements DatasourceOperationStrategy 
     public CreateTableResult createTable(DatasourceConnectionConfig config, TableSchema schema) {
         try {
             String sql = generateCreateTableSQL(config, schema);
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-            
-            jdbcTemplate.execute(sql);
-            
-            // 创建索引
-            String tableName = schema.getTableName() != null ? schema.getTableName() : config.getTable();
-            String indexSql = "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_timestamp ON " + tableName + " (timestamp)";
-            jdbcTemplate.execute(indexSql);
-            
-            return CreateTableResult.builder()
-                    .success(true)
-                    .message("建表成功")
-                    .executedSQL(sql + ";\n" + indexSql)
-                    .build();
+            try (Connection connection = getDataSource(config).getConnection();
+                 Statement statement = connection.createStatement()) {
+                statement.execute(sql);
+
+                String tableName = schema.getTableName() != null ? schema.getTableName() : config.getTable();
+                String indexSql = "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_timestamp ON " + tableName + " (timestamp)";
+                statement.execute(indexSql);
+
+                return CreateTableResult.builder()
+                        .success(true)
+                        .message("建表成功")
+                        .executedSQL(sql + ";\n" + indexSql)
+                        .build();
+            }
         } catch (Exception e) {
             log.error("建表失败: {}", e.getMessage());
             return CreateTableResult.builder()
@@ -205,21 +209,53 @@ public class PostgreSQLOperationStrategy implements DatasourceOperationStrategy 
     @Override
     public List<String> listTables(DatasourceConnectionConfig config) {
         try {
-            JdbcTemplate jdbcTemplate = getJdbcTemplate(config);
-            
-            String sql = "SELECT table_name FROM information_schema.tables " +
-                        "WHERE table_schema = 'public' ORDER BY table_name";
-            return jdbcTemplate.queryForList(sql, String.class);
+            return DynamicMyBatisUtils.execute(
+                    getSqlSessionFactory(config),
+                    PostgreSqlQueryMapper.class,
+                    PostgreSqlQueryMapper::selectTables
+            );
         } catch (Exception e) {
             log.error("获取表列表失败: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
 
-    public JdbcTemplate getJdbcTemplate(DatasourceConnectionConfig config) {
-        String cacheKey = config.getEndpoint() + "_" + (config.getDatabase() != null ? config.getDatabase() : "postgres");
+    public SqlSessionFactory getSqlSessionFactory(DatasourceConnectionConfig config) {
+        String cacheKey = getCacheKey(config);
+        return sqlSessionFactoryCache.computeIfAbsent(cacheKey,
+                key -> DynamicMyBatisUtils.buildSqlSessionFactory(getDataSource(config), PostgreSqlQueryMapper.class));
+    }
 
-        HikariDataSource dataSource = dataSourceCache.computeIfAbsent(cacheKey, k -> {
+    private String buildJdbcUrl(DatasourceConnectionConfig config) {
+        String endpoint = config.getEndpoint();
+        String database = config.getDatabase();
+
+        if (endpoint.startsWith("jdbc:")) {
+            return endpoint;
+        }
+
+        StringBuilder url = new StringBuilder("jdbc:postgresql://");
+        url.append(endpoint);
+        if (StringUtils.hasText(database)) {
+            url.append("/").append(database);
+        }
+
+        return url.toString();
+    }
+
+    public void closeAllConnections() {
+        dataSourceCache.values().forEach(HikariDataSource::close);
+        dataSourceCache.clear();
+        sqlSessionFactoryCache.clear();
+    }
+
+    private String getCacheKey(DatasourceConnectionConfig config) {
+        return config.getEndpoint() + "_" + (config.getDatabase() != null ? config.getDatabase() : "postgres");
+    }
+
+    private HikariDataSource getDataSource(DatasourceConnectionConfig config) {
+        String cacheKey = getCacheKey(config);
+        return dataSourceCache.computeIfAbsent(cacheKey, k -> {
             HikariConfig hikariConfig = new HikariConfig();
 
             String jdbcUrl = buildJdbcUrl(config);
@@ -243,29 +279,5 @@ public class PostgreSQLOperationStrategy implements DatasourceOperationStrategy 
             log.info("Creating PostgreSQL connection pool: {}", jdbcUrl);
             return new HikariDataSource(hikariConfig);
         });
-
-        return new JdbcTemplate(dataSource);
-    }
-
-    private String buildJdbcUrl(DatasourceConnectionConfig config) {
-        String endpoint = config.getEndpoint();
-        String database = config.getDatabase();
-
-        if (endpoint.startsWith("jdbc:")) {
-            return endpoint;
-        }
-
-        StringBuilder url = new StringBuilder("jdbc:postgresql://");
-        url.append(endpoint);
-        if (StringUtils.hasText(database)) {
-            url.append("/").append(database);
-        }
-
-        return url.toString();
-    }
-
-    public void closeAllConnections() {
-        dataSourceCache.values().forEach(HikariDataSource::close);
-        dataSourceCache.clear();
     }
 }
