@@ -2,8 +2,8 @@ langchain4j:
   open-ai:
     chat-model:
       # DashScope Qwen via OpenAI-compatible API.
-      # Replace this with your own DashScope API key from Model Studio.
-      api-key: ${dashscope_api_key}
+      # Replace this with your own DashScope API key from Model Studio. ${DASHSCOPE_API_KEY}
+      api-key: ${DASHSCOPE_API_KEY:}
       # Beijing region endpoint. For Singapore region use:
       # https://dashscope-intl.aliyuncs.com/compatible-mode/v1
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
