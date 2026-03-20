@@ -1,6 +1,6 @@
 # 智能助手 LLM / MCP / Memory 接入说明
 
-最后更新：2026-03-07
+最后更新：2026-03-19
 
 ## 1. 这套方案到底解决什么问题
 
@@ -301,11 +301,11 @@ MCP 解决的是：
 
 ### 7.2 当前实现方式
 
-后端使用：
+后端现在分两层：
 
-- `Caffeine` 本地缓存
-- 按 `sessionId` 归档
-- 默认保留最近若干条消息
+- `Caffeine` 只负责按 `sessionId` 缓存当前会话对象
+- 官方 `TokenWindowChatMemory` 负责真正的上下文窗口裁剪
+- 完整历史仍然单独落 PostgreSQL
 - 12 小时无访问自动过期
 
 对应代码：
@@ -315,6 +315,18 @@ MCP 解决的是：
 - `AgentChatRequest.sessionId`
 - `AgentChatResponse.sessionId`
 
+需要特别注意：
+
+- 现在已经不是“固定保留最近 N 条消息”
+- 窗口大小改成 `agent.llm.memory.max-tokens`
+- 裁剪维度是 token，不是消息条数
+
+这意味着：
+
+- 短消息可以保留更多轮
+- 长消息会更早被淘汰
+- prompt 体积更接近模型真实输入成本
+
 前端做的事很少：
 
 - 首次进入页面生成一个 `sessionId`
@@ -323,15 +335,21 @@ MCP 解决的是：
 
 ### 7.3 memory 如何影响 LLM
 
-现在每次请求前，后端会先用 `sessionId` 找回最近几轮对话，把它们回填到请求的 `history` 中。
+现在每次请求前，后端会先用 `sessionId` 找回当前 memory，把它回填到请求的 `history` 中。
 
 然后 LLM executor 在构造 prompt 时，会把：
 
 - 当前数据源
 - 当前问题
-- 最近几轮历史
+- memory 输出的历史窗口
 
 一起发给模型。
+
+这里还有一个关键变化：
+
+- 旧版本 executor 会再按“最近 6 条”额外截一次 history
+- 现在这层重复裁剪已经去掉
+- 也就是说，真正控制上下文大小的是 `TokenWindowChatMemory`
 
 这意味着像下面这种多轮问题，LLM 能理解：
 
@@ -364,7 +382,7 @@ MCP 解决的是：
 1. 前端首次打开智能助手页面时生成一个 `sessionId`
 2. 后端收到请求后，先按 `sessionId` 取最近几轮消息
 3. 如果这是一个新 session，才会用前端传入的 `history` 做一次 bootstrap
-4. 当前轮执行完成后，后端把 `user message + assistant answer` 记回缓存
+4. 当前轮执行完成后，后端把 `user message + assistant answer` 记回 `TokenWindowChatMemory`
 5. 后续同一个 `sessionId` 的请求，不再依赖前端每次回放整段历史
 
 这也是为什么现在切换数据源时，前端会主动重置 `sessionId`：
@@ -477,7 +495,7 @@ MCP 解决的是：
 
 - `agent.llm.enabled`
 - `agent.llm.fallback-on-error`
-- `agent.llm.max-history-messages`
+- `agent.llm.memory.max-tokens`
 - `langchain4j.open-ai.chat-model.api-key`
 - `langchain4j.open-ai.chat-model.base-url`
 - `langchain4j.open-ai.chat-model.model-name`

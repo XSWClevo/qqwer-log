@@ -23,7 +23,6 @@ import dev.langchain4j.service.tool.BeforeToolExecution;
 import dev.langchain4j.service.tool.ToolExecution;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -127,12 +126,6 @@ public class LangChain4jLogAnalysisAgentExecutor {
         this.configComponentService = configComponentService;
         this.objectMapper = objectMapper;
     }
-
-    /**
-     * 为了控制 token 成本，只带最近几轮历史消息给模型。
-     */
-    @Value("${agent.llm.max-history-messages:6}")
-    private int maxHistoryMessages;
 
     public AgentChatResponse chat(AgentChatRequest request) {
         if (!StringUtils.hasText(request.getDatasourceId())) {
@@ -384,13 +377,15 @@ public class LangChain4jLogAnalysisAgentExecutor {
         List<AgentChatMessage> history = request.getHistory();
         if (history != null && !history.isEmpty()) {
             /**
-             * 历史消息只截取最近 N 条。
-             * 这能让模型保留短期上下文，又不会把每次请求都膨胀成很长的 prompt。
+             * 这里不再额外按“消息条数”裁剪 history。
+             *
+             * 当前项目的 memory 层已经升级成官方 TokenWindowChatMemory，
+             * request.history 在进入执行器前就已经按 token 窗口裁过一次。
+             * 如果这里再截最近 N 条，会把已经保留下来的有效上下文再次截短，
+             * 让 token window 的升级价值被抵消。
              */
             prompt.append("最近对话历史:\n");
-            int start = Math.max(0, history.size() - Math.max(0, maxHistoryMessages));
-            for (int i = start; i < history.size(); i++) {
-                AgentChatMessage message = history.get(i);
+            for (AgentChatMessage message : history) {
                 if (message == null || !StringUtils.hasText(message.getContent())) {
                     continue;
                 }

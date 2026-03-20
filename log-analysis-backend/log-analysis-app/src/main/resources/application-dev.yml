@@ -128,7 +128,8 @@ agent:
     enabled: ${AGENT_LLM_ENABLED:true}
     manual-chat-model: ${AGENT_LLM_MANUAL_CHAT_MODEL:false}
     fallback-on-error: ${AGENT_LLM_FALLBACK_ON_ERROR:true}
-    max-history-messages: ${AGENT_LLM_MAX_HISTORY_MESSAGES:6}
+    memory:
+      max-tokens: ${AGENT_LLM_MEMORY_MAX_TOKENS:2048}
   mcp:
     clickhouse:
       enabled: ${AGENT_CLICKHOUSE_MCP_ENABLED:true}
