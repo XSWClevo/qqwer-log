@@ -4,16 +4,16 @@ import cn.mw.loganalysis.datasource.dto.CreateDatasourceRequest;
 import cn.mw.loganalysis.datasource.dto.DatasourceTestResult;
 import cn.mw.loganalysis.datasource.dto.UpdateDatasourceRequest;
 import cn.mw.loganalysis.datasource.entity.Datasource;
-import cn.mw.loganalysis.datasource.mapper.DatasourceMapper;
+import cn.mw.loganalysis.datasource.repository.DatasourceRepository;
 import cn.mw.loganalysis.stats.mapper.DatabaseProbeMapper;
 import cn.mw.loganalysis.stats.service.query.support.DynamicMyBatisUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import org.apache.ibatis.session.SqlSessionFactory;
 
 import java.time.LocalDateTime;
@@ -27,7 +27,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DatasourceService {
 
-    private final DatasourceMapper datasourceMapper;
+    private final DatasourceRepository datasourceRepository;
 
     /**
      * 创建数据源
@@ -35,7 +35,7 @@ public class DatasourceService {
     @Transactional(rollbackFor = Exception.class)
     public Datasource createDatasource(CreateDatasourceRequest request) {
         // 检查名称是否已存在
-        Datasource existing = datasourceMapper.selectByName(request.getName());
+        Datasource existing = datasourceRepository.findByName(request.getName());
         if (existing != null) {
             throw new IllegalArgumentException("数据源名称已存在: " + request.getName());
         }
@@ -55,7 +55,7 @@ public class DatasourceService {
         datasource.setCreatedAt(LocalDateTime.now());
         datasource.setUpdatedAt(LocalDateTime.now());
 
-        datasourceMapper.insert(datasource);
+        datasourceRepository.save(datasource);
         log.info("创建数据源成功: id={}, name={}", datasource.getId(), datasource.getName());
 
         return datasource;
@@ -66,50 +66,50 @@ public class DatasourceService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Datasource updateDatasource(String id, UpdateDatasourceRequest request) {
-        Datasource datasource = datasourceMapper.selectById(id);
+        Datasource datasource = datasourceRepository.findById(id);
         if (datasource == null) {
             throw new IllegalArgumentException("数据源不存在: " + id);
         }
 
         // 检查名称是否与其他数据源冲突
-        if (StringUtils.hasText(request.getName()) && !request.getName().equals(datasource.getName())) {
-            Datasource existing = datasourceMapper.selectByName(request.getName());
+        if (StringUtils.isNotBlank(request.getName()) && !request.getName().equals(datasource.getName())) {
+            Datasource existing = datasourceRepository.findByName(request.getName());
             if (existing != null) {
                 throw new IllegalArgumentException("数据源名称已存在: " + request.getName());
             }
             datasource.setName(request.getName());
         }
 
-        if (StringUtils.hasText(request.getHost())) {
+        if (StringUtils.isNotBlank(request.getHost())) {
             datasource.setHost(request.getHost());
         }
         if (request.getPort() != null) {
             datasource.setPort(request.getPort());
         }
-        if (StringUtils.hasText(request.getDatabaseName())) {
+        if (StringUtils.isNotBlank(request.getDatabaseName())) {
             datasource.setDatabaseName(request.getDatabaseName());
         }
-        if (StringUtils.hasText(request.getUsername())) {
+        if (StringUtils.isNotBlank(request.getUsername())) {
             datasource.setUsername(request.getUsername());
         }
-        if (StringUtils.hasText(request.getPassword())) {
+        if (StringUtils.isNotBlank(request.getPassword())) {
             datasource.setPassword(request.getPassword()); // TODO: 加密存储
         }
         if (request.getSslEnabled() != null) {
             datasource.setSslEnabled(request.getSslEnabled());
         }
-        if (StringUtils.hasText(request.getConnectionParams())) {
+        if (StringUtils.isNotBlank(request.getConnectionParams())) {
             datasource.setConnectionParams(request.getConnectionParams());
         }
-        if (StringUtils.hasText(request.getDescription())) {
+        if (StringUtils.isNotBlank(request.getDescription())) {
             datasource.setDescription(request.getDescription());
         }
-        if (StringUtils.hasText(request.getStatus())) {
+        if (StringUtils.isNotBlank(request.getStatus())) {
             datasource.setStatus(request.getStatus());
         }
 
         datasource.setUpdatedAt(LocalDateTime.now());
-        datasourceMapper.updateById(datasource);
+        datasourceRepository.updateById(datasource);
 
         log.info("更新数据源成功: id={}, name={}", datasource.getId(), datasource.getName());
         return datasource;
@@ -120,14 +120,14 @@ public class DatasourceService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteDatasource(String id) {
-        Datasource datasource = datasourceMapper.selectById(id);
+        Datasource datasource = datasourceRepository.findById(id);
         if (datasource == null) {
             throw new IllegalArgumentException("数据源不存在: " + id);
         }
 
         // TODO: 检查是否有组件正在使用此数据源
 
-        datasourceMapper.deleteById(id);
+        datasourceRepository.deleteById(id);
         log.info("删除数据源成功: id={}, name={}", id, datasource.getName());
     }
 
@@ -135,36 +135,35 @@ public class DatasourceService {
      * 获取数据源详情
      */
     public Datasource getDatasource(String id) {
-        return datasourceMapper.selectById(id);
+        return datasourceRepository.findById(id);
     }
 
     /**
      * 分页查询数据源
      */
     public Page<Datasource> listDatasources(int pageNum, int pageSize, String keyword, String type, String status) {
-        Page<Datasource> page = new Page<>(pageNum, pageSize);
-        return datasourceMapper.selectPageByCondition(page, keyword, type, status);
+        return datasourceRepository.findPageByCondition(pageNum, pageSize, keyword, type, status);
     }
 
     /**
      * 查询所有活跃的数据源
      */
     public List<Datasource> listActiveDatasources() {
-        return datasourceMapper.selectActive();
+        return datasourceRepository.findActive();
     }
 
     /**
      * 根据类型查询数据源
      */
     public List<Datasource> listDatasourcesByType(String type) {
-        return datasourceMapper.selectByType(type);
+        return datasourceRepository.findActiveByType(type);
     }
 
     /**
      * 测试数据源连接
      */
     public DatasourceTestResult testConnection(String id) {
-        Datasource datasource = datasourceMapper.selectById(id);
+        Datasource datasource = datasourceRepository.findById(id);
         if (datasource == null) {
             return DatasourceTestResult.builder()
                     .success(false)
@@ -198,7 +197,7 @@ public class DatasourceService {
             datasource.setLastCheckTime(LocalDateTime.now());
             datasource.setLastCheckStatus("success");
             datasource.setLastCheckMessage("连接成功");
-            datasourceMapper.updateById(datasource);
+            datasourceRepository.updateById(datasource);
 
             return DatasourceTestResult.builder()
                     .success(true)
@@ -216,7 +215,7 @@ public class DatasourceService {
             datasource.setLastCheckTime(LocalDateTime.now());
             datasource.setLastCheckStatus("failed");
             datasource.setLastCheckMessage(e.getMessage());
-            datasourceMapper.updateById(datasource);
+            datasourceRepository.updateById(datasource);
 
             return DatasourceTestResult.builder()
                     .success(false)
@@ -254,7 +253,7 @@ public class DatasourceService {
     }
 
     private boolean supportsVersionProbe(String type) {
-        if (!StringUtils.hasText(type)) {
+        if (StringUtils.isBlank(type)) {
             return false;
         }
 

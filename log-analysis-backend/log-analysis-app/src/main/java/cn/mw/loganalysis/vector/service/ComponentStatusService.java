@@ -64,7 +64,7 @@ public class ComponentStatusService {
         }
         
         statusCache.put(machineId, status);
-        log.info("更新机器 {} 的组件状态: {} 个组件, vectorRunning={}", 
+        log.debug("更新机器 {} 的组件状态: {} 个组件, vectorRunning={}",
                 machineId, status.componentStatus.size(), status.vectorRunning);
     }
     

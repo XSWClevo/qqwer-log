@@ -35,7 +35,7 @@ public class AlertRuleExecutor {
      */
     @DS("clickhouse")
     public void executeRule(AlertRule rule) {
-        log.info("Executing alert rule: {} (ID: {})", rule.getName(), rule.getId());
+        log.debug("Executing alert rule: {} (ID: {})", rule.getName(), rule.getId());
         
         try {
             // 1. 检查静默期

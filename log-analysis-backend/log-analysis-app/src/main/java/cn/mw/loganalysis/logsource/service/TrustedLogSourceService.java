@@ -6,9 +6,10 @@ import cn.mw.loganalysis.logsource.dto.NewLogSourceNotification;
 import cn.mw.loganalysis.logsource.dto.TrustLogSourceRequest;
 import cn.mw.loganalysis.logsource.entity.TrustedLogSource;
 import cn.mw.loganalysis.logsource.mapper.TrustedLogSourceMapper;
+import cn.mw.loganalysis.logsource.repository.TrustedLogSourceRepository;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,16 +26,17 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper, TrustedLogSource> {
 
-    @Autowired
-    private LogSourceConverter logSourceConverter;
+    private final LogSourceConverter logSourceConverter;
+    private final TrustedLogSourceRepository trustedLogSourceRepository;
 
     /**
      * 获取所有信任的日志源
      */
     public List<LogSourceDTO> getTrustedSources() {
-        List<TrustedLogSource> sources = baseMapper.selectTrustedSources();
+        List<TrustedLogSource> sources = trustedLogSourceRepository.findTrustedSources();
         return logSourceConverter.toDTOList(sources);
     }
 
@@ -42,7 +44,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      * 获取待审核的日志源
      */
     public List<LogSourceDTO> getPendingSources() {
-        List<TrustedLogSource> sources = baseMapper.selectPendingSources();
+        List<TrustedLogSource> sources = trustedLogSourceRepository.findPendingSources();
         return logSourceConverter.toDTOList(sources);
     }
 
@@ -50,7 +52,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      * 获取被拉黑的日志源
      */
     public List<LogSourceDTO> getBlockedSources() {
-        List<TrustedLogSource> sources = baseMapper.selectBlockedSources();
+        List<TrustedLogSource> sources = trustedLogSourceRepository.findBlockedSources();
         return logSourceConverter.toDTOList(sources);
     }
 
@@ -58,7 +60,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      * 根据状态查询日志源
      */
     public List<LogSourceDTO> getSourcesByStatus(String status) {
-        List<TrustedLogSource> sources = baseMapper.selectByStatus(status);
+        List<TrustedLogSource> sources = trustedLogSourceRepository.findByStatus(status);
         return logSourceConverter.toDTOList(sources);
     }
 
@@ -68,7 +70,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
     @Transactional
     public LogSourceDTO trustLogSource(TrustLogSourceRequest request, String username) {
         // 检查是否已存在
-        TrustedLogSource existing = baseMapper.selectByIp(request.getSourceIp());
+        TrustedLogSource existing = trustedLogSourceRepository.findByIp(request.getSourceIp());
 
         if (existing != null) {
             // 更新状态为信任
@@ -78,7 +80,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
             existing.setHostname(request.getHostname());
             existing.setDescription(request.getDescription());
             existing.setRemark(request.getRemark());
-            baseMapper.updateById(existing);
+            trustedLogSourceRepository.updateById(existing);
             log.info("日志源 {} 已更新为信任状态，操作人: {}", request.getSourceIp(), username);
             return logSourceConverter.toDTO(existing);
         } else {
@@ -94,7 +96,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
             newSource.setTrustedBy(username);
             newSource.setLogCount(0L);
             newSource.setRemark(request.getRemark());
-            baseMapper.insert(newSource);
+            trustedLogSourceRepository.save(newSource);
             log.info("新日志源 {} 已添加到信任列表，操作人: {}", request.getSourceIp(), username);
             return logSourceConverter.toDTO(newSource);
         }
@@ -105,14 +107,14 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      */
     @Transactional
     public void blockLogSource(String sourceIp, String username) {
-        TrustedLogSource source = baseMapper.selectByIp(sourceIp);
+        TrustedLogSource source = trustedLogSourceRepository.findByIp(sourceIp);
         if (source == null) {
             throw new IllegalArgumentException("日志源不存在: " + sourceIp);
         }
 
         source.setStatus("blocked");
         source.setTrustedBy(username);
-        baseMapper.updateById(source);
+        trustedLogSourceRepository.updateById(source);
         log.info("日志源 {} 已拉黑，操作人: {}", sourceIp, username);
     }
 
@@ -121,12 +123,12 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      */
     @Transactional
     public void deleteLogSource(String sourceIp) {
-        TrustedLogSource source = baseMapper.selectByIp(sourceIp);
+        TrustedLogSource source = trustedLogSourceRepository.findByIp(sourceIp);
         if (source == null) {
             throw new IllegalArgumentException("日志源不存在: " + sourceIp);
         }
 
-        baseMapper.deleteById(source.getId());
+        trustedLogSourceRepository.deleteById(source.getId());
         log.info("日志源 {} 已删除", sourceIp);
     }
 
@@ -139,7 +141,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
     @Transactional
     public boolean handleVectorNotification(String sourceIp, String hostname, Long logCount) {
         // 检查是否已存在
-        TrustedLogSource existing = baseMapper.selectByIp(sourceIp);
+        TrustedLogSource existing = trustedLogSourceRepository.findByIp(sourceIp);
 
         if (existing == null) {
             // 新 IP，创建 pending 记录
@@ -150,7 +152,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
             newSource.setFirstSeenAt(LocalDateTime.now());
             newSource.setLastSeenAt(LocalDateTime.now());
             newSource.setLogCount(logCount != null ? logCount : 0L);
-            baseMapper.insert(newSource);
+            trustedLogSourceRepository.save(newSource);
             log.warn("发现新日志源: {} ({}), 等待审核", sourceIp, hostname);
             return false; // 需要审核
         } else {
@@ -159,7 +161,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
             if (logCount != null) {
                 existing.setLogCount(existing.getLogCount() + logCount);
             }
-            baseMapper.updateById(existing);
+            trustedLogSourceRepository.updateById(existing);
 
             // 检查状态
             if ("trusted".equals(existing.getStatus())) {
@@ -177,7 +179,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      * 获取所有待审核的日志源（用于实时通知）
      */
     public List<NewLogSourceNotification> getPendingNotifications() {
-        List<TrustedLogSource> pendingSources = baseMapper.selectPendingSources();
+        List<TrustedLogSource> pendingSources = trustedLogSourceRepository.findPendingSources();
         return pendingSources.stream()
                 .map(source -> NewLogSourceNotification.builder()
                         .sourceIp(source.getSourceIp())
@@ -193,7 +195,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      * 检查 IP 是否在白名单中
      */
     public boolean isTrusted(String sourceIp) {
-        TrustedLogSource source = baseMapper.selectByIp(sourceIp);
+        TrustedLogSource source = trustedLogSourceRepository.findByIp(sourceIp);
         return source != null && "trusted".equals(source.getStatus());
     }
 
@@ -201,7 +203,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
      * 检查 IP 是否被拉黑
      */
     public boolean isBlocked(String sourceIp) {
-        TrustedLogSource source = baseMapper.selectByIp(sourceIp);
+        TrustedLogSource source = trustedLogSourceRepository.findByIp(sourceIp);
         return source != null && "blocked".equals(source.getStatus());
     }
 }

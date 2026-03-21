@@ -6,6 +6,7 @@ import cn.mw.loganalysis.operationlog.dto.response.OperationLogDTO;
 import cn.mw.loganalysis.operationlog.dto.response.OperationStatsDTO;
 import cn.mw.loganalysis.operationlog.entity.UserOperationLog;
 import cn.mw.loganalysis.operationlog.mapper.UserOperationLogMapper;
+import cn.mw.loganalysis.operationlog.repository.UserOperationLogRepository;
 import cn.mw.loganalysis.operationlog.service.OperationLogService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -31,6 +32,7 @@ import java.util.Map;
 public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper, UserOperationLog> implements OperationLogService {
 
     private final UserOperationLogMapper operationLogMapper;
+    private final UserOperationLogRepository operationLogRepository;
     private final OperationLogConverter operationLogConverter;
 
     @Override
@@ -39,7 +41,7 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
         log.info("========= [Service] saveLog called: user={}, action={}",
             operationLog.getUsername(), operationLog.getAction());
         try {
-            operationLogMapper.insert(operationLog);
+            operationLogRepository.save(operationLog);
             log.info("========= [Service] insert completed, id={}", operationLog.getId());
         } catch (Exception e) {
             log.error("========= [Service] insert failed", e);
@@ -56,7 +58,7 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
 
         // MyBatis Plus 批量插入
         for (UserOperationLog log : operationLogs) {
-            operationLogMapper.insert(log);
+            operationLogRepository.save(log);
         }
     }
 
@@ -64,7 +66,7 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
     public Page<OperationLogDTO> queryLogs(QueryOperationLogRequest request) {
         Page<UserOperationLog> page = new Page<>(request.getPageNum(), request.getPageSize());
 
-        Page<UserOperationLog> resultPage = operationLogMapper.selectPageByCondition(
+        Page<UserOperationLog> resultPage = operationLogRepository.findPageByCondition(
             page,
             request.getUserId(),
             request.getUsername(),
@@ -85,13 +87,13 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
 
     @Override
     public OperationLogDTO getLogById(Long id) {
-        UserOperationLog entity = operationLogMapper.selectById(id);
+        UserOperationLog entity = operationLogRepository.findById(id);
         return entity != null ? operationLogConverter.toDTO(entity) : null;
     }
 
     @Override
     public List<OperationLogDTO> getRecentLogsByUserId(Long userId, int limit) {
-        List<UserOperationLog> logs = operationLogMapper.selectRecentByUserId(userId, limit);
+        List<UserOperationLog> logs = operationLogRepository.findRecentByUserId(userId, limit);
         return operationLogConverter.toDTOList(logs);
     }
 
@@ -118,14 +120,14 @@ public class OperationLogServiceImpl extends ServiceImpl<UserOperationLogMapper,
         LocalDateTime fiveMinutesAgo = now.minusMinutes(5);
 
         // 检测 1: 高频失败 (5分钟内失败 > 20次)
-        Long failureCount = operationLogMapper.countFailuresByUserIdAndTime(userId, fiveMinutesAgo, now);
+        Long failureCount = operationLogRepository.countFailuresByUserIdAndTime(userId, fiveMinutesAgo, now);
         if (failureCount > 20) {
             alerts.put("HIGH_FREQUENCY_FAILURE",
                 String.format("用户 %d 在5分钟内失败 %d 次，可能是密码爆破或系统异常", userId, failureCount));
         }
 
         // 检测 2: 异常 IP 登录 (新 IP 登录成功)
-        boolean isNewIp = !operationLogMapper.existsByUserIdAndIp(userId, ipAddress);
+        boolean isNewIp = !operationLogRepository.existsByUserIdAndIp(userId, ipAddress);
         if (isNewIp) {
             alerts.put("NEW_IP_LOGIN",
                 String.format("用户 %d 从新 IP %s 登录成功，请确认是否为本人操作", userId, ipAddress));

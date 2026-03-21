@@ -10,21 +10,22 @@ import cn.mw.loganalysis.agent.dto.AgentResult;
 import cn.mw.loganalysis.agent.dto.AgentToolCall;
 import cn.mw.loganalysis.agent.entity.AgentConversation;
 import cn.mw.loganalysis.agent.entity.AgentConversationMessage;
-import cn.mw.loganalysis.agent.mapper.AgentConversationMapper;
-import cn.mw.loganalysis.agent.mapper.AgentConversationMessageMapper;
+import cn.mw.loganalysis.agent.repository.AgentConversationMessageRepository;
+import cn.mw.loganalysis.agent.repository.AgentConversationRepository;
 import cn.mw.loganalysis.vector.entity.ConfigComponent;
 import cn.mw.loganalysis.vector.service.ConfigComponentService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -47,25 +48,24 @@ public class AgentConversationHistoryService {
     private static final TypeReference<List<AgentToolCall>> TOOL_CALL_LIST_TYPE = new TypeReference<>() {};
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
 
-    private final AgentConversationMapper conversationMapper;
-    private final AgentConversationMessageMapper messageMapper;
+    private final AgentConversationRepository conversationRepository;
+    private final AgentConversationMessageRepository messageRepository;
     private final ObjectMapper objectMapper;
     private final ConfigComponentService configComponentService;
-    private final AtomicBoolean schemaReady = new AtomicBoolean(false);
 
     /**
+     * 填充 request 历史
      * 如果前端没传历史，且当前 session 在数据库里已经有消息，就把持久化历史回填到请求里。
      * 这样页面刷新后继续聊时，不需要前端自己回放全部历史。
      */
     public AgentChatRequest hydrateRequestHistory(AgentChatRequest request, Long userId) {
-        ensureSchema();
-        if (userId == null || !StringUtils.hasText(request.getSessionId())) {
-            if (userId == null) {
+        if (ObjectUtils.isEmpty(userId) || StringUtils.isBlank(request.getSessionId())) {
+            if (ObjectUtils.isEmpty(userId)) {
                 log.warn("跳过智能助手历史回填，因为当前请求未识别到登录用户");
             }
             return request;
         }
-        if (request.getHistory() != null && !request.getHistory().isEmpty()) {
+        if (CollectionUtils.isNotEmpty(request.getHistory())) {
             return request;
         }
 
@@ -93,9 +93,8 @@ public class AgentConversationHistoryService {
                          String datasourceType,
                          String userMessage,
                          AgentChatResponse response) {
-        ensureSchema();
-        if (userId == null || !StringUtils.hasText(sessionId)) {
-            if (userId == null) {
+        if (ObjectUtils.isEmpty(userId) || StringUtils.isBlank(sessionId)) {
+            if (ObjectUtils.isEmpty(userId)) {
                 log.warn("跳过智能助手历史保存，因为当前请求未识别到登录用户, sessionId={}", sessionId);
             } else {
                 log.warn("跳过智能助手历史保存，因为 sessionId 为空, userId={}", userId);
@@ -107,16 +106,14 @@ public class AgentConversationHistoryService {
         ConversationIdentity targetIdentity = fillDatasource(identity, datasourceId, datasourceName, datasourceType);
         upsertConversation(userId, targetIdentity, userMessage);
 
-        int addedMessages = 0;
-        if (StringUtils.hasText(userMessage)) {
+        if (StringUtils.isNotBlank(userMessage)) {
             insertMessage(sessionId, "user", userMessage, null, null, null);
-            addedMessages++;
         }
 
         String assistantContent = response != null
                 ? (response.getSuccess() ? response.getAnswer() : response.getError())
                 : null;
-        if (StringUtils.hasText(assistantContent)) {
+        if (StringUtils.isNotBlank(assistantContent)) {
             insertMessage(
                     sessionId,
                     "assistant",
@@ -125,44 +122,42 @@ public class AgentConversationHistoryService {
                     response != null ? response.getResult() : null,
                     response != null ? response.getSuggestions() : null
             );
-            addedMessages++;
         }
 
-        if (addedMessages > 0) {
-            String preview = StringUtils.hasText(assistantContent) ? assistantContent : userMessage;
-            String titleSeed = StringUtils.hasText(userMessage) ? userMessage : preview;
-            updateConversationAfterTurn(sessionId, targetIdentity, titleSeed, preview, addedMessages);
+        int messageCount = messageRepository.countByConversationId(sessionId);
+        if (messageCount > 0) {
+            String preview = StringUtils.isNotBlank(assistantContent) ? assistantContent : userMessage;
+            String titleSeed = StringUtils.isNotBlank(userMessage) ? userMessage : preview;
+            updateConversationAfterTurn(sessionId, targetIdentity, titleSeed, preview, messageCount);
         }
     }
 
     public List<AgentConversationSummary> listConversations(Long userId) {
-        ensureSchema();
-        if (userId == null) {
+        if (ObjectUtils.isEmpty(userId)) {
             log.warn("查询智能助手历史列表时未识别到登录用户");
             return Collections.emptyList();
         }
 
-        return conversationMapper.selectRecentByUserId(userId).stream()
+        return conversationRepository.findRecentByUserId(userId).stream()
                 .map(this::mapConversationSummary)
                 .collect(Collectors.toList());
     }
 
     public AgentConversationDetail getConversation(Long userId, String sessionId) {
-        ensureSchema();
-        if (userId == null || !StringUtils.hasText(sessionId)) {
-            if (userId == null) {
+        if (ObjectUtils.isEmpty(userId) || StringUtils.isBlank(sessionId)) {
+            if (ObjectUtils.isEmpty(userId)) {
                 log.warn("查询智能助手历史详情时未识别到登录用户, sessionId={}", sessionId);
             }
             return null;
         }
 
-        AgentConversation conversation = conversationMapper.selectOwnedConversation(userId, sessionId);
+        AgentConversation conversation = conversationRepository.findOwnedConversation(userId, sessionId);
         if (conversation == null) {
             return null;
         }
 
         AgentConversationSummary summary = mapConversationSummary(conversation);
-        List<AgentConversationEntry> messages = messageMapper.selectByConversationId(sessionId).stream()
+        List<AgentConversationEntry> messages = messageRepository.findByConversationId(sessionId).stream()
                 .map(this::mapConversationEntry)
                 .collect(Collectors.toList());
 
@@ -182,20 +177,19 @@ public class AgentConversationHistoryService {
     }
 
     public void deleteConversation(Long userId, String sessionId) {
-        ensureSchema();
-        if (userId == null || !StringUtils.hasText(sessionId)) {
+        if (ObjectUtils.isEmpty(userId) || StringUtils.isBlank(sessionId)) {
             return;
         }
 
-        conversationMapper.deleteOwnedConversation(userId, sessionId);
+        conversationRepository.deleteOwnedConversation(userId, sessionId);
     }
 
     private List<AgentChatMessage> loadChatHistory(Long userId, String sessionId) {
-        AgentConversation conversation = conversationMapper.selectOwnedConversation(userId, sessionId);
+        AgentConversation conversation = conversationRepository.findOwnedConversation(userId, sessionId);
         if (conversation == null) {
             return Collections.emptyList();
         }
-        return messageMapper.selectByConversationId(sessionId).stream()
+        return messageRepository.findByConversationId(sessionId).stream()
                 .map(record -> {
                     AgentChatMessage message = new AgentChatMessage();
                     message.setRole(record.getRole());
@@ -207,16 +201,18 @@ public class AgentConversationHistoryService {
 
     private void upsertConversation(Long userId, ConversationIdentity identity, String userMessage) {
         String sessionId = identity.sessionId();
-        String title = abbreviate(StringUtils.hasText(userMessage) ? userMessage : "新对话", MAX_TITLE_LENGTH);
+        String title = abbreviate(StringUtils.isNotBlank(userMessage) ? userMessage : "新对话", MAX_TITLE_LENGTH);
 
-        conversationMapper.insertIfAbsent(
-                sessionId,
-                userId,
-                title,
-                identity.datasourceId(),
-                identity.datasourceName(),
-                identity.datasourceType()
-        );
+        conversationRepository.createIfAbsent(AgentConversation.builder()
+                .id(sessionId)
+                .userId(userId)
+                .title(title)
+                .preview("")
+                .datasourceId(identity.datasourceId())
+                .datasourceName(identity.datasourceName())
+                .datasourceType(identity.datasourceType())
+                .messageCount(0)
+                .build());
     }
 
     private void insertMessage(String sessionId,
@@ -225,7 +221,7 @@ public class AgentConversationHistoryService {
                                List<AgentToolCall> toolCalls,
                                AgentResult result,
                                List<String> suggestions) {
-        messageMapper.insert(AgentConversationMessage.builder()
+        messageRepository.save(AgentConversationMessage.builder()
                 .conversationId(sessionId)
                 .role(role)
                 .content(content)
@@ -239,15 +235,15 @@ public class AgentConversationHistoryService {
                                              ConversationIdentity identity,
                                              String titleSeed,
                                              String previewSeed,
-                                             int addedMessages) {
-        conversationMapper.updateAfterTurn(
+                                             int messageCount) {
+        conversationRepository.updateAfterTurn(
                 sessionId,
                 abbreviate(titleSeed, MAX_TITLE_LENGTH),
                 abbreviate(previewSeed, MAX_PREVIEW_LENGTH),
                 identity.datasourceId(),
                 identity.datasourceName(),
                 identity.datasourceType(),
-                addedMessages
+                messageCount
         );
     }
 
@@ -255,11 +251,11 @@ public class AgentConversationHistoryService {
                                                 String datasourceId,
                                                 String datasourceName,
                                                 String datasourceType) {
-        if (StringUtils.hasText(datasourceId) && StringUtils.hasText(datasourceName) && StringUtils.hasText(datasourceType)) {
+        if (StringUtils.isNotBlank(datasourceId) && StringUtils.isNotBlank(datasourceName) && StringUtils.isNotBlank(datasourceType)) {
             return new ConversationIdentity(identity.sessionId(), datasourceId, datasourceName, datasourceType);
         }
 
-        if (!StringUtils.hasText(datasourceId)) {
+        if (StringUtils.isBlank(datasourceId)) {
             return identity;
         }
 
@@ -271,8 +267,8 @@ public class AgentConversationHistoryService {
         return new ConversationIdentity(
                 identity.sessionId(),
                 datasourceId,
-                StringUtils.hasText(datasourceName) ? datasourceName : datasource.getName(),
-                StringUtils.hasText(datasourceType) ? datasourceType : datasource.getVectorType()
+                StringUtils.isNotBlank(datasourceName) ? datasourceName : datasource.getName(),
+                StringUtils.isNotBlank(datasourceType) ? datasourceType : datasource.getVectorType()
         );
     }
 
@@ -281,7 +277,7 @@ public class AgentConversationHistoryService {
                                                              String datasourceName,
                                                              String datasourceType) {
         return new ConversationIdentity(
-                StringUtils.hasText(sessionId) ? sessionId.trim() : "agent-" + UUID.randomUUID(),
+                StringUtils.isNotBlank(sessionId) ? sessionId.trim() : "agent-" + UUID.randomUUID(),
                 trimToNull(datasourceId),
                 trimToNull(datasourceName),
                 trimToNull(datasourceType)
@@ -316,7 +312,7 @@ public class AgentConversationHistoryService {
     }
 
     private List<AgentToolCall> readToolCalls(String json) {
-        if (!StringUtils.hasText(json)) {
+        if (StringUtils.isBlank(json)) {
             return Collections.emptyList();
         }
         try {
@@ -328,7 +324,7 @@ public class AgentConversationHistoryService {
     }
 
     private AgentResult readResult(String json) {
-        if (!StringUtils.hasText(json)) {
+        if (StringUtils.isBlank(json)) {
             return null;
         }
         try {
@@ -340,7 +336,7 @@ public class AgentConversationHistoryService {
     }
 
     private List<String> readStringList(String json) {
-        if (!StringUtils.hasText(json)) {
+        if (StringUtils.isBlank(json)) {
             return Collections.emptyList();
         }
         try {
@@ -363,7 +359,7 @@ public class AgentConversationHistoryService {
     }
 
     private String abbreviate(String text, int maxLength) {
-        if (!StringUtils.hasText(text)) {
+        if (StringUtils.isBlank(text)) {
             return "";
         }
         String normalized = text.replaceAll("\\s+", " ").trim();
@@ -374,22 +370,10 @@ public class AgentConversationHistoryService {
     }
 
     private String trimToNull(String value) {
-        if (!StringUtils.hasText(value)) {
+        if (StringUtils.isBlank(value)) {
             return null;
         }
         return value.trim();
-    }
-
-    private void ensureSchema() {
-        if (schemaReady.compareAndSet(false, true)) {
-            conversationMapper.ensureTable();
-            conversationMapper.ensureUserLastMessageIndex();
-            conversationMapper.ensureUserUpdatedAtIndex();
-            messageMapper.ensureTable();
-            messageMapper.ensureConversationTimeIndex();
-
-            log.info("智能助手历史记录表结构已就绪");
-        }
     }
 
     private record ConversationIdentity(String sessionId, String datasourceId, String datasourceName, String datasourceType) {

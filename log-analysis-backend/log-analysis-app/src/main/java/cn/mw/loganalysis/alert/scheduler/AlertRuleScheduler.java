@@ -38,7 +38,7 @@ public class AlertRuleScheduler {
         try {
             // 查询所有启用的规则
             List<AlertRule> enabledRules = getEnabledRules();
-            log.info("Found {} enabled alert rules", enabledRules.size());
+            log.debug("Found {} enabled alert rules", enabledRules.size());
             
             // 并行执行所有规则
             for (AlertRule rule : enabledRules) {
