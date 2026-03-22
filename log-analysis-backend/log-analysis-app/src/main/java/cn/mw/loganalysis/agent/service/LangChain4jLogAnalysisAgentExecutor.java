@@ -4,38 +4,29 @@ import cn.mw.loganalysis.agent.config.LangChain4jChatModelProperties;
 import cn.mw.loganalysis.agent.dto.AgentChatMessage;
 import cn.mw.loganalysis.agent.dto.AgentChatRequest;
 import cn.mw.loganalysis.agent.dto.AgentChatResponse;
-import cn.mw.loganalysis.agent.dto.AgentResult;
 import cn.mw.loganalysis.agent.dto.AgentStreamEvent;
-import cn.mw.loganalysis.agent.dto.AgentToolCall;
 import cn.mw.loganalysis.vector.entity.ConfigComponent;
 import cn.mw.loganalysis.vector.service.ConfigComponentService;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
-import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.service.Result;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.TokenStream;
-import dev.langchain4j.service.tool.BeforeToolExecution;
 import dev.langchain4j.service.tool.ToolExecution;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -44,10 +35,12 @@ import java.util.concurrent.TimeoutException;
 /**
  * LangChain4j 驱动的日志助手执行器。
  *
- * 这个类负责三件事：
- * 1. 把当前请求和历史对话整理成 prompt
- * 2. 调用 LangChain4j 生成的 AiService 代理
- * 3. 把 LangChain4j 的 tool execution 结果转换成前端已有的返回结构
+ * 职责收口后，这个类只保留三件事：
+ * 1. 构造 prompt
+ * 2. 调用 LangChain4j AiService 代理
+ * 3. 在流式模式下把 token/tool 事件透传给上层
+ *
+ * 前端响应组装统一交给 AgentResponseAssembler，避免执行器再承担 DTO 拼装职责。
  */
 @Slf4j
 @Service
@@ -79,7 +72,7 @@ public class LangChain4jLogAnalysisAgentExecutor {
     private final LangChain4jLogAnalysisAssistant assistant;
     private final LangChain4jStreamingLogAnalysisAssistant streamingAssistant;
     private final ConfigComponentService configComponentService;
-    private final ObjectMapper objectMapper;
+    private final AgentResponseAssembler responseAssembler;
     private final boolean responsesWireApi;
     private final Duration llmTimeout;
 
@@ -88,17 +81,20 @@ public class LangChain4jLogAnalysisAgentExecutor {
                                                ObjectProvider<StreamingChatModel> activeStreamingChatModelProvider,
                                                LogAnalysisAgentTools logAnalysisAgentTools,
                                                ConfigComponentService configComponentService,
-                                               ObjectMapper objectMapper,
+                                               AgentResponseAssembler responseAssembler,
                                                LangChain4jChatModelProperties chatModelProperties) {
         /**
          * executor 需要同时兼容两种模型协议：
-         * 1. chat-completions: 直接使用同步 ChatModel
-         * 2. responses: 使用 StreamingChatModel，再在服务端等待完整结果
+         * 1. chat-completions：同步 ChatModel
+         * 2. responses：StreamingChatModel + TokenStream
          *
-         * 之所以在这里分流，而不是再拆多个 service，是为了把前端协议和上层调用保持不变。
+         * 这里不引入额外编排框架，只在执行器内部做协议分流。
          */
         this.responsesWireApi = chatModelProperties.usesResponsesApi();
         this.llmTimeout = chatModelProperties.getTimeout() != null ? chatModelProperties.getTimeout() : Duration.ofSeconds(60);
+        this.configComponentService = configComponentService;
+        this.responseAssembler = responseAssembler;
+
         StreamingChatModel activeStreamingChatModel = activeStreamingChatModelProvider.getIfAvailable();
         if (activeStreamingChatModel == null) {
             throw new IllegalStateException("当前协议对应的 StreamingChatModel Bean 未注册，无法启用流式智能助手");
@@ -109,6 +105,7 @@ public class LangChain4jLogAnalysisAgentExecutor {
                 .tools(logAnalysisAgentTools)
                 .maxSequentialToolsInvocations(4)
                 .build();
+
         if (responsesWireApi) {
             this.assistant = null;
         } else {
@@ -123,24 +120,18 @@ public class LangChain4jLogAnalysisAgentExecutor {
                     .maxSequentialToolsInvocations(4)
                     .build();
         }
-        this.configComponentService = configComponentService;
-        this.objectMapper = objectMapper;
     }
 
     public AgentChatResponse chat(AgentChatRequest request) {
-        if (!StringUtils.hasText(request.getDatasourceId())) {
-            return buildErrorResponse("请选择一个可查询的数据源后再提问");
+        if (StringUtils.isBlank(request.getDatasourceId())) {
+            return responseAssembler.error("请选择一个可查询的数据源后再提问");
         }
 
         ConfigComponent datasource = configComponentService.getById(request.getDatasourceId());
         if (datasource == null) {
-            return buildErrorResponse("选中的数据源不存在");
+            return responseAssembler.error("选中的数据源不存在");
         }
 
-        /**
-         * Tool 执行时需要知道当前数据源是谁，但 LangChain4j 的 @Tool 方法签名里不希望重复暴露 datasourceId。
-         * 所以这里用 ThreadLocal 在一次请求线程内传递上下文。
-         */
         AgentExecutionContextHolder.set(new AgentExecutionContext(
                 request.getDatasourceId(),
                 datasource.getName(),
@@ -151,38 +142,58 @@ public class LangChain4jLogAnalysisAgentExecutor {
             Result<String> result = responsesWireApi
                     ? executeStreamingAssistant(prompt, null)
                     : assistant.chat(prompt);
-            return buildResponse(request.getDatasourceId(), datasource.getName(), result);
+            return responseAssembler.fromLlmResult(request.getDatasourceId(), datasource.getName(), result);
         } finally {
             AgentExecutionContextHolder.clear();
         }
     }
 
     /**
-     * 流式接口和 Responses 同步兼容层都复用这条执行逻辑。
+     * 流式接口与同步接口共享同一套业务执行主线。
      *
-     * 这里做两件事：
-     * 1. 从 LangChain4j 的 TokenStream 里拿到 token/tool 事件
-     * 2. 在服务端继续等待最终完整 ChatResponse，用来生成和旧接口兼容的 AgentChatResponse
+     * - responses：使用真正的 token 流
+     * - chat-completions：先走同步 ChatModel，完成后再把结果按流事件回放
      *
-     * 也就是说，流式模式会“边发事件，边等待最终结果”；
-     * 同步模式则只是把 emitter 传 null，当作一次普通聚合调用。
+     * 这样 /chat 和 /chat/stream 在 chat-completions 下会共享同一条选工具逻辑，
+     * 避免因为模型客户端不同而命中不同工具。
      */
+    public AgentChatResponse streamChat(AgentChatRequest request, AgentStreamEventEmitter emitter) {
+        if (StringUtils.isBlank(request.getDatasourceId())) {
+            return responseAssembler.error("请选择一个可查询的数据源后再提问");
+        }
+
+        ConfigComponent datasource = configComponentService.getById(request.getDatasourceId());
+        if (datasource == null) {
+            return responseAssembler.error("选中的数据源不存在");
+        }
+
+        AgentExecutionContextHolder.set(new AgentExecutionContext(
+                request.getDatasourceId(),
+                datasource.getName(),
+                datasource.getVectorType()
+        ));
+        try {
+            Result<String> result = responsesWireApi
+                    ? executeStreamingAssistant(buildPrompt(request, datasource), emitter)
+                    : executeBufferedAssistant(buildPrompt(request, datasource), emitter);
+            return responseAssembler.fromLlmResult(request.getDatasourceId(), datasource.getName(), result);
+        } finally {
+            AgentExecutionContextHolder.clear();
+        }
+    }
+
     private Result<String> executeStreamingAssistant(String prompt, AgentStreamEventEmitter emitter) {
-        /**
-         * LangChain4j 的 token/tool 回调是异步触发的。
-         * 这里仍然把完整 ToolExecution 和最终 ChatResponse 收集起来，
-         * 这样无论是同步接口还是流式接口，最终都能复用同一套 buildResponse 逻辑。
-         */
         List<ToolExecution> toolExecutions = Collections.synchronizedList(new ArrayList<>());
         CompletableFuture<ChatResponse> responseFuture = new CompletableFuture<>();
 
+        // tokenStream 作用，当有新的响应，模型结束，错误时 对应回调 api 被调用
         TokenStream tokenStream = streamingAssistant.chat(prompt)
                 .onPartialResponse(delta -> safeEmit(emitter, AgentStreamEvent.token(delta)))
                 .beforeToolExecution(beforeToolExecution ->
-                        safeEmit(emitter, AgentStreamEvent.toolStarted(toStreamingToolCall(beforeToolExecution))))
+                        safeEmit(emitter, AgentStreamEvent.toolStarted(responseAssembler.toRunningToolCall(beforeToolExecution))))
                 .onToolExecuted(toolExecution -> {
                     toolExecutions.add(toolExecution);
-                    safeEmit(emitter, AgentStreamEvent.toolFinished(toFinishedToolCall(toolExecution)));
+                    safeEmit(emitter, AgentStreamEvent.toolFinished(responseAssembler.toFinishedToolCall(toolExecution)));
                 })
                 .onCompleteResponse(responseFuture::complete)
                 .onError(responseFuture::completeExceptionally);
@@ -216,79 +227,12 @@ public class LangChain4jLogAnalysisAgentExecutor {
                 .build();
     }
 
-    /**
-     * 流式聊天接口。
-     *
-     * 与同步 chat() 的区别只有一层：
-     * - 同步接口直接等待完整结果后返回
-     * - 这里在等待完整结果的同时，把 token/tool 状态持续通过 emitter 推出去
-     */
-    public AgentChatResponse streamChat(AgentChatRequest request, AgentStreamEventEmitter emitter) {
-        if (!StringUtils.hasText(request.getDatasourceId())) {
-            return buildErrorResponse("请选择一个可查询的数据源后再提问");
-        }
-
-        ConfigComponent datasource = configComponentService.getById(request.getDatasourceId());
-        if (datasource == null) {
-            return buildErrorResponse("选中的数据源不存在");
-        }
-
-        AgentExecutionContextHolder.set(new AgentExecutionContext(
-                request.getDatasourceId(),
-                datasource.getName(),
-                datasource.getVectorType()
-        ));
-        try {
-            /**
-             * 这里不能无脑让 /chat/stream 总是走 StreamingChatModel。
-             *
-             * 当前项目在 chat-completions 协议下同时存在两条模型链路：
-             * 1. /chat    -> 同步 ChatModel
-             * 2. /stream  -> StreamingChatModel
-             *
-             * 两条链路虽然 prompt 一样，但模型客户端实现不同，工具选择并不保证完全一致。
-             * 之前线上现象就是：
-             * - 同一个请求，/chat 能稳定返回 query_logs 结果
-             * - /chat/stream 却更容易走到 text2sql_query，然后暴露另一条执行链上的 ClickHouse 连接问题
-             *
-             * 所以这里做兼容收口：
-             * - responses 协议：只有 StreamingChatModel，继续走真实流式
-             * - chat-completions 协议：复用与 /chat 相同的同步 ChatModel 做工具决策和执行，
-             *   然后把最终答案和工具结果按流事件回放给前端
-             *
-             * 这样 /chat 和 /chat/stream 在 chat-completions 下会共享同一条“选工具/执行工具”路径，
-             * 避免同一问题因为客户端实现不同而命中不同工具。
-             */
-            Result<String> result = responsesWireApi
-                    ? executeStreamingAssistant(buildPrompt(request, datasource), emitter)
-                    : executeBufferedAssistant(buildPrompt(request, datasource), emitter);
-            return buildResponse(request.getDatasourceId(), datasource.getName(), result);
-        } finally {
-            AgentExecutionContextHolder.clear();
-        }
-    }
-
-    /**
-     * chat-completions 协议下的“兼容型流式”执行。
-     *
-     * 核心目标不是追求 token 级别的第一时间输出，而是保证 /chat 和 /chat/stream
-     * 使用同一条同步 ChatModel 工具链，先把结果做对，再把结果按流事件发送给前端。
-     */
     private Result<String> executeBufferedAssistant(String prompt, AgentStreamEventEmitter emitter) {
         Result<String> result = assistant.chat(prompt);
         replayBufferedResult(result, emitter);
         return result;
     }
 
-    /**
-     * 把同步结果回放成前端可消费的流事件。
-     *
-     * 这里不会伪造尚未发生的工具执行过程，只会在同步调用完成后按顺序输出：
-     * 1. tool_finished
-     * 2. token
-     *
-     * 原因是同步 ChatModel 已经把工具执行全部做完了，当前阶段只做协议兼容，不重新虚构中间态。
-     */
     private void replayBufferedResult(Result<String> result, AgentStreamEventEmitter emitter) {
         if (emitter == null || result == null) {
             return;
@@ -296,7 +240,7 @@ public class LangChain4jLogAnalysisAgentExecutor {
 
         List<ToolExecution> executions = result.toolExecutions() != null ? result.toolExecutions() : List.of();
         for (ToolExecution toolExecution : executions) {
-            safeEmit(emitter, AgentStreamEvent.toolFinished(toFinishedToolCall(toolExecution)));
+            safeEmit(emitter, AgentStreamEvent.toolFinished(responseAssembler.toFinishedToolCall(toolExecution)));
         }
 
         for (String chunk : chunkText(result.content(), 48)) {
@@ -304,12 +248,8 @@ public class LangChain4jLogAnalysisAgentExecutor {
         }
     }
 
-    /**
-     * 前端流式消息只需要“逐段追加文本”，不要求严格按 tokenizer 切分。
-     * 这里按固定字符窗口切片，兼容中英文混排，避免一次性把整段答案推过去。
-     */
     private List<String> chunkText(String content, int chunkSize) {
-        if (!StringUtils.hasText(content)) {
+        if (StringUtils.isBlank(content)) {
             return List.of();
         }
 
@@ -322,52 +262,6 @@ public class LangChain4jLogAnalysisAgentExecutor {
         return chunks;
     }
 
-    private AgentChatResponse buildResponse(String datasourceId, String datasourceName, Result<String> result) {
-        List<AgentToolCall> toolCalls = new ArrayList<>();
-        AgentToolPayload lastPayload = null;
-
-        /**
-         * LangChain4j 会把实际发生过的 tool call 放到 Result#toolExecutions 里。
-         * 这里把它转换成前端已经在展示的 toolCalls 结构，避免前端协议重新设计一遍。
-         */
-        List<ToolExecution> executions = result.toolExecutions() != null ? result.toolExecutions() : List.of();
-        for (ToolExecution toolExecution : executions) {
-            AgentToolPayload payload = toolExecution.resultObject() instanceof AgentToolPayload toolPayload
-                    ? toolPayload
-                    : null;
-            if (payload != null) {
-                lastPayload = payload;
-            }
-
-            toolCalls.add(AgentToolCall.builder()
-                    .toolCallId(toolExecution.request().id())
-                    .toolName(toolExecution.request().name())
-                    .toolLabel(payload != null ? payload.getToolLabel() : defaultToolLabel(toolExecution.request().name()))
-                    .status(toolExecution.hasFailed() ? "failed" : "completed")
-                    .input(parseArguments(toolExecution.request().arguments()))
-                    .summary(payload != null ? payload.getSummary() : truncate(toolExecution.result(), 160))
-                    .durationMs(payload != null ? payload.getDurationMs() : null)
-                    .build());
-        }
-
-        AgentResult agentResult = lastPayload != null ? lastPayload.getResult() : null;
-        String intent = lastPayload != null ? lastPayload.getIntent() : inferIntent(agentResult);
-        if (!StringUtils.hasText(intent)) {
-            intent = "logs";
-        }
-
-        return AgentChatResponse.builder()
-                .success(true)
-                .intent(intent)
-                .answer(result.content())
-                .datasourceId(datasourceId)
-                .datasourceName(datasourceName)
-                .toolCalls(toolCalls)
-                .result(agentResult)
-                .suggestions(defaultSuggestions(intent))
-                .build();
-    }
-
     private String buildPrompt(AgentChatRequest request, ConfigComponent datasource) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("当前数据源名称: ").append(datasource.getName()).append('\n');
@@ -376,17 +270,9 @@ public class LangChain4jLogAnalysisAgentExecutor {
 
         List<AgentChatMessage> history = request.getHistory();
         if (history != null && !history.isEmpty()) {
-            /**
-             * 这里不再额外按“消息条数”裁剪 history。
-             *
-             * 当前项目的 memory 层已经升级成官方 TokenWindowChatMemory，
-             * request.history 在进入执行器前就已经按 token 窗口裁过一次。
-             * 如果这里再截最近 N 条，会把已经保留下来的有效上下文再次截短，
-             * 让 token window 的升级价值被抵消。
-             */
             prompt.append("最近对话历史:\n");
             for (AgentChatMessage message : history) {
-                if (message == null || !StringUtils.hasText(message.getContent())) {
+                if (message == null || StringUtils.isBlank(message.getContent())) {
                     continue;
                 }
                 prompt.append("- ")
@@ -402,90 +288,11 @@ public class LangChain4jLogAnalysisAgentExecutor {
     }
 
     private String normalizeRole(String role) {
-        if ("assistant".equalsIgnoreCase(role)) {
-            return "assistant";
-        }
-        return "user";
+        return "assistant".equalsIgnoreCase(role) ? "assistant" : "user";
     }
 
     private String normalizeText(String text) {
         return text == null ? "" : text.replaceAll("\\s+", " ").trim();
-    }
-
-    private Map<String, Object> parseArguments(String arguments) {
-        if (!StringUtils.hasText(arguments)) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(arguments, new TypeReference<LinkedHashMap<String, Object>>() {
-            });
-        } catch (JsonProcessingException ex) {
-            /**
-             * 某些模型返回的 tool arguments 不一定是严格 JSON。
-             * 为了不因为展示参数失败而丢掉整次调用记录，这里退回原始字符串。
-             */
-            return Map.of("raw", arguments);
-        }
-    }
-
-    private String defaultToolLabel(String toolName) {
-        return switch (toolName) {
-            case "get_schema" -> "读取字段结构";
-            case "query_logs" -> "查询日志列表";
-            case "query_timeseries" -> "查询日志趋势";
-            case "text2sql_query" -> "自然语言统计查询";
-            default -> toolName;
-        };
-    }
-
-    private String inferIntent(AgentResult result) {
-        return result != null ? result.getType() : "logs";
-    }
-
-    private List<String> defaultSuggestions(String intent) {
-        if (!StringUtils.hasText(intent)) {
-            intent = "logs";
-        }
-        return switch (intent) {
-            case "schema" -> List.of("最近1小时有哪些错误日志", "看最近24小时日志趋势", "搜索包含 \"timeout\" 的日志");
-            case "timeseries" -> List.of("查看最近1小时日志", "查看字段结构", "再看最近7天的趋势");
-            case "text2sql" -> List.of("最近1天的数据有多少条", "按 severity 统计最近24小时数量", "统计最近7天每天的日志量");
-            default -> List.of("看最近24小时日志趋势", "查看这个数据源的字段结构", "再查最近15分钟的日志");
-        };
-    }
-
-    private AgentChatResponse buildErrorResponse(String error) {
-        return AgentChatResponse.builder()
-                .success(false)
-                .error(error)
-                .suggestions(List.of("先选择一个可查询数据源", "查看字段结构", "查询最近1小时日志"))
-                .build();
-    }
-
-    private AgentToolCall toStreamingToolCall(BeforeToolExecution beforeToolExecution) {
-        return AgentToolCall.builder()
-                .toolCallId(beforeToolExecution.request().id())
-                .toolName(beforeToolExecution.request().name())
-                .toolLabel(defaultToolLabel(beforeToolExecution.request().name()))
-                .status("running")
-                .input(parseArguments(beforeToolExecution.request().arguments()))
-                .summary("工具执行中")
-                .build();
-    }
-
-    private AgentToolCall toFinishedToolCall(ToolExecution toolExecution) {
-        AgentToolPayload payload = toolExecution.resultObject() instanceof AgentToolPayload toolPayload
-                ? toolPayload
-                : null;
-        return AgentToolCall.builder()
-                .toolCallId(toolExecution.request().id())
-                .toolName(toolExecution.request().name())
-                .toolLabel(payload != null ? payload.getToolLabel() : defaultToolLabel(toolExecution.request().name()))
-                .status(toolExecution.hasFailed() ? "failed" : "completed")
-                .input(parseArguments(toolExecution.request().arguments()))
-                .summary(payload != null ? payload.getSummary() : truncate(toolExecution.result(), 160))
-                .durationMs(payload != null ? payload.getDurationMs() : null)
-                .build();
     }
 
     private void safeEmit(AgentStreamEventEmitter emitter, AgentStreamEvent event) {
@@ -497,12 +304,5 @@ public class LangChain4jLogAnalysisAgentExecutor {
         } catch (IOException ex) {
             throw new UncheckedIOException("写出流式智能助手事件失败", ex);
         }
-    }
-
-    private String truncate(String value, int maxLength) {
-        if (!StringUtils.hasText(value) || value.length() <= maxLength) {
-            return value;
-        }
-        return value.substring(0, maxLength) + "...";
     }
 }

@@ -54,7 +54,7 @@ public class AgentConversationHistoryService {
     private final ConfigComponentService configComponentService;
 
     /**
-     * 填充 request 历史
+     * 补充 request 历史
      * 如果前端没传历史，且当前 session 在数据库里已经有消息，就把持久化历史回填到请求里。
      * 这样页面刷新后继续聊时，不需要前端自己回放全部历史。
      */
@@ -118,9 +118,9 @@ public class AgentConversationHistoryService {
                     sessionId,
                     "assistant",
                     assistantContent,
-                    response != null ? response.getToolCalls() : null,
-                    response != null ? response.getResult() : null,
-                    response != null ? response.getSuggestions() : null
+                    response.getToolCalls(),
+                    response.getResult(),
+                    response.getSuggestions()
             );
         }
 
@@ -196,7 +196,7 @@ public class AgentConversationHistoryService {
                     message.setContent(record.getContent());
                     return message;
                 })
-                .collect(Collectors.toList());
+                .toList();
     }
 
     private void upsertConversation(Long userId, ConversationIdentity identity, String userMessage) {

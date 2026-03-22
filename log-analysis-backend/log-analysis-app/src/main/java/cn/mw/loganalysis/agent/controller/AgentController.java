@@ -12,6 +12,7 @@ import cn.mw.loganalysis.agent.service.LogAnalysisAgentService;
 import cn.mw.loganalysis.agent.service.AgentStreamWriter;
 import cn.mw.loganalysis.common.exception.UnauthorizedException;
 import cn.mw.loganalysis.common.response.Result;
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
