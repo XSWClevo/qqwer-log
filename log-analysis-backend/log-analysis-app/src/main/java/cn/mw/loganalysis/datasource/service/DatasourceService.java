@@ -1,5 +1,6 @@
 package cn.mw.loganalysis.datasource.service;
 
+import cn.mw.loganalysis.common.enums.DatasourceType;
 import cn.mw.loganalysis.datasource.dto.CreateDatasourceRequest;
 import cn.mw.loganalysis.datasource.dto.DatasourceTestResult;
 import cn.mw.loganalysis.datasource.dto.UpdateDatasourceRequest;
@@ -11,6 +12,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -181,15 +183,17 @@ public class DatasourceService {
         long startTime = System.currentTimeMillis();
 
         try {
-            String jdbcUrl = buildJdbcUrl(datasource);
+            DatasourceType datasourceType = DatasourceType.fromCode(datasource.getType());
+            String jdbcUrl = datasourceType.buildJdbcUrl(datasource);
             DriverManagerDataSource dataSource = new DriverManagerDataSource();
+            dataSource.setDriverClassName(datasourceType.getDriverClassName());
             dataSource.setUrl(jdbcUrl);
             dataSource.setUsername(datasource.getUsername());
             dataSource.setPassword(datasource.getPassword());
 
             SqlSessionFactory sqlSessionFactory = DynamicMyBatisUtils.buildSqlSessionFactory(dataSource, DatabaseProbeMapper.class);
             String version = DynamicMyBatisUtils.execute(sqlSessionFactory, DatabaseProbeMapper.class,
-                    mapper -> supportsVersionProbe(datasource.getType()) ? mapper.selectVersion() : mapper.selectOne());
+                    mapper -> datasourceType.isVersionProbeSupported() ? mapper.selectVersion() : mapper.selectOne());
 
             long responseTime = System.currentTimeMillis() - startTime;
 
@@ -207,59 +211,41 @@ public class DatasourceService {
                     .build();
 
         } catch (Exception e) {
-            log.error("测试数据源连接失败: id={}, error={}", datasource.getId(), e.getMessage(), e);
+            String errorMessage = buildReadableErrorMessage(e);
+            log.error("测试数据源连接失败: id={}, jdbcType={}, error={}",
+                    datasource.getId(), datasource.getType(), errorMessage, e);
 
             long responseTime = System.currentTimeMillis() - startTime;
 
             // 更新数据源检查状态
             datasource.setLastCheckTime(LocalDateTime.now());
             datasource.setLastCheckStatus("failed");
-            datasource.setLastCheckMessage(e.getMessage());
+            datasource.setLastCheckMessage(errorMessage);
             datasourceRepository.updateById(datasource);
 
             return DatasourceTestResult.builder()
                     .success(false)
-                    .message("连接失败: " + e.getMessage())
+                    .message("连接失败: " + errorMessage)
                     .responseTime(responseTime)
                     .build();
         }
     }
 
-    /**
-     * 构建 JDBC URL
-     */
-    private String buildJdbcUrl(Datasource datasource) {
-        String protocol = datasource.getSslEnabled() != null && datasource.getSslEnabled() ? "s" : "";
+    private String buildReadableErrorMessage(Throwable throwable) {
+        Throwable rootCause = ExceptionUtils.getRootCause(throwable);
+        Throwable actualCause = rootCause != null ? rootCause : throwable;
 
-        switch (datasource.getType().toLowerCase()) {
-            case "clickhouse":
-                return String.format("jdbc:clickhouse%s://%s:%d/%s",
-                        protocol, datasource.getHost(), datasource.getPort(),
-                        datasource.getDatabaseName() != null ? datasource.getDatabaseName() : "default");
+        String rootMessage = StringUtils.defaultIfBlank(actualCause.getMessage(), actualCause.getClass().getSimpleName());
+        String topLevelMessage = StringUtils.trimToEmpty(throwable.getMessage());
 
-            case "postgresql":
-                return String.format("jdbc:postgresql://%s:%d/%s",
-                        datasource.getHost(), datasource.getPort(),
-                        datasource.getDatabaseName() != null ? datasource.getDatabaseName() : "postgres");
-
-            case "mysql":
-                return String.format("jdbc:mysql://%s:%d/%s",
-                        datasource.getHost(), datasource.getPort(),
-                        datasource.getDatabaseName() != null ? datasource.getDatabaseName() : "mysql");
-
-            default:
-                throw new IllegalArgumentException("不支持的数据源类型: " + datasource.getType());
-        }
-    }
-
-    private boolean supportsVersionProbe(String type) {
-        if (StringUtils.isBlank(type)) {
-            return false;
+        if (StringUtils.isBlank(topLevelMessage) || StringUtils.equals(topLevelMessage, rootMessage)) {
+            return rootMessage;
         }
 
-        return switch (type.toLowerCase()) {
-            case "clickhouse", "postgresql", "mysql" -> true;
-            default -> false;
-        };
+        if (StringUtils.contains(topLevelMessage, rootMessage)) {
+            return rootMessage;
+        }
+
+        return rootMessage + " (" + topLevelMessage + ")";
     }
 }

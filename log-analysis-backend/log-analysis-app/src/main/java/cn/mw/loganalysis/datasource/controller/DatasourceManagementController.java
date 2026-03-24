@@ -164,6 +164,7 @@ public class DatasourceManagementController {
         tempDatasource.setUsername(request.getUsername());
         tempDatasource.setPassword(request.getPassword());
         tempDatasource.setSslEnabled(request.getSslEnabled());
+        tempDatasource.setConnectionParams(request.getConnectionParams());
 
         DatasourceTestResult result = datasourceService.testConnection(tempDatasource);
         return Result.success(result);
