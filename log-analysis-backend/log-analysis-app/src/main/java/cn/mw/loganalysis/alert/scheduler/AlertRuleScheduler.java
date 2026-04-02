@@ -6,9 +6,11 @@ import cn.mw.loganalysis.alert.mapper.AlertRuleMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,6 +44,9 @@ public class AlertRuleScheduler {
             
             // 并行执行所有规则
             for (AlertRule rule : enabledRules) {
+                if (!shouldEvaluateNow(rule)) {
+                    continue;
+                }
                 executorService.submit(() -> {
                     try {
                         alertRuleExecutor.executeRule(rule);
@@ -63,5 +68,35 @@ public class AlertRuleScheduler {
         LambdaQueryWrapper<AlertRule> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AlertRule::getEnabled, true);
         return alertRuleMapper.selectList(wrapper);
+    }
+
+    private boolean shouldEvaluateNow(AlertRule rule) {
+        String evalEvery = StringUtils.defaultIfBlank(rule.getEvalEvery(), "1m");
+        int intervalMinutes = parseIntervalMinutes(evalEvery);
+        if (intervalMinutes <= 1) {
+            return true;
+        }
+
+        long currentMinute = LocalDateTime.now().getHour() * 60L + LocalDateTime.now().getMinute();
+        return currentMinute % intervalMinutes == 0;
+    }
+
+    private int parseIntervalMinutes(String evalEvery) {
+        if (StringUtils.isBlank(evalEvery)) {
+            return 1;
+        }
+
+        String numberPart = evalEvery.replaceAll("[^0-9]", "");
+        String unitPart = evalEvery.replaceAll("[0-9]", "");
+        if (StringUtils.isBlank(numberPart)) {
+            return 1;
+        }
+
+        int value = Integer.parseInt(numberPart);
+        return switch (unitPart) {
+            case "h" -> value * 60;
+            case "d" -> value * 24 * 60;
+            default -> value;
+        };
     }
 }

@@ -1,6 +1,7 @@
 package cn.mw.loganalysis.alert.validator;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
@@ -80,18 +81,27 @@ public class QueryValidator {
             return;
         }
 
-        String field = groupBy.trim().toLowerCase();
-        if (!VALID_FIELDS.contains(field)) {
-            String errorMessage = String.format(
-                    "无效的 groupBy 字段: %s. 可用字段: %s",
-                    groupBy,
-                    String.join(", ", VALID_FIELDS)
-            );
-            log.warn("GroupBy validation failed: {}", errorMessage);
-            throw new IllegalArgumentException(errorMessage);
-        }
+        validateFieldName(groupBy, "groupBy");
 
         log.debug("GroupBy field validation passed: {}", groupBy);
+    }
+
+    public void validateFieldName(String fieldName, String scene) {
+        if (StringUtils.isBlank(fieldName)) {
+            return;
+        }
+
+        String field = fieldName.trim().toLowerCase();
+        if (!VALID_FIELDS.contains(field)) {
+            String errorMessage = String.format(
+                    "无效的%s字段: %s. 可用字段: %s",
+                    scene,
+                    fieldName,
+                    String.join(", ", VALID_FIELDS)
+            );
+            log.warn("Field validation failed: {}", errorMessage);
+            throw new IllegalArgumentException(errorMessage);
+        }
     }
 
     /**

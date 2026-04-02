@@ -11,6 +11,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,7 @@ public class AlertRuleService {
     private final AlertRuleMapper alertRuleMapper;
     private final AlertEventMapper alertEventMapper;
     private final QueryValidator queryValidator;
+    private final AlertConditionParser alertConditionParser;
 
     /**
      * 查询告警规则列表
@@ -43,7 +47,9 @@ public class AlertRuleService {
                 page,
                 request.getKeyword(),
                 request.getStatus(),
-                request.getSeverity()
+                request.getSeverity(),
+                request.getType(),
+                request.getChannel()
         );
 
         // 转换为 DTO
@@ -75,13 +81,7 @@ public class AlertRuleService {
         validateRuleCondition(request.getCondition());
         
         AlertRule rule = new AlertRule();
-        rule.setName(request.getName());
-        rule.setDescription(request.getDescription());
-        rule.setCondition(request.getCondition());
-        rule.setSeverity(request.getSeverity().toUpperCase());
-        rule.setNotificationChannels(request.getNotificationChannels());
-        rule.setSilencePeriod(request.getSilencePeriod());
-        rule.setEnabled(request.getEnabled());
+        applyCreateRequest(rule, request);
         rule.setCreatedBy(1L); // TODO: 从当前用户获取
         
         alertRuleMapper.insert(rule);
@@ -112,14 +112,41 @@ public class AlertRuleService {
         if (request.getDescription() != null) {
             rule.setDescription(request.getDescription());
         }
+        if (request.getRuleType() != null) {
+            rule.setRuleType(request.getRuleType());
+        }
+        if (request.getScopeType() != null) {
+            rule.setScopeType(request.getScopeType());
+        }
+        if (request.getCategoryCodes() != null) {
+            rule.setCategoryCodes(request.getCategoryCodes());
+        }
+        if (request.getDatasourceIds() != null) {
+            rule.setDatasourceIds(request.getDatasourceIds());
+        }
+        if (request.getTableNames() != null) {
+            rule.setTableNames(request.getTableNames());
+        }
         if (request.getCondition() != null) {
             rule.setCondition(request.getCondition());
+        }
+        if (request.getEvalEvery() != null) {
+            rule.setEvalEvery(request.getEvalEvery());
+        }
+        if (request.getConsecutiveHits() != null) {
+            rule.setConsecutiveHits(request.getConsecutiveHits());
         }
         if (request.getSeverity() != null) {
             rule.setSeverity(request.getSeverity().toUpperCase());
         }
         if (request.getNotificationChannels() != null) {
             rule.setNotificationChannels(request.getNotificationChannels());
+        }
+        if (request.getDedupKeyFields() != null) {
+            rule.setDedupKeyFields(request.getDedupKeyFields());
+        }
+        if (request.getMessageTemplate() != null) {
+            rule.setMessageTemplate(request.getMessageTemplate());
         }
         if (request.getSilencePeriod() != null) {
             rule.setSilencePeriod(request.getSilencePeriod());
@@ -181,9 +208,18 @@ public class AlertRuleService {
         AlertRule duplicate = new AlertRule();
         duplicate.setName(original.getName() + " (副本)");
         duplicate.setDescription(original.getDescription());
+        duplicate.setRuleType(original.getRuleType());
+        duplicate.setScopeType(original.getScopeType());
+        duplicate.setCategoryCodes(original.getCategoryCodes());
+        duplicate.setDatasourceIds(original.getDatasourceIds());
+        duplicate.setTableNames(original.getTableNames());
         duplicate.setCondition(original.getCondition());
+        duplicate.setEvalEvery(original.getEvalEvery());
+        duplicate.setConsecutiveHits(original.getConsecutiveHits());
         duplicate.setSeverity(original.getSeverity());
         duplicate.setNotificationChannels(original.getNotificationChannels());
+        duplicate.setDedupKeyFields(original.getDedupKeyFields());
+        duplicate.setMessageTemplate(original.getMessageTemplate());
         duplicate.setSilencePeriod(original.getSilencePeriod());
         duplicate.setEnabled(false); // 默认禁用副本
         duplicate.setCreatedBy(1L); // TODO: 从当前用户获取
@@ -225,9 +261,18 @@ public class AlertRuleService {
                 .id(rule.getId())
                 .name(rule.getName())
                 .description(rule.getDescription())
+                .ruleType(rule.getRuleType())
+                .scopeType(rule.getScopeType())
+                .categoryCodes(rule.getCategoryCodes())
+                .datasourceIds(rule.getDatasourceIds())
+                .tableNames(rule.getTableNames())
                 .condition(rule.getCondition())
+                .evalEvery(rule.getEvalEvery())
+                .consecutiveHits(rule.getConsecutiveHits())
                 .severity(rule.getSeverity())
                 .notificationChannels(rule.getNotificationChannels())
+                .dedupKeyFields(rule.getDedupKeyFields())
+                .messageTemplate(rule.getMessageTemplate())
                 .silencePeriod(rule.getSilencePeriod())
                 .enabled(rule.getEnabled())
                 .createdBy(rule.getCreatedBy())
@@ -235,7 +280,7 @@ public class AlertRuleService {
                 .updatedAt(rule.getUpdatedAt())
                 .lastTriggeredAt(lastTriggered)
                 .triggerCount(triggerCount != null ? triggerCount : 0L)
-                .type(extractRuleType(rule.getCondition()))
+                .type(StringUtils.defaultIfBlank(rule.getRuleType(), extractRuleType(rule.getCondition())))
                 .triggerConditionSummary(buildTriggerSummary(rule.getCondition()))
                 .build();
     }
@@ -260,15 +305,20 @@ public class AlertRuleService {
             return "未配置";
         }
 
-        String metric = (String) condition.getOrDefault("metric", "count");
-        String operator = (String) condition.getOrDefault("operator", ComparisonOperator.GT.getCode());
-        Object value = condition.get("value");
-        String timeWindow = (String) condition.getOrDefault("timeWindow", "5m");
+        AlertConditionDTO parsed = alertConditionParser.parse(condition);
+        String metric = ObjectUtils.defaultIfNull(parsed.getAggregate(), new AlertAggregateDTO()).getFunction();
+        String operator = ObjectUtils.defaultIfNull(parsed.getTrigger(), new AlertTriggerDTO()).getOperator();
+        Object value = ObjectUtils.defaultIfNull(parsed.getTrigger(), new AlertTriggerDTO()).getThreshold();
+        String timeWindow = ObjectUtils.defaultIfNull(parsed.getTrigger(), new AlertTriggerDTO()).getTimeWindow();
 
         // 使用枚举获取操作符符号
-        String operatorText = ComparisonOperator.getSymbol(operator);
+        String operatorText = ComparisonOperator.getSymbol(StringUtils.defaultIfBlank(operator, ComparisonOperator.GT.getCode()));
 
-        return String.format("%s %s %s in %s", metric, operatorText, value, timeWindow);
+        return String.format("%s %s %s in %s",
+                StringUtils.defaultIfBlank(metric, "count"),
+                operatorText,
+                ObjectUtils.defaultIfNull(value, 0),
+                StringUtils.defaultIfBlank(timeWindow, "5m"));
     }
 
     /**
@@ -280,9 +330,11 @@ public class AlertRuleService {
             return;
         }
 
-        // 验证查询语句
-        String query = (String) condition.get("query");
-        if (query != null && !query.trim().isEmpty()) {
+        AlertConditionDTO parsedCondition = alertConditionParser.parse(condition);
+
+        // 验证旧版查询语句
+        String query = parsedCondition.getQuery();
+        if (StringUtils.isNotBlank(query)) {
             try {
                 queryValidator.validateQuery(query);
             } catch (IllegalArgumentException e) {
@@ -291,15 +343,50 @@ public class AlertRuleService {
             }
         }
 
-        // 验证 groupBy 字段
-        String groupBy = (String) condition.get("groupBy");
-        if (groupBy != null && !groupBy.trim().isEmpty()) {
-            try {
-                queryValidator.validateGroupByField(groupBy);
-            } catch (IllegalArgumentException e) {
-                log.error("GroupBy validation failed: {}", e.getMessage());
-                throw new IllegalArgumentException("分组字段验证失败: " + e.getMessage());
+        if (parsedCondition.getFilters() != null && CollectionUtils.isNotEmpty(parsedCondition.getFilters().getFieldFilters())) {
+            parsedCondition.getFilters().getFieldFilters().forEach(filter -> {
+                try {
+                    queryValidator.validateFieldName(filter.getField(), "filter");
+                } catch (IllegalArgumentException e) {
+                    log.error("Filter validation failed: {}", e.getMessage());
+                    throw new IllegalArgumentException("筛选字段验证失败: " + e.getMessage());
+                }
+            });
+        }
+
+        if (parsedCondition.getAggregate() != null && StringUtils.isNotBlank(parsedCondition.getAggregate().getField())
+                && !"*".equals(parsedCondition.getAggregate().getField())) {
+            queryValidator.validateFieldName(parsedCondition.getAggregate().getField(), "aggregate");
+        }
+
+        if (CollectionUtils.isNotEmpty(parsedCondition.getGroupBy())) {
+            for (String groupBy : parsedCondition.getGroupBy()) {
+                try {
+                    queryValidator.validateGroupByField(groupBy);
+                } catch (IllegalArgumentException e) {
+                    log.error("GroupBy validation failed: {}", e.getMessage());
+                    throw new IllegalArgumentException("分组字段验证失败: " + e.getMessage());
+                }
             }
         }
+    }
+
+    private void applyCreateRequest(AlertRule rule, CreateAlertRuleRequest request) {
+        rule.setName(request.getName());
+        rule.setDescription(request.getDescription());
+        rule.setRuleType(StringUtils.defaultIfBlank(request.getRuleType(), "aggregation"));
+        rule.setScopeType(StringUtils.defaultIfBlank(request.getScopeType(), "all"));
+        rule.setCategoryCodes(request.getCategoryCodes());
+        rule.setDatasourceIds(request.getDatasourceIds());
+        rule.setTableNames(request.getTableNames());
+        rule.setCondition(request.getCondition());
+        rule.setEvalEvery(StringUtils.defaultIfBlank(request.getEvalEvery(), "1m"));
+        rule.setConsecutiveHits(ObjectUtils.defaultIfNull(request.getConsecutiveHits(), 1));
+        rule.setSeverity(StringUtils.upperCase(request.getSeverity()));
+        rule.setNotificationChannels(request.getNotificationChannels());
+        rule.setDedupKeyFields(request.getDedupKeyFields());
+        rule.setMessageTemplate(request.getMessageTemplate());
+        rule.setSilencePeriod(request.getSilencePeriod());
+        rule.setEnabled(request.getEnabled());
     }
 }

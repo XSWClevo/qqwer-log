@@ -10,18 +10,36 @@ import java.util.Map;
  */
 @Data
 public class UpdateAlertRuleRequest {
-    
+
     private String name;
-    
+
     private String description;
-    
+
+    private String ruleType;
+
+    private String scopeType;
+
+    private List<String> categoryCodes;
+
+    private List<String> datasourceIds;
+
+    private List<String> tableNames;
+
     private Map<String, Object> condition;
-    
+
+    private String evalEvery;
+
+    private Integer consecutiveHits;
+
     private String severity;
-    
+
     private List<String> notificationChannels;
-    
+
+    private List<String> dedupKeyFields;
+
+    private String messageTemplate;
+
     private Integer silencePeriod;
-    
+
     private Boolean enabled;
 }

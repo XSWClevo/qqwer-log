@@ -1,10 +1,22 @@
 package cn.mw.loganalysis.alert.executor;
 
+import cn.mw.loganalysis.alert.dto.AlertAggregateDTO;
+import cn.mw.loganalysis.alert.dto.AlertConditionDTO;
+import cn.mw.loganalysis.alert.dto.AlertDatasetTarget;
+import cn.mw.loganalysis.alert.dto.AlertFilterDTO;
+import cn.mw.loganalysis.stats.dto.LogQueryRequest;
+import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,137 +32,181 @@ public class QueryBuilder {
     /**
      * 构建查询 SQL
      */
-    public String buildQuery(Map<String, Object> condition) {
-        String type = (String) condition.getOrDefault("type", "log_query");
-        
-        return switch (type) {
-            case "log_query" -> buildLogQuerySql(condition);
-            case "metric_threshold" -> buildMetricThresholdSql(condition);
-            case "anomaly" -> buildAnomalySql(condition);
-            default -> throw new IllegalArgumentException("Unsupported rule type: " + type);
-        };
+    public String buildQuery(AlertDatasetTarget target, AlertConditionDTO condition) {
+        return buildAggregationSql(target, condition);
     }
 
     /**
-     * 构建日志查询类型的 SQL
+     * 构建聚合查询 SQL
      */
-    private String buildLogQuerySql(Map<String, Object> condition) {
-        String query = (String) condition.get("query");
-        String metric = (String) condition.getOrDefault("metric", "count");
-        String timeWindow = (String) condition.getOrDefault("timeWindow", "5m");
-        String groupBy = (String) condition.get("groupBy");
-        
-        // 不再需要映射 groupBy 字段，前端直接使用数据库字段名
-        
-        // 计算时间范围
+    private String buildAggregationSql(AlertDatasetTarget target, AlertConditionDTO condition) {
+        String timeWindow = condition.getTrigger() != null
+                ? StringUtils.defaultIfBlank(condition.getTrigger().getTimeWindow(), "5m")
+                : "5m";
         LocalDateTime endTime = LocalDateTime.now();
         LocalDateTime startTime = calculateStartTime(endTime, timeWindow);
-        
+
+        List<String> groupByFields = buildGroupByFields(target, condition.getGroupBy());
+        AlertAggregateDTO aggregate = condition.getAggregate() != null ? condition.getAggregate() : new AlertAggregateDTO();
+
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ");
-        
-        // 添加 GROUP BY 字段
-        if (groupBy != null && !groupBy.isEmpty()) {
-            sql.append(groupBy).append(", ");
+        if (CollectionUtils.isNotEmpty(groupByFields)) {
+            sql.append(String.join(", ", groupByFields)).append(", ");
         }
-        
-        // 添加聚合函数
-        sql.append(buildMetricFunction(metric)).append(" as value ");
-        sql.append("FROM syslog ");
-        sql.append("WHERE timestamp >= '").append(startTime.format(FORMATTER)).append("' ");
-        sql.append("AND timestamp <= '").append(endTime.format(FORMATTER)).append("' ");
-        
-        // 添加查询条件
-        if (query != null && !query.isEmpty()) {
-            String whereClause = parseQueryToWhereClause(query);
+
+        sql.append(buildMetricFunction(target, aggregate)).append(" as value ");
+        sql.append("FROM ").append(buildTableExpression(target)).append(" ");
+        sql.append("WHERE ")
+                .append(quoteIdentifier(target.getTimeField()))
+                .append(" >= '").append(startTime.format(FORMATTER)).append("' ");
+        sql.append("AND ")
+                .append(quoteIdentifier(target.getTimeField()))
+                .append(" <= '").append(endTime.format(FORMATTER)).append("' ");
+
+        appendStructuredFilters(sql, target, condition.getFilters());
+        if (StringUtils.isNotBlank(condition.getQuery())) {
+            String whereClause = parseQueryToWhereClause(condition.getQuery(), target);
             sql.append("AND ").append(whereClause).append(" ");
         }
-        
-        // 添加 GROUP BY
-        if (groupBy != null && !groupBy.isEmpty()) {
-            sql.append("GROUP BY ").append(groupBy);
+
+        if (CollectionUtils.isNotEmpty(groupByFields)) {
+            sql.append("GROUP BY ").append(String.join(", ", groupByFields)).append(" ");
         }
-        
+
         log.debug("Built SQL: {}", sql);
-        return sql.toString();
-    }
-
-    /**
-     * 构建指标阈值类型的 SQL
-     */
-    private String buildMetricThresholdSql(Map<String, Object> condition) {
-        String metric = (String) condition.get("metric");
-        String timeWindow = (String) condition.getOrDefault("timeWindow", "3m");
-        
-        LocalDateTime endTime = LocalDateTime.now();
-        LocalDateTime startTime = calculateStartTime(endTime, timeWindow);
-        
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-        sql.append(buildMetricFunction(metric)).append(" as value ");
-        sql.append("FROM syslog ");
-        sql.append("WHERE timestamp >= '").append(startTime.format(FORMATTER)).append("' ");
-        sql.append("AND timestamp <= '").append(endTime.format(FORMATTER)).append("'");
-        
-        return sql.toString();
-    }
-
-    /**
-     * 构建异常检测类型的 SQL
-     */
-    private String buildAnomalySql(Map<String, Object> condition) {
-        String metric = (String) condition.get("metric");
-        String timeWindow = (String) condition.getOrDefault("timeWindow", "10m");
-        
-        LocalDateTime endTime = LocalDateTime.now();
-        LocalDateTime startTime = calculateStartTime(endTime, timeWindow);
-        
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-        sql.append("avg(").append(metric).append(") as avg_value, ");
-        sql.append("stddevPop(").append(metric).append(") as stddev_value ");
-        sql.append("FROM syslog ");
-        sql.append("WHERE timestamp >= '").append(startTime.format(FORMATTER)).append("' ");
-        sql.append("AND timestamp <= '").append(endTime.format(FORMATTER)).append("'");
-        
         return sql.toString();
     }
 
     /**
      * 构建聚合函数
      */
-    private String buildMetricFunction(String metric) {
+    private String buildMetricFunction(AlertDatasetTarget target, AlertAggregateDTO aggregate) {
+        String metric = StringUtils.defaultIfBlank(aggregate.getFunction(), "count");
+        String aggregateField = resolveField(target, aggregate.getField());
+
         return switch (metric) {
             case "count" -> "count()";
-            case "sum" -> "sum(1)";
-            case "avg" -> "avg(1)";
-            case "max" -> "max(1)";
-            case "min" -> "min(1)";
+            case "distinct", "unique" -> "uniqExact(" + quoteIdentifier(aggregateField) + ")";
+            case "sum" -> "sum(" + quoteIdentifier(aggregateField) + ")";
+            case "avg" -> "avg(" + quoteIdentifier(aggregateField) + ")";
+            case "max" -> "max(" + quoteIdentifier(aggregateField) + ")";
+            case "min" -> "min(" + quoteIdentifier(aggregateField) + ")";
             default -> "count()";
         };
     }
 
     /**
      * 解析查询字符串为 WHERE 子句
-     * 前端和后端统一使用数据库字段名，不再需要映射
      */
-    private String parseQueryToWhereClause(String query) {
-        if (query == null || query.isEmpty()) {
+    private String parseQueryToWhereClause(String query, AlertDatasetTarget target) {
+        if (StringUtils.isBlank(query)) {
             return "1=1";
         }
-        
-        // 直接返回查询字符串，不再进行字段映射
-        return query;
+
+        String whereClause = query;
+        if (MapUtils.isNotEmpty(target.getFieldMapping())) {
+            List<Map.Entry<String, String>> mappings = new ArrayList<>(target.getFieldMapping().entrySet());
+            mappings.sort(Comparator.comparingInt(entry -> -entry.getKey().length()));
+            for (Map.Entry<String, String> entry : mappings) {
+                whereClause = whereClause.replaceAll("\\b" + entry.getKey() + "\\b", entry.getValue());
+            }
+        }
+        return whereClause;
     }
 
-    /**
-     * 映射字段名（已废弃，保留用于向后兼容）
-     * 现在前端直接使用数据库字段名，不再需要映射
-     */
-    @Deprecated
-    private String mapFieldName(String fieldName) {
-        // 不再进行映射，直接返回原字段名
-        return fieldName;
+    private void appendStructuredFilters(StringBuilder sql, AlertDatasetTarget target, AlertFilterDTO filters) {
+        if (filters == null) {
+            return;
+        }
+
+        if (CollectionUtils.isNotEmpty(filters.getFieldFilters())) {
+            for (LogQueryRequest.FieldFilter filter : filters.getFieldFilters()) {
+                if (filter == null || StringUtils.isBlank(filter.getField()) || CollectionUtils.isEmpty(filter.getValues())) {
+                    continue;
+                }
+
+                String fieldExpression = quoteIdentifier(resolveField(target, filter.getField()));
+                String valueList = filter.getValues().stream()
+                        .map(this::quoteValue)
+                        .reduce((left, right) -> left + "," + right)
+                        .orElse("");
+
+                if ("exclude".equalsIgnoreCase(filter.getType())) {
+                    sql.append("AND ").append(fieldExpression).append(" NOT IN (").append(valueList).append(") ");
+                } else {
+                    sql.append("AND ").append(fieldExpression).append(" IN (").append(valueList).append(") ");
+                }
+            }
+        }
+
+        appendMessageConditions(sql, target.getMessageField(), filters.getMessageConditions());
+        appendMessageConditions(sql, target.getRawField(), filters.getRawConditions());
+    }
+
+    private void appendMessageConditions(StringBuilder sql, String fieldName, List<LogQueryRequest.MessageCondition> conditions) {
+        if (CollectionUtils.isEmpty(conditions) || StringUtils.isBlank(fieldName)) {
+            return;
+        }
+
+        String fieldExpression = quoteIdentifier(fieldName);
+        for (LogQueryRequest.MessageCondition condition : conditions) {
+            if (condition == null || StringUtils.isBlank(condition.getValue())) {
+                continue;
+            }
+
+            String value = condition.getValue().replace("'", "''");
+            String operator = StringUtils.lowerCase(condition.getOperator());
+            switch (operator) {
+                case "notcontains" -> sql.append("AND ").append(fieldExpression)
+                        .append(" NOT LIKE '%").append(value).append("%' ");
+                case "equals" -> sql.append("AND ").append(fieldExpression)
+                        .append(" = '").append(value).append("' ");
+                case "notequals" -> sql.append("AND ").append(fieldExpression)
+                        .append(" != '").append(value).append("' ");
+                default -> sql.append("AND ").append(fieldExpression)
+                        .append(" LIKE '%").append(value).append("%' ");
+            }
+        }
+    }
+
+    private List<String> buildGroupByFields(AlertDatasetTarget target, List<String> groupBy) {
+        if (CollectionUtils.isEmpty(groupBy)) {
+            return List.of();
+        }
+
+        return groupBy.stream()
+                .filter(StringUtils::isNotBlank)
+                .map(field -> quoteIdentifier(resolveField(target, field)))
+                .toList();
+    }
+
+    private String buildTableExpression(AlertDatasetTarget target) {
+        if (StringUtils.isBlank(target.getDatabaseName())) {
+            return StatsQueryMapperUtils.quoteClickHouseIdentifier(target.getTableName());
+        }
+        return StatsQueryMapperUtils.qualifyClickHouseTable(target.getDatabaseName(), target.getTableName());
+    }
+
+    private String resolveField(AlertDatasetTarget target, String logicalField) {
+        if (StringUtils.isBlank(logicalField) || "*".equals(logicalField)) {
+            return logicalField;
+        }
+        if (MapUtils.isEmpty(target.getFieldMapping())) {
+            return logicalField;
+        }
+        return StringUtils.defaultIfBlank(target.getFieldMapping().get(logicalField), logicalField);
+    }
+
+    private String quoteIdentifier(String fieldName) {
+        if (StringUtils.isBlank(fieldName) || "*".equals(fieldName)) {
+            return fieldName;
+        }
+        return StatsQueryMapperUtils.quoteClickHouseIdentifier(fieldName);
+    }
+
+    private String quoteValue(String value) {
+        return "'" + StringUtils.replace(StringUtils.defaultString(value), "'", "''") + "'";
     }
 
     /**

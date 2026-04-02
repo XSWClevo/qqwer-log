@@ -18,13 +18,31 @@ public class CreateAlertRuleRequest {
 
     private String description;
 
+    private String ruleType = "aggregation";
+
+    private String scopeType = "all";
+
+    private List<String> categoryCodes;
+
+    private List<String> datasourceIds;
+
+    private List<String> tableNames;
+
     @NotNull(message = "告警条件不能为空")
     private Map<String, Object> condition;
+
+    private String evalEvery = "1m";
+
+    private Integer consecutiveHits = 1;
 
     @NotBlank(message = "告警级别不能为空")
     private String severity;
 
     private List<String> notificationChannels;
+
+    private List<String> dedupKeyFields;
+
+    private String messageTemplate;
 
     private Integer silencePeriod = 300;
 

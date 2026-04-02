@@ -6,8 +6,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.ibatis.annotations.Mapper;
-import org.springframework.util.StringUtils;
 
 /**
  * 告警规则Mapper
@@ -24,14 +24,17 @@ public interface AlertRuleMapper extends BaseMapper<AlertRule> {
      * @param keyword 关键词（搜索名称和描述）
      * @param status 状态（enabled/disabled）
      * @param severity 严重程度
+     * @param ruleType 规则类型
+     * @param channel 通知渠道
      * @return 分页结果
      */
     default IPage<AlertRule> selectPageByCondition(Page<AlertRule> page, String keyword,
-                                                     String status, String severity) {
+                                                   String status, String severity,
+                                                   String ruleType, String channel) {
         LambdaQueryWrapper<AlertRule> wrapper = new LambdaQueryWrapper<>();
 
         // 关键词搜索
-        if (StringUtils.hasText(keyword)) {
+        if (StringUtils.isNotBlank(keyword)) {
             wrapper.and(w -> w.like(AlertRule::getName, keyword)
                     .or().like(AlertRule::getDescription, keyword));
         }
@@ -44,8 +47,16 @@ public interface AlertRuleMapper extends BaseMapper<AlertRule> {
         }
 
         // 严重程度过滤
-        if (StringUtils.hasText(severity)) {
+        if (StringUtils.isNotBlank(severity)) {
             wrapper.eq(AlertRule::getSeverity, severity.toUpperCase());
+        }
+
+        if (StringUtils.isNotBlank(ruleType)) {
+            wrapper.eq(AlertRule::getRuleType, ruleType);
+        }
+
+        if (StringUtils.isNotBlank(channel)) {
+            wrapper.apply("notification_channels::text like {0}", "%\"" + channel + "\"%");
         }
 
         wrapper.orderByDesc(AlertRule::getCreatedAt);
@@ -65,4 +76,3 @@ public interface AlertRuleMapper extends BaseMapper<AlertRule> {
         return selectList(wrapper);
     }
 }
-

@@ -1,17 +1,27 @@
 package cn.mw.loganalysis.alert.executor;
 
+import cn.mw.loganalysis.alert.dto.AlertConditionDTO;
+import cn.mw.loganalysis.alert.dto.AlertDatasetTarget;
+import cn.mw.loganalysis.alert.dto.AlertMatchResult;
 import cn.mw.loganalysis.alert.entity.AlertEvent;
 import cn.mw.loganalysis.alert.entity.AlertRule;
 import cn.mw.loganalysis.alert.mapper.AlertEventMapper;
-import cn.mw.loganalysis.alert.mapper.AlertExecutionMapper;
 import cn.mw.loganalysis.alert.notifier.AlertNotifier;
-import com.baomidou.dynamic.datasource.annotation.DS;
+import cn.mw.loganalysis.alert.service.AlertConditionParser;
+import cn.mw.loganalysis.alert.service.AlertRuleScopeResolver;
+import cn.mw.loganalysis.stats.service.DynamicLogQueryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,14 +36,15 @@ import java.util.Map;
 public class AlertRuleExecutor {
 
     private final QueryBuilder queryBuilder;
-    private final AlertExecutionMapper alertExecutionMapper;
     private final AlertEventMapper alertEventMapper;
     private final AlertNotifier alertNotifier;
+    private final AlertConditionParser alertConditionParser;
+    private final AlertRuleScopeResolver alertRuleScopeResolver;
+    private final DynamicLogQueryService dynamicLogQueryService;
 
     /**
      * 执行规则
      */
-    @DS("clickhouse")
     public void executeRule(AlertRule rule) {
         log.debug("Executing alert rule: {} (ID: {})", rule.getName(), rule.getId());
         
@@ -43,38 +54,48 @@ public class AlertRuleExecutor {
                 log.debug("Rule {} is in silence period, skipping", rule.getId());
                 return;
             }
-            
-            // 2. 构建查询
-            String sql = queryBuilder.buildQuery(rule.getCondition());
-            
-            // 3. 执行查询 (使用 ClickHouse) - 不在事务中
-            List<Map<String, Object>> results = executeClickHouseQuery(sql);
-            
-            // 4. 判断是否触发
-            if (shouldTriggerAlert(rule, results)) {
-                log.info("Alert rule {} triggered with {} results", rule.getId(), results.size());
-                
-                // 5. 创建告警事件 - 在单独的事务中
-                createAndSaveAlertEvent(rule, results);
-            } else {
-                log.debug("Alert rule {} not triggered", rule.getId());
+
+            AlertConditionDTO condition = alertConditionParser.parse(rule.getCondition());
+            List<AlertDatasetTarget> targets = alertRuleScopeResolver.resolve(rule);
+            if (CollectionUtils.isEmpty(targets)) {
+                log.warn("Rule {} has no dataset targets resolved, skipping", rule.getId());
+                return;
             }
-            
+
+            List<AlertMatchResult> matches = new ArrayList<>();
+            for (AlertDatasetTarget target : targets) {
+                if (!supportsTarget(target)) {
+                    log.warn("Rule {} target {}:{} is not supported, skipping",
+                            rule.getId(), target.getDatasourceType(), target.getTableName());
+                    continue;
+                }
+
+                String sql = queryBuilder.buildQuery(target, condition);
+                List<Map<String, Object>> results = executeQuery(target, sql);
+                matches.addAll(filterTriggeredMatches(rule, target, condition, results));
+            }
+
+            if (CollectionUtils.isNotEmpty(matches)) {
+                log.info("Alert rule {} triggered with {} matches", rule.getId(), matches.size());
+                createAndSaveAlertEvents(rule, matches);
+                return;
+            }
+
+            log.debug("Alert rule {} not triggered", rule.getId());
         } catch (Exception e) {
             log.error("Failed to execute rule: {} (ID: {})", rule.getName(), rule.getId(), e);
         }
     }
 
     /**
-     * 创建并保存告警事件（在事务中）
+     * 创建并保存告警事件
      */
-    protected void createAndSaveAlertEvent(AlertRule rule, List<Map<String, Object>> results) {
-        // 创建告警事件
-        AlertEvent event = createAlertEvent(rule, results);
-        alertEventMapper.insert(event);
-        
-        // 发送通知
-        alertNotifier.sendNotifications(rule, event, results);
+    protected void createAndSaveAlertEvents(AlertRule rule, List<AlertMatchResult> matches) {
+        for (AlertMatchResult match : matches) {
+            AlertEvent event = createAlertEvent(rule, match);
+            alertEventMapper.insert(event);
+            alertNotifier.sendNotifications(rule, event, match.getSamples());
+        }
     }
 
     /**
@@ -94,70 +115,73 @@ public class AlertRuleExecutor {
     }
 
     /**
-     * 执行 ClickHouse 查询
-     */
-    @DS("clickhouse")
-    private List<Map<String, Object>> executeClickHouseQuery(String sql) {
-        return alertExecutionMapper.executeDynamicQuery(sql);
-    }
-
-    /**
      * 判断是否应该触发告警
      */
-    private boolean shouldTriggerAlert(AlertRule rule, List<Map<String, Object>> results) {
-        if (results == null || results.isEmpty()) {
-            return false;
+    private List<AlertMatchResult> filterTriggeredMatches(AlertRule rule, AlertDatasetTarget target,
+                                                          AlertConditionDTO parsedCondition,
+                                                          List<Map<String, Object>> results) {
+        List<AlertMatchResult> matches = new ArrayList<>();
+        if (CollectionUtils.isEmpty(results)) {
+            return matches;
         }
-        
-        Map<String, Object> condition = rule.getCondition();
-        String operator = (String) condition.getOrDefault("operator", "gt");
-        Object thresholdObj = condition.get("value");
-        
+
+        String operator = parsedCondition.getTrigger() != null
+                ? parsedCondition.getTrigger().getOperator()
+                : "gt";
+        Object thresholdObj = parsedCondition.getTrigger() != null
+                ? parsedCondition.getTrigger().getThreshold()
+                : null;
         if (thresholdObj == null) {
-            return false;
+            return matches;
         }
-        
-        double threshold = convertToDouble(thresholdObj);
-        
-        // 获取查询结果的值
-        Map<String, Object> firstResult = results.get(0);
-        Object valueObj = firstResult.get("value");
-        
-        if (valueObj == null) {
-            return false;
+
+        BigDecimal threshold = convertToDecimal(thresholdObj);
+        for (Map<String, Object> row : results) {
+            Object valueObj = row.get("value");
+            if (valueObj == null) {
+                continue;
+            }
+
+            BigDecimal actualValue = convertToDecimal(valueObj);
+            if (!compare(actualValue, threshold, operator)) {
+                continue;
+            }
+
+            matches.add(AlertMatchResult.builder()
+                    .datasourceId(target.getDatasourceId())
+                    .tableName(target.getTableName())
+                    .actualValue(actualValue)
+                    .threshold(threshold)
+                    .groupValues(extractGroupValues(row))
+                    .samples(List.of(new HashMap<>(row)))
+                    .build());
         }
-        
-        double actualValue = convertToDouble(valueObj);
-        
-        // 比较值
-        return switch (operator) {
-            case "gt" -> actualValue > threshold;
-            case "gte" -> actualValue >= threshold;
-            case "lt" -> actualValue < threshold;
-            case "lte" -> actualValue <= threshold;
-            case "eq" -> actualValue == threshold;
-            default -> false;
-        };
+        return matches;
     }
 
     /**
      * 创建告警事件
      */
-    private AlertEvent createAlertEvent(AlertRule rule, List<Map<String, Object>> results) {
+    private AlertEvent createAlertEvent(AlertRule rule, AlertMatchResult match) {
         AlertEvent event = new AlertEvent();
         event.setRuleId(rule.getId());
         event.setRuleName(rule.getName());
         event.setSeverity(rule.getSeverity());
         
         // 构建告警消息
-        String message = buildAlertMessage(rule, results);
+        String message = buildAlertMessage(rule, match);
         event.setMessage(message);
         
         // 保存查询结果数据
         Map<String, Object> logData = new HashMap<>();
-        logData.put("results", results);
-        logData.put("count", results.size());
+        logData.put("results", match.getSamples());
+        logData.put("count", CollectionUtils.size(match.getSamples()));
         logData.put("condition", rule.getCondition());
+        logData.put("datasourceId", match.getDatasourceId());
+        logData.put("tableName", match.getTableName());
+        logData.put("groupValues", match.getGroupValues());
+        logData.put("actualValue", match.getActualValue());
+        logData.put("threshold", match.getThreshold());
         event.setLogData(logData);
         event.setTriggeredAt(LocalDateTime.now());
         
@@ -169,17 +193,11 @@ public class AlertRuleExecutor {
     /**
      * 构建告警消息
      */
-    private String buildAlertMessage(AlertRule rule, List<Map<String, Object>> results) {
-        Map<String, Object> condition = rule.getCondition();
-        Map<String, Object> firstResult = results.get(0);
-        
-        Object valueObj = firstResult.get("value");
-        double actualValue = valueObj != null ? convertToDouble(valueObj) : 0;
-        
-        Object thresholdObj = condition.get("value");
-        double threshold = thresholdObj != null ? convertToDouble(thresholdObj) : 0;
-        
-        String operator = (String) condition.getOrDefault("operator", "gt");
+    private String buildAlertMessage(AlertRule rule, AlertMatchResult match) {
+        AlertConditionDTO parsedCondition = alertConditionParser.parse(rule.getCondition());
+        String operator = parsedCondition.getTrigger() != null
+                ? String.valueOf(ObjectUtils.defaultIfNull(parsedCondition.getTrigger().getOperator(), "gt"))
+                : "gt";
         String operatorText = switch (operator) {
             case "gt" -> ">";
             case "gte" -> ">=";
@@ -188,22 +206,83 @@ public class AlertRuleExecutor {
             case "eq" -> "=";
             default -> operator;
         };
-        
-        return String.format("告警规则 '%s' 被触发: 实际值 %.2f %s 阈值 %.2f", 
-                rule.getName(), actualValue, operatorText, threshold);
+
+        StringBuilder message = new StringBuilder();
+        message.append("告警规则 '").append(rule.getName()).append("' 被触发: 实际值 ")
+                .append(match.getActualValue()).append(" ")
+                .append(operatorText).append(" 阈值 ")
+                .append(match.getThreshold());
+        if (MapUtils.isNotEmpty(match.getGroupValues())) {
+            message.append(" [");
+            message.append(match.getGroupValues().entrySet().stream()
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .reduce((left, right) -> left + ", " + right)
+                    .orElse(""));
+            message.append("]");
+        }
+        if (StringUtils.isNotBlank(match.getTableName())) {
+            message.append(" 来源表: ").append(match.getTableName());
+        }
+        return message.toString();
     }
 
-    /**
-     * 转换为 double
-     */
-    private double convertToDouble(Object obj) {
-        if (obj instanceof Number) {
-            return ((Number) obj).doubleValue();
+    private List<Map<String, Object>> executeQuery(AlertDatasetTarget target, String sql) {
+        Object rawResult = dynamicLogQueryService.executeRawSQL(target.getDatasourceId(), sql);
+        if (rawResult instanceof List<?> list) {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> row) {
+                    rows.add(new HashMap<>((Map<String, Object>) row));
+                }
+            }
+            return rows;
+        }
+
+        if (rawResult instanceof Map<?, ?> map) {
+            return List.of(new HashMap<>((Map<String, Object>) map));
+        }
+
+        if (rawResult != null) {
+            Map<String, Object> row = new HashMap<>();
+            row.put("value", rawResult);
+            return List.of(row);
+        }
+        return List.of();
+    }
+
+    private boolean supportsTarget(AlertDatasetTarget target) {
+        return StringUtils.isBlank(target.getDatasourceType()) || "clickhouse".equalsIgnoreCase(target.getDatasourceType());
+    }
+
+    private Map<String, Object> extractGroupValues(Map<String, Object> row) {
+        Map<String, Object> groupValues = new HashMap<>(row);
+        groupValues.remove("value");
+        return groupValues;
+    }
+
+    private boolean compare(BigDecimal actualValue, BigDecimal threshold, String operator) {
+        int compareResult = actualValue.compareTo(threshold);
+        return switch (StringUtils.defaultIfBlank(operator, "gt")) {
+            case "gt" -> compareResult > 0;
+            case "gte" -> compareResult >= 0;
+            case "lt" -> compareResult < 0;
+            case "lte" -> compareResult <= 0;
+            case "eq" -> compareResult == 0;
+            default -> false;
+        };
+    }
+
+    private BigDecimal convertToDecimal(Object obj) {
+        if (obj instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (obj instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
         }
         try {
-            return Double.parseDouble(obj.toString());
+            return new BigDecimal(String.valueOf(obj));
         } catch (NumberFormatException e) {
-            return 0.0;
+            return BigDecimal.ZERO;
         }
     }
 }

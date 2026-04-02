@@ -26,10 +26,48 @@ public class AlertRule implements Serializable {
     private String description;
 
     /**
-     * 告警条件（JSON格式）
+     * 规则类型: aggregation, anomaly
+     */
+    private String ruleType;
+
+    /**
+     * 作用范围: all, category, datasource, table
+     */
+    private String scopeType;
+
+    /**
+     * 日志分类编码列表
+     */
+    @TableField(typeHandler = PostgresJsonbTypeHandler.class)
+    private List<String> categoryCodes;
+
+    /**
+     * 数据源 ID 列表
+     */
+    @TableField(typeHandler = PostgresJsonbTypeHandler.class)
+    private List<String> datasourceIds;
+
+    /**
+     * 表名列表
+     */
+    @TableField(typeHandler = PostgresJsonbTypeHandler.class)
+    private List<String> tableNames;
+
+    /**
+     * 告警条件（JSON 格式）
      */
     @TableField(typeHandler = PostgresJsonbTypeHandler.class)
     private Map<String, Object> condition;
+
+    /**
+     * 评估频率
+     */
+    private String evalEvery;
+
+    /**
+     * 连续命中次数
+     */
+    private Integer consecutiveHits;
 
     /**
      * 告警级别: INFO, WARNING, ERROR, CRITICAL
@@ -41,6 +79,17 @@ public class AlertRule implements Serializable {
      */
     @TableField(typeHandler = PostgresJsonbTypeHandler.class)
     private List<String> notificationChannels;
+
+    /**
+     * 去重字段列表
+     */
+    @TableField(typeHandler = PostgresJsonbTypeHandler.class)
+    private List<String> dedupKeyFields;
+
+    /**
+     * 告警消息模板
+     */
+    private String messageTemplate;
 
     /**
      * 静默期（秒）
