@@ -68,6 +68,11 @@
           <template #title>日志源管理</template>
         </el-menu-item>
 
+        <el-menu-item index="/todos">
+          <el-icon><Tickets /></el-icon>
+          <template #title>待办事项</template>
+        </el-menu-item>
+
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>
           <template #title>系统设置</template>
@@ -115,7 +120,8 @@ import {
   Connection,
   Moon,
   Sunny,
-  DataLine
+  DataLine,
+  Tickets
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

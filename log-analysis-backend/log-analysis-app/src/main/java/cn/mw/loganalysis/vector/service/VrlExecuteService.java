@@ -200,18 +200,18 @@ public class VrlExecuteService {
         
 
         // 将 timestamp 类型转为字符串，确保输出是标准 JSON
-        script.append("\n# 将 timestamp 类型转为 ISO8601 字符串\n");
-        script.append("ts_keys = []\n");
-        script.append("for_each(keys(.)) -> |_index, key| {\n");
-        script.append("  val = get!(., [key])\n");
-        script.append("  if is_timestamp(val) {\n");
-        script.append("    ts_keys = push(ts_keys, key)\n");
-        script.append("  }\n");
-        script.append("}\n");
-        script.append("for_each(ts_keys) -> |_index, key| {\n");
-        script.append("  val = get!(., [key])\n");
-        script.append("  . = set!(., [key], format_timestamp!(val, \"%Y-%m-%dT%H:%M:%S%:z\"))\n");
-        script.append("}\n");
+//        script.append("\n# 将 timestamp 类型转为 ISO8601 字符串\n");
+//        script.append("ts_keys = []\n");
+//        script.append("for_each(keys(.)) -> |_index, key| {\n");
+//        script.append("  val = get!(., [key])\n");
+//        script.append("  if is_timestamp(val) {\n");
+//        script.append("    ts_keys = push(ts_keys, key)\n");
+//        script.append("  }\n");
+//        script.append("}\n");
+//        script.append("for_each(ts_keys) -> |_index, key| {\n");
+//        script.append("  val = get!(., [key])\n");
+//        script.append("  . = set!(., [key], format_timestamp!(val, \"%Y-%m-%dT%H:%M:%S%:z\"))\n");
+//        script.append("}\n");
         
         return script.toString();
     }

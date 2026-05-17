@@ -33,7 +33,7 @@ spring:
         # ClickHouse数据源（日志数据库）
         clickhouse:
           driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
-          url: jdbc:clickhouse://${CLICKHOUSE_HOST:ch.orb.local}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
+          url: jdbc:clickhouse://${CLICKHOUSE_HOST:localhost}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
           username: ${CLICKHOUSE_USER:default}
           password: ${CLICKHOUSE_PASSWORD:12345678}
           hikari:

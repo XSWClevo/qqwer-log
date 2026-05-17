@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/changes/20260321-agent-history.sql
   - include:
       file: db/changelog/changes/20260402-alert-scope-category.sql
+  - include:
+      file: db/changelog/changes/20260402-todo-items.sql

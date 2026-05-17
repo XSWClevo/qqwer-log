@@ -167,6 +167,26 @@ CREATE INDEX IF NOT EXISTS idx_log_category_registry_enabled
 CREATE UNIQUE INDEX IF NOT EXISTS uk_log_category_registry_unique_target
     ON log_category_registry(category_code, datasource_id, table_name);
 
+CREATE TABLE IF NOT EXISTS todo_items (
+    id BIGSERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'TODO',
+    priority VARCHAR(20) NOT NULL DEFAULT 'MEDIUM',
+    due_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    tags JSONB DEFAULT '[]'::jsonb,
+    created_by BIGINT NOT NULL,
+    updated_by BIGINT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_todo_items_created_by ON todo_items(created_by);
+CREATE INDEX IF NOT EXISTS idx_todo_items_status ON todo_items(created_by, status);
+CREATE INDEX IF NOT EXISTS idx_todo_items_priority ON todo_items(created_by, priority);
+CREATE INDEX IF NOT EXISTS idx_todo_items_due_at ON todo_items(created_by, due_at);
+
 CREATE TABLE IF NOT EXISTS alert_events (
     id BIGSERIAL PRIMARY KEY,
     rule_id BIGINT,

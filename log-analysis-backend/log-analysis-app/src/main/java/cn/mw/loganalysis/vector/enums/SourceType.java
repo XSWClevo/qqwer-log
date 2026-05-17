@@ -11,6 +11,7 @@ public enum SourceType {
     KAFKA("kafka", "Kafka"),
     HTTP_SERVER("http_server", "HTTP 服务器"),
     SYSLOG("syslog", "Syslog"),
+    SOCKET("socket", "Socket"),
     DEMO_LOGS("demo_logs", "演示日志"),
     INTERNAL_LOGS("internal_logs", "内部日志");
 

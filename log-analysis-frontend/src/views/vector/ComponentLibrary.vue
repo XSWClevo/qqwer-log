@@ -245,6 +245,22 @@
                   <div class="field-hint">可选配置，限制接收的源地址</div>
                 </el-form-item>
               </template>
+              <template v-else-if="form.vectorType === 'socket'">
+                <el-form-item label="协议">
+                  <el-select v-model="visualConfig.syslog_mode" placeholder="选择协议">
+                    <el-option label="TCP" value="tcp" />
+                    <el-option label="UDP" value="udp" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="监听地址">
+                  <el-input v-model="visualConfig.syslog_address" placeholder="0.0.0.0:514" />
+                </el-form-item>
+                <el-form-item label="接收地址">
+                  <el-select v-model="visualConfig.syslog_receive_addresses" multiple filterable allow-create placeholder="可选，输入后回车添加">
+                  </el-select>
+                  <div class="field-hint">可选配置，限制接收的源地址</div>
+                </el-form-item>
+              </template>
               <template v-else-if="form.vectorType === 'demo_logs'">
                 <el-form-item label="日志格式">
                   <el-select v-model="visualConfig.demo_format" placeholder="选择日志格式">

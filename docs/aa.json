@@ -1,0 +1,71 @@
+{
+  "formType": "cascaderSelect",
+  "labelEn": "category",
+  "name": "category",
+  "label": "商品类目",
+  "canHide": false,
+  "dataSource": [
+    {
+      "label": "女装/女士精品",
+      "value": "16"
+    },
+    {
+      "label": "男装",
+      "value": "30"
+    },
+    {
+      "label": "运动服/休闲服装",
+      "value": "50011699"
+    },
+    {
+      "label": "女士内衣/男士内衣/家居服",
+      "value": "1625"
+    },
+    {
+      "label": "女鞋",
+      "value": "50006843"
+    },
+    {
+      "label": "运动鞋new",
+      "value": "50012029"
+    },
+    {
+      "label": "流行男鞋",
+      "value": "50011740"
+    },
+    {
+      "label": "箱包皮具/热销女包/男包",
+      "value": "50006842"
+    },
+    {
+      "label": "运动包/户外包/配件",
+      "value": "50510002"
+    },
+    {
+      "label": "户外/登山/野营/旅行用品",
+      "value": "50013886"
+    },
+    {
+      "label": "服饰配件/皮带/帽子/围巾",
+      "value": "50010404"
+    },
+    {
+      "label": "饰品/流行首饰/时尚饰品新",
+      "value": "50013864"
+    },
+    {
+      "label": "手表",
+      "value": "50468001"
+    },
+    {
+      "label": "运动/瑜伽/健身/球迷用品",
+      "value": "50010728"
+    },
+    {
+      "label": "纺织面料/辅料/配套",
+      "value": "127442006"
+    }
+  ],
+  "value": [],
+  "required": true
+}

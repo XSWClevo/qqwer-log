@@ -6,8 +6,8 @@
         <el-option label="stderr" value="stderr" />
       </el-select>
     </el-form-item>
-    <el-form-item label="编码格式">
-      <el-select v-model="config.encoding_codec" @change="emit('change')">
+    <el-form-item label="Encoding">
+      <el-select v-model="config.encoding.codec" @change="emit('change')">
         <el-option label="JSON" value="json" />
         <el-option label="Text" value="text" />
       </el-select>
@@ -21,7 +21,11 @@ import { reactive, watch } from 'vue'
 const props = defineProps<{ modelValue: Record<string, any> }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: any): void; (e: 'change'): void }>()
 
-const config = reactive({ target: 'stdout', encoding_codec: 'json', ...props.modelValue })
+const config = reactive({ 
+  target: 'stdout', 
+  encoding: { codec: 'json' }, 
+  ...props.modelValue 
+})
 
 watch(config, (v) => emit('update:modelValue', { ...v }), { deep: true })
 </script>

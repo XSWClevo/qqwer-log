@@ -116,7 +116,7 @@ public class ComponentYamlGeneratorService {
             case HTTP_SERVER:
                 generateHttpServerSourceConfig(config, visual);
                 break;
-            case SYSLOG:
+            case SYSLOG, SOCKET:
                 generateSyslogSourceConfig(config, visual);
                 break;
             case DEMO_LOGS:
