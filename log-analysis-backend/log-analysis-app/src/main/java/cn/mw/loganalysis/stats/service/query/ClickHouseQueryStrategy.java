@@ -74,17 +74,6 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     public List<FieldInfo> getTableSchema(DatasourceConnectionConfig config) {
         log.info("ClickHouse getTableSchema: table={}", config.getTable());
 
-        if (clickHouseMcpQueryService.shouldUse(config)) {
-            try {
-                return getTableSchemaViaMcp(config);
-            } catch (Exception ex) {
-                if (clickHouseMcpQueryService.isFallbackToJdbcOnError()) {
-                    log.warn("ClickHouse MCP 获取表结构失败，回退 MyBatis: {}", ex.getMessage());
-                } else {
-                    throw ex;
-                }
-            }
-        }
 
         String database = StringUtils.hasText(config.getDatabase()) ? config.getDatabase() : "default";
         List<FieldInfo> fields = DynamicMyBatisUtils.execute(
@@ -155,7 +144,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
                 .endTime(DateTimeUtils.format(request.getEndTime()))
                 .pageSize(pageSize)
                 .offset((pageNum - 1) * pageSize)
-                .fieldFilters(StatsQueryMapperUtils.buildClickHouseFieldFilters(request.getFieldFilters()))
+                .fieldFilters(StatsQueryMapperUtils.buildClickHouseFieldFiltersRaw(request.getFieldFilters()))
                 .messageConditions(StatsQueryMapperUtils.buildMessageConditions(request.getMessageConditions()))
                 .rawConditions(StatsQueryMapperUtils.buildMessageConditions(request.getRawConditions()))
                 .build();
@@ -262,20 +251,42 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
             return buildEmptyResult();
         }
 
+        // 3. 校验字段是否存在于目标表中，过滤不存在的字段
+        Set<String> tableColumns = getTableColumnNames(config);
+        if (!tableColumns.isEmpty()) {
+            List<String> existingDimensions = validDimensions.stream()
+                .filter(tableColumns::contains)
+                .toList();
+
+            if (existingDimensions.size() < validDimensions.size()) {
+                List<String> missingFields = validDimensions.stream()
+                    .filter(dim -> !tableColumns.contains(dim))
+                    .toList();
+                log.warn("以下维度字段在表 {} 中不存在，已跳过: {}", config.getTable(), missingFields);
+            }
+
+            validDimensions = existingDimensions;
+            if (validDimensions.isEmpty()) {
+                log.warn("所有维度字段在表 {} 中都不存在: {}", config.getTable(), request.getDimensions());
+                return buildEmptyResult();
+            }
+        }
+
         if (validDimensions.size() < request.getDimensions().size()) {
-            log.warn("过滤了不适合统计的维度: {} -> {}", request.getDimensions(), validDimensions);
+            log.warn("过滤了无效的维度: {} -> {}", request.getDimensions(), validDimensions);
         }
 
         String tableName = StatsQueryMapperUtils.quoteClickHouseIdentifier(config.getTable());
         String startTime = DateTimeUtils.format(request.getStartTime());
         String endTime = DateTimeUtils.format(request.getEndTime());
+        List<String> finalDimensions = validDimensions;
 
         Map<String, List<Map<String, Object>>> statsData = DynamicMyBatisUtils.execute(
                 getSqlSessionFactory(config),
                 ClickHouseQueryMapper.class,
                 mapper -> {
                     Map<String, List<Map<String, Object>>> data = new HashMap<>();
-                    for (String dimension : validDimensions) {
+                    for (String dimension : finalDimensions) {
                         data.put(dimension, mapper.selectDimensionStats(DimensionStatsQueryParam.builder()
                                 .tableName(tableName)
                                 .startTime(startTime)
@@ -289,7 +300,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
 
         // 4. 构建返回结果
         Map<String, Object> result = new HashMap<>();
-        result.put("dimensions", validDimensions);  // 返回实际查询的维度
+        result.put("dimensions", finalDimensions);
         result.put("metrics", request.getMetrics());
         result.put("data", statsData);
 
@@ -312,6 +323,21 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
                lower.equals("timestamp") ||
                lower.contains("_id") ||
                lower.contains("uuid");
+    }
+
+    /**
+     * 获取表的所有字段名集合（用于校验维度字段是否存在）
+     */
+    private Set<String> getTableColumnNames(DatasourceConnectionConfig config) {
+        try {
+            List<FieldInfo> schema = getTableSchema(config);
+            return schema.stream()
+                .map(FieldInfo::getName)
+                .collect(Collectors.toSet());
+        } catch (Exception ex) {
+            log.warn("获取表 {} 的字段列表失败，跳过字段校验: {}", config.getTable(), ex.getMessage());
+            return Collections.emptySet();
+        }
     }
 
     /**
@@ -362,7 +388,7 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
     // ==================== 私有方法 ====================
 
     private boolean shouldUseMcp(Boolean useMcp, DatasourceConnectionConfig config) {
-        if (Boolean.FALSE.equals(useMcp)) {
+        if (!Boolean.TRUE.equals(useMcp)) {
             return false;
         }
         return clickHouseMcpQueryService.shouldUse(config);

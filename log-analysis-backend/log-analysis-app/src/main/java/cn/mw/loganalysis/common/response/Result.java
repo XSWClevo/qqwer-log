@@ -1,7 +1,9 @@
 package cn.mw.loganalysis.common.response;
 
+import cn.mw.loganalysis.common.filter.TraceIdFilter;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.slf4j.MDC;
 
 import java.io.Serializable;
 import java.util.UUID;
@@ -30,6 +32,10 @@ public class Result<T> implements Serializable {
     }
 
     private static String generateTraceId() {
+        String traceId = MDC.get(TraceIdFilter.TRACE_ID_KEY);
+        if (traceId != null && !traceId.isBlank()) {
+            return traceId;
+        }
         return UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 

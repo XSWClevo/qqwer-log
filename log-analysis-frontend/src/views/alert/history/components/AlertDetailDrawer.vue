@@ -155,13 +155,13 @@ const handleViewInSearch = () => {
     .rule-name {
       font-size: 20px;
       font-weight: 600;
-      color: #262626;
+      color: var(--macos-text-primary);
       margin: 0 0 8px 0;
     }
 
     .trigger-time {
       font-size: 14px;
-      color: #8C8C8C;
+      color: var(--macos-text-tertiary);
     }
   }
 
@@ -171,7 +171,7 @@ const handleViewInSearch = () => {
     .section-title {
       font-size: 16px;
       font-weight: 600;
-      color: #262626;
+      color: var(--macos-text-primary);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -187,17 +187,17 @@ const handleViewInSearch = () => {
 
         .info-label {
           font-size: 13px;
-          color: #8C8C8C;
+          color: var(--macos-text-tertiary);
           margin-bottom: 8px;
         }
 
         .query-code {
-          background: #F5F5F5;
+          background: var(--macos-fill-secondary);
           padding: 12px;
           border-radius: 4px;
           font-family: 'Monaco', 'Courier New', monospace;
           font-size: 13px;
-          color: #262626;
+          color: var(--macos-text-primary);
         }
       }
     }
@@ -212,20 +212,20 @@ const handleViewInSearch = () => {
         margin-bottom: 8px;
 
         &.success {
-          background: #F6FFED;
-          border: 1px solid #B7EB8F;
+          background: var(--macos-success-bg);
+          border: 1px solid var(--macos-success-border);
 
           .el-icon {
-            color: #52C41A;
+            color: var(--macos-success);
           }
         }
 
         &.failed {
-          background: #FFF1F0;
-          border: 1px solid #FFCCC7;
+          background: var(--macos-danger-bg);
+          border: 1px solid var(--macos-danger-border);
 
           .el-icon {
-            color: #FF4D4F;
+            color: var(--macos-danger);
           }
         }
 
@@ -235,13 +235,13 @@ const handleViewInSearch = () => {
           .result-channel {
             font-size: 14px;
             font-weight: 500;
-            color: #262626;
+            color: var(--macos-text-primary);
             margin-bottom: 4px;
           }
 
           .result-status {
             font-size: 13px;
-            color: #8C8C8C;
+            color: var(--macos-text-tertiary);
           }
         }
       }
@@ -255,7 +255,7 @@ const handleViewInSearch = () => {
         display: flex;
         gap: 12px;
         padding: 8px 0;
-        border-bottom: 1px solid #F0F0F0;
+        border-bottom: 1px solid var(--macos-border);
         font-size: 13px;
 
         &:last-child {
@@ -263,7 +263,7 @@ const handleViewInSearch = () => {
         }
 
         .log-time {
-          color: #8C8C8C;
+          color: var(--macos-text-tertiary);
           font-family: 'Monaco', 'Courier New', monospace;
           white-space: nowrap;
         }
@@ -275,24 +275,24 @@ const handleViewInSearch = () => {
           white-space: nowrap;
 
           &.level-error {
-            background: #FFF1F0;
-            color: #FF4D4F;
+            background: var(--macos-danger-bg);
+            color: var(--macos-danger);
           }
 
           &.level-warn {
-            background: #FFFBE6;
-            color: #FAAD14;
+            background: var(--macos-warning-bg);
+            color: var(--macos-warning);
           }
 
           &.level-info {
-            background: #E6F7FF;
-            color: #1890FF;
+            background: var(--macos-info-bg);
+            color: var(--macos-info);
           }
         }
 
         .log-message {
           flex: 1;
-          color: #262626;
+          color: var(--macos-text-primary);
           word-break: break-all;
         }
       }

@@ -241,11 +241,25 @@ public class VectorAgentController {
      */
     @GetMapping("/download")
     public ResponseEntity<org.springframework.core.io.Resource> downloadBundle(
-            @RequestParam(defaultValue = "linux") String os) {
+            @RequestParam(defaultValue = "linux") String os,
+            @RequestParam(defaultValue = "arm64") String arch) {
         try {
+            // 优先从包管理系统获取最新上传的包
+            VectorPackage latestPkg = packageService.getLatestPackage("vector-agent-bundle", os, arch);
+            if (latestPkg != null) {
+                java.nio.file.Path pkgPath = java.nio.file.Paths.get(latestPkg.getDownloadPath());
+                if (java.nio.file.Files.exists(pkgPath)) {
+                    org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(pkgPath.toUri());
+                    return ResponseEntity.ok()
+                            .header("Content-Disposition", "attachment; filename=\"" + latestPkg.getFileName() + "\"")
+                            .header("Content-Type", "application/gzip")
+                            .body(resource);
+                }
+                log.warn("包管理记录存在但文件不存在: {}", latestPkg.getDownloadPath());
+            }
+
+            // 回退：尝试从 classpath 加载
             String filename = "vector-agent-bundle-" + os + ".tar.gz";
-            
-            // 尝试从 classpath 加载
             org.springframework.core.io.Resource resource = new org.springframework.core.io.ClassPathResource("static/downloads/" + filename);
             
             if (!resource.exists()) {

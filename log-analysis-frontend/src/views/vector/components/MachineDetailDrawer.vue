@@ -1,10 +1,22 @@
 <template>
   <el-drawer
     v-model="visible"
-    :title="machine?.name || '机器详情'"
     size="720px"
     @close="handleClose"
   >
+    <template #header="{ titleId, titleClass }">
+      <div class="drawer-header">
+        <span :id="titleId" :class="titleClass">{{ machine?.name || '机器详情' }}</span>
+        <el-button
+          :icon="Refresh"
+          circle
+          size="small"
+          :loading="loading"
+          @click="loadDetail"
+          title="刷新详情"
+        />
+      </div>
+    </template>
     <template v-if="loading">
       <el-skeleton :rows="10" animated />
     </template>
@@ -222,11 +234,11 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted, nextTick, computed } from 'vue'
 import { vectorMachineApi, type MachineDetail, type MetricsPoint, type NetworkInterfaceInfo } from '@/api/vector'
-import { Download, Upload, Warning, TrendCharts, Grid } from '@element-plus/icons-vue'
+import { Download, Upload, Warning, TrendCharts, Grid, Refresh } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import 'dayjs/locale/zh-cn'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
@@ -636,6 +648,20 @@ onUnmounted(() => { handleClose() })
 </script>
 
 <style scoped lang="scss">
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+
+  .drawer-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--macos-text-primary);
+  }
+}
+
 .info-card {
   margin-bottom: 16px;
   
@@ -660,7 +686,7 @@ onUnmounted(() => { handleClose() })
 .metric-item {
   .metric-label {
     font-size: 13px;
-    color: #606266;
+    color: var(--macos-text-secondary);
     margin-bottom: 8px;
   }
   
@@ -671,7 +697,7 @@ onUnmounted(() => { handleClose() })
     
     .metric-detail {
       font-weight: normal;
-      color: #909399;
+      color: var(--macos-text-tertiary);
       font-size: 12px;
     }
   }
@@ -713,7 +739,7 @@ onUnmounted(() => { handleClose() })
       align-items: center;
       gap: 8px;
       padding: 8px;
-      background: #f5f7fa;
+      background: var(--macos-fill-secondary);
       border-radius: 8px;
       
       .summary-icon {
@@ -737,7 +763,7 @@ onUnmounted(() => { handleClose() })
         
         &.error {
           background: #e4e7ed;
-          color: #909399;
+          color: var(--macos-text-tertiary);
           
           &.has-error {
             background: linear-gradient(135deg, #F56C6C 0%, #fab6b6 100%);
@@ -752,13 +778,13 @@ onUnmounted(() => { handleClose() })
         
         .summary-label {
           font-size: 11px;
-          color: #909399;
+          color: var(--macos-text-tertiary);
         }
         
         .summary-value {
           font-size: 12px;
           font-weight: 600;
-          color: #303133;
+          color: var(--macos-text-primary);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -778,7 +804,7 @@ onUnmounted(() => { handleClose() })
   .traffic-packets {
     display: block;
     font-size: 11px;
-    color: #909399;
+    color: var(--macos-text-tertiary);
   }
 }
 
@@ -789,7 +815,7 @@ onUnmounted(() => { handleClose() })
   }
 }
 
-.text-warning { color: #E6A23C; }
-.text-danger { color: #F56C6C; }
-.text-muted { color: #909399; font-size: 12px; }
+.text-warning { color: var(--macos-warning); }
+.text-danger { color: var(--macos-danger); }
+.text-muted { color: var(--macos-text-tertiary); font-size: 12px; }
 </style>

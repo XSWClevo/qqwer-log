@@ -49,11 +49,25 @@ public final class StatsQueryMapperUtils {
     }
 
     public static List<SqlFieldFilterParam> buildClickHouseFieldFilters(List<LogQueryRequest.FieldFilter> filters) {
-        return buildFieldFilters(filters, StatsQueryMapperUtils::quoteClickHouseIdentifier);
+        return buildFieldFilters(filters, StatsQueryMapperUtils::quoteClickHouseIdentifier, true);
+    }
+
+    /**
+     * 构建字段过滤参数（不做字段名映射，用于动态数据源）
+     */
+    public static List<SqlFieldFilterParam> buildClickHouseFieldFiltersRaw(List<LogQueryRequest.FieldFilter> filters) {
+        return buildFieldFilters(filters, StatsQueryMapperUtils::quoteClickHouseIdentifier, false);
     }
 
     public static List<SqlFieldFilterParam> buildPostgreSqlFieldFilters(List<LogQueryRequest.FieldFilter> filters) {
-        return buildFieldFilters(filters, StatsQueryMapperUtils::quotePostgreSqlIdentifier);
+        return buildFieldFilters(filters, StatsQueryMapperUtils::quotePostgreSqlIdentifier, true);
+    }
+
+    /**
+     * 构建字段过滤参数（不做字段名映射，用于动态数据源）
+     */
+    public static List<SqlFieldFilterParam> buildPostgreSqlFieldFiltersRaw(List<LogQueryRequest.FieldFilter> filters) {
+        return buildFieldFilters(filters, StatsQueryMapperUtils::quotePostgreSqlIdentifier, false);
     }
 
     public static List<SqlMessageConditionParam> buildMessageConditions(List<LogQueryRequest.MessageCondition> conditions) {
@@ -152,7 +166,8 @@ public final class StatsQueryMapperUtils {
     }
 
     private static List<SqlFieldFilterParam> buildFieldFilters(List<LogQueryRequest.FieldFilter> filters,
-                                                               java.util.function.Function<String, String> quoter) {
+                                                               java.util.function.Function<String, String> quoter,
+                                                               boolean applyMapping) {
         if (CollectionUtils.isEmpty(filters)) {
             return Collections.emptyList();
         }
@@ -165,8 +180,9 @@ public final class StatsQueryMapperUtils {
                 continue;
             }
 
+            String column = applyMapping ? mapFieldToDbColumn(filter.getField()) : filter.getField();
             results.add(SqlFieldFilterParam.builder()
-                    .columnExpression(quoter.apply(mapFieldToDbColumn(filter.getField())))
+                    .columnExpression(quoter.apply(column))
                     .type(StringUtils.lowerCase(filter.getType()))
                     .values(filter.getValues())
                     .build());

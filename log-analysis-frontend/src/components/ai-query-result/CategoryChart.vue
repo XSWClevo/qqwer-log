@@ -43,7 +43,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useDark } from '@vueuse/core'
 import { Histogram, PieChart, Grid } from '@element-plus/icons-vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 
 interface Props {
   data: any[]

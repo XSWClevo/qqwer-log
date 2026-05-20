@@ -1,6 +1,7 @@
 package cn.mw.loganalysis.auth.config;
 
 import cn.mw.loganalysis.auth.security.JwtAuthenticationFilter;
+import cn.mw.loganalysis.auth.security.SessionActivityFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,6 +24,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final SessionActivityFilter sessionActivityFilter;
 
     /**
      * 密码编码器
@@ -55,7 +57,10 @@ public class SecurityConfig {
                 )
 
                 // 添加JWT认证过滤器
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+
+                // 添加会话活跃超时过滤器（在JWT认证之后执行）
+                .addFilterAfter(sessionActivityFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

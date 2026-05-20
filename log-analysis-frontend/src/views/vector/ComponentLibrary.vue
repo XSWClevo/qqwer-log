@@ -372,7 +372,7 @@
                         <el-tag size="small" :type="getFieldTypeColor(row.type)">{{ row.type }}</el-tag>
                       </template>
                     </el-table-column>
-                    <el-table-column label="操作" width="150" fixed="right">
+                    <el-table-column label="操作" width="180" fixed="right">
                       <template #default="{ row }">
                         <el-button 
                           size="small" 
@@ -1461,13 +1461,13 @@ onMounted(fetchList)
       
       &.transform {
         &.active {
-          border-color: #409eff;
+          border-color: var(--macos-blue);
           background: rgba(64, 158, 255, 0.1);
-          .el-icon { color: #409eff; }
+          .el-icon { color: var(--macos-blue); }
           .count { background: #409eff; }
         }
         &:hover:not(.active) {
-          .el-icon { color: #409eff; }
+          .el-icon { color: var(--macos-blue); }
         }
       }
       
@@ -1502,7 +1502,7 @@ onMounted(fetchList)
   .card-header {
     display: flex; gap: 12px; margin-bottom: 12px;
     .type-source { color: #67c23a; }
-    .type-transform { color: #409eff; }
+    .type-transform { color: var(--macos-blue); }
     .type-sink { color: #e6a23c; }
     .card-info { flex: 1; }
     .card-name { font-size: 16px; font-weight: 600; display: block; margin-bottom: 6px; }

@@ -41,6 +41,32 @@
   --macos-radius-lg: 14px;
   --macos-radius-xl: 18px;
 
+  // 语义状态色
+  --macos-success: #34C759;
+  --macos-success-light: rgba(52, 199, 89, 0.1);
+  --macos-success-bg: #F6FFED;
+  --macos-success-border: #B7EB8F;
+
+  --macos-danger: #FF3B30;
+  --macos-danger-light: rgba(255, 59, 48, 0.1);
+  --macos-danger-bg: #FFF1F0;
+  --macos-danger-border: #FFCCC7;
+
+  --macos-warning: #FF9500;
+  --macos-warning-light: rgba(255, 149, 0, 0.1);
+  --macos-warning-bg: #FFFBE6;
+  --macos-warning-border: #FFE58F;
+
+  --macos-info: #007AFF;
+  --macos-info-light: rgba(0, 122, 255, 0.1);
+  --macos-info-bg: #E6F7FF;
+  --macos-info-border: #91D5FF;
+
+  // 卡片/面板背景
+  --macos-card-bg: #FFFFFF;
+  --macos-fill-secondary: #F5F5F5;
+  --macos-fill-tertiary: #FAFAFA;
+
   // 过渡
   --macos-transition: all 0.25s cubic-bezier(0.4, 0.0, 0.2, 1);
   --macos-transition-fast: all 0.15s cubic-bezier(0.4, 0.0, 0.2, 1);
@@ -76,6 +102,32 @@ html.dark {
   --macos-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
   --macos-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
   --macos-shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.5);
+
+  // 语义状态色 - 暗色模式
+  --macos-success: #30D158;
+  --macos-success-light: rgba(48, 209, 88, 0.15);
+  --macos-success-bg: rgba(48, 209, 88, 0.1);
+  --macos-success-border: rgba(48, 209, 88, 0.3);
+
+  --macos-danger: #FF453A;
+  --macos-danger-light: rgba(255, 69, 58, 0.15);
+  --macos-danger-bg: rgba(255, 69, 58, 0.1);
+  --macos-danger-border: rgba(255, 69, 58, 0.3);
+
+  --macos-warning: #FF9F0A;
+  --macos-warning-light: rgba(255, 159, 10, 0.15);
+  --macos-warning-bg: rgba(255, 159, 10, 0.1);
+  --macos-warning-border: rgba(255, 159, 10, 0.3);
+
+  --macos-info: #0A84FF;
+  --macos-info-light: rgba(10, 132, 255, 0.15);
+  --macos-info-bg: rgba(10, 132, 255, 0.1);
+  --macos-info-border: rgba(10, 132, 255, 0.3);
+
+  // 卡片/面板背景
+  --macos-card-bg: #1E1E1E;
+  --macos-fill-secondary: #2C2C2E;
+  --macos-fill-tertiary: #1C1C1E;
 
   // Element Plus Variable Overrides for Dark Mode
   --el-bg-color: var(--macos-bg-secondary);

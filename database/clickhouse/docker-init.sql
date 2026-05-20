@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS vector_logs (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (timestamp, machine_id, log_level)
-TTL timestamp + INTERVAL 180 DAY
+TTL toDateTime(timestamp) + toIntervalDay(180)
 SETTINGS index_granularity = 8192;
 
 ALTER TABLE vector_logs

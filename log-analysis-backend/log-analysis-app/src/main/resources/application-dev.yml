@@ -33,7 +33,7 @@ spring:
         # ClickHouse数据源（日志数据库）
         clickhouse:
           driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
-          url: jdbc:clickhouse://${CLICKHOUSE_HOST:localhost}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
+          url: jdbc:clickhouse://${CLICKHOUSE_HOST:ch.orb.local}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
           username: ${CLICKHOUSE_USER:default}
           password: ${CLICKHOUSE_PASSWORD:12345678}
           hikari:
@@ -115,6 +115,10 @@ jwt:
   expiration: 900000  # 15分钟 (毫秒)
   refresh-expiration: 604800000  # 7天 (毫秒)
 
+# 会话活跃超时配置
+session:
+  activity-timeout-minutes: ${SESSION_ACTIVITY_TIMEOUT_MINUTES:30}  # 无操作超时时间(分钟)，默认30分钟
+
 # 日志提取配置
 extraction:
   batch-size: 1000  # 批量读取日志数量
@@ -188,6 +192,13 @@ management:
 
 # 日志配置
 logging:
+  file:
+    name: logs/log-analysis-app.log
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 30
+      total-size-cap: 1GB
   level:
     dev:
       langchain4j: debug
@@ -195,5 +206,5 @@ logging:
     #cn.mw.loganalysis: DEBUG
     #org.springframework.security: DEBUG
   pattern:
-    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%thread]){magenta} %clr(%-5level){highlight} %clr(%logger{36}){cyan} %clr(-){faint} %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%thread]){magenta} %clr([%X{traceId}]){yellow} %clr(%-5level){highlight} %clr(%logger{36}){cyan} %clr(-){faint} %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"

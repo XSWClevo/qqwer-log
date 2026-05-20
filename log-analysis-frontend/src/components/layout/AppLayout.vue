@@ -7,34 +7,24 @@
         <span v-show="!isCollapsed" class="logo-text">qqwer</span>
       </div>
       <el-menu
+        ref="menuRef"
         :default-active="activeMenu"
-        :default-openeds="defaultOpeneds"
         :collapse="isCollapsed"
         :collapse-transition="false"
         class="side-menu"
         router
-        :unique-opened="false"
+        :unique-opened="true"
       >
+        <!-- ━━ 监控 ━━ -->
+        <li v-show="!isCollapsed" class="menu-group-label">监控</li>
         <el-menu-item index="/">
           <el-icon><DataBoard /></el-icon>
           <template #title>监控大屏</template>
-        </el-menu-item>
-        <el-menu-item index="/log-search">
-          <el-icon><Search /></el-icon>
-          <template #title>日志搜索</template>
         </el-menu-item>
         <el-menu-item index="/agent">
           <el-icon><MagicStick /></el-icon>
           <template #title>智能助手</template>
         </el-menu-item>
-        <el-sub-menu index="analysis">
-          <template #title>
-            <el-icon><TrendCharts /></el-icon>
-            <span>日志分析</span>
-          </template>
-          <el-menu-item index="/trend-analysis">趋势分析</el-menu-item>
-          <el-menu-item index="/trace-analysis">链路分析</el-menu-item>
-        </el-sub-menu>
         <el-sub-menu index="alert">
           <template #title>
             <el-icon><Bell /></el-icon>
@@ -44,35 +34,45 @@
           <el-menu-item index="/alert/history">告警历史</el-menu-item>
         </el-sub-menu>
 
-        <!-- Vector 日志收集管理平台 -->
+        <!-- ━━ 日志 ━━ -->
+        <li v-show="!isCollapsed" class="menu-group-label">日志</li>
+        <el-menu-item index="/log-search">
+          <el-icon><Search /></el-icon>
+          <template #title>日志搜索</template>
+        </el-menu-item>
+        <el-sub-menu index="analysis">
+          <template #title>
+            <el-icon><TrendCharts /></el-icon>
+            <span>日志分析</span>
+          </template>
+          <el-menu-item index="/trend-analysis">趋势分析</el-menu-item>
+          <el-menu-item index="/trace-analysis">链路分析</el-menu-item>
+        </el-sub-menu>
+        <el-menu-item index="/log-source">
+          <el-icon><Connection /></el-icon>
+          <template #title>日志源管理</template>
+        </el-menu-item>
+
+        <!-- ━━ 配置 ━━ -->
+        <li v-show="!isCollapsed" class="menu-group-label">配置</li>
         <el-sub-menu index="vector">
           <template #title>
             <el-icon><Connection /></el-icon>
             <span>Vector 管理</span>
           </template>
           <el-menu-item index="/vector/machines">主机管理</el-menu-item>
-          <el-menu-item index="/vector/configs">配置管理</el-menu-item>
           <el-menu-item index="/vector/components">组件库</el-menu-item>
           <el-menu-item index="/vector/visual-configs">可视化配置</el-menu-item>
           <el-menu-item index="/vector/packages">安装包管理</el-menu-item>
           <el-menu-item index="/vector/logs">日志监控</el-menu-item>
         </el-sub-menu>
-
         <el-menu-item index="/datasources">
           <el-icon><DataLine /></el-icon>
           <template #title>数据源管理</template>
         </el-menu-item>
 
-        <el-menu-item index="/log-source">
-          <el-icon><Connection /></el-icon>
-          <template #title>日志源管理</template>
-        </el-menu-item>
-
-        <el-menu-item index="/todos">
-          <el-icon><Tickets /></el-icon>
-          <template #title>待办事项</template>
-        </el-menu-item>
-
+        <!-- ━━ 系统 ━━ -->
+        <li v-show="!isCollapsed" class="menu-group-label">系统</li>
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>
           <template #title>系统设置</template>
@@ -98,14 +98,18 @@
     <!-- 右侧内容区 -->
     <el-container class="main-container">
       <el-main class="app-main">
+        <Breadcrumb />
         <slot />
       </el-main>
     </el-container>
+
+    <!-- 全局快捷搜索 Cmd+K -->
+    <CommandPalette />
   </el-container>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDark, useToggle } from '@vueuse/core'
 import {
@@ -120,36 +124,29 @@ import {
   Connection,
   Moon,
   Sunny,
-  DataLine,
-  Tickets
+  DataLine
 } from '@element-plus/icons-vue'
+import CommandPalette from '@/components/common/CommandPalette.vue'
+import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 const route = useRoute()
 const isCollapsed = ref(false)
+const menuRef = ref<any>(null)
 
 const activeMenu = computed(() => route.path)
 
-// 根据当前路由自动展开对应的子菜单
-const defaultOpeneds = computed(() => {
-  const path = route.path
-  const openeds: string[] = []
-
-  // 日志分析子菜单
-  if (path.startsWith('/trend-analysis') || path.startsWith('/trace-analysis')) {
-    openeds.push('analysis')
-  }
-
-  // 告警管理子菜单
-  if (path.startsWith('/alert')) {
-    openeds.push('alert')
-  }
-
-  // Vector 管理子菜单
-  if (path.startsWith('/vector')) {
-    openeds.push('vector')
-  }
-
-  return openeds
+// 首次加载时展开当前路由对应的子菜单
+onMounted(() => {
+  nextTick(() => {
+    const path = route.path
+    if (path.startsWith('/trend-analysis') || path.startsWith('/trace-analysis')) {
+      menuRef.value?.open('analysis')
+    } else if (path.startsWith('/alert')) {
+      menuRef.value?.open('alert')
+    } else if (path.startsWith('/vector')) {
+      menuRef.value?.open('vector')
+    }
+  })
 })
 
 // Dark mode
@@ -210,10 +207,22 @@ const toggleDark = useToggle(isDark)
   flex: 1;
   border-right: none;
   background: transparent;
-  padding: 0 8px; // 给菜单一些呼吸空间
+  padding: 0 8px;
   overflow-y: auto;
   @include macos.macos-scrollbar;
-  
+
+  // 分组标签
+  :deep(.menu-group-label) {
+    list-style: none;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--macos-text-tertiary);
+    padding: 16px 12px 6px;
+    margin: 0;
+  }
+
   :deep(.el-menu-item),
   :deep(.el-sub-menu__title) {
     color: var(--macos-text-secondary);

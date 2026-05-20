@@ -38,7 +38,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { ArrowUp, ArrowDown } from '@element-plus/icons-vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { useDark } from '@vueuse/core'
 
 interface TimeSeriesPoint {
@@ -126,7 +126,7 @@ const renderChart = () => {
         return `
           <div style="padding: 4px 0;">
             <div style="font-weight: 600; margin-bottom: 4px;">${param.name}</div>
-            <div style="color: #409EFF; font-size: 16px; font-weight: 700;">${param.value} 条日志</div>
+            <div style="color: var(--macos-blue); font-size: 16px; font-weight: 700;">${param.value} 条日志</div>
           </div>
         `
       }
@@ -343,7 +343,7 @@ defineExpose({
   align-items: center;
 
   :deep(.el-switch) {
-    --el-switch-on-color: #409EFF;
+    --el-switch-on-color: var(--macos-blue);
   }
 }
 

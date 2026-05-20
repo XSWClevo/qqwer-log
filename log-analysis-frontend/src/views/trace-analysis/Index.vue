@@ -221,7 +221,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, CopyDocument, CircleCloseFilled, CircleCheckFilled, Search } from '@element-plus/icons-vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { ElMessage } from 'element-plus'
 
@@ -495,7 +495,7 @@ onUnmounted(() => {
 <style scoped lang="scss">
 .trace-analysis-container {
   padding: 24px;
-  background: #FAFAFA;
+  background: var(--macos-fill-tertiary);
   min-height: 100vh;
 }
 
@@ -508,7 +508,7 @@ onUnmounted(() => {
     font-size: 14px;
     padding: 8px 12px;
     margin-bottom: 12px;
-    border: 1px solid #409EFF !important;
+    border: 1px solid var(--macos-blue) !important;
     background: transparent !important;
 
     &:hover {
@@ -529,7 +529,7 @@ onUnmounted(() => {
   .page-title {
     font-size: 22px;
     font-weight: 600;
-    color: #1D1D1F;
+    color: var(--macos-text-primary);
     margin: 0 0 4px 0;
     font-family: 'SF Mono', 'Consolas', monospace;
     display: flex;
@@ -537,11 +537,11 @@ onUnmounted(() => {
     gap: 8px;
 
     .copy-btn {
-      color: #909399;
+      color: var(--macos-text-tertiary);
       padding: 4px;
 
       &:hover {
-        color: #409EFF;
+        color: var(--macos-blue);
         background: rgba(64, 158, 255, 0.1);
       }
     }
@@ -549,7 +549,7 @@ onUnmounted(() => {
 
   .trace-time {
     font-size: 14px;
-    color: #909399;
+    color: var(--macos-text-tertiary);
     margin: 0;
   }
 }
@@ -558,7 +558,7 @@ onUnmounted(() => {
   display: flex;
   align-items: stretch;
   padding: 0;
-  background: #FFFFFF;
+  background: var(--macos-card-bg);
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   margin-bottom: 24px;
@@ -580,7 +580,7 @@ onUnmounted(() => {
 
   .summary-divider {
     width: 1px;
-    background: #E4E7ED;
+    background: var(--macos-bg-tertiary);
   }
 
   .summary-item {
@@ -590,7 +590,7 @@ onUnmounted(() => {
 
     .summary-label {
       font-size: 11px;
-      color: #909399;
+      color: var(--macos-text-tertiary);
       text-transform: uppercase;
       letter-spacing: 0.8px;
       font-weight: 500;
@@ -599,17 +599,17 @@ onUnmounted(() => {
     .summary-value {
       font-size: 18px;
       font-weight: 700;
-      color: #1D1D1F;
+      color: var(--macos-text-primary);
 
       &.service {
-        color: #409EFF;
+        color: var(--macos-blue);
       }
 
       &.duration {
         font-family: 'SF Mono', monospace;
 
         &.slow {
-          color: #F56C6C;
+          color: var(--macos-danger);
         }
       }
     }
@@ -620,14 +620,14 @@ onUnmounted(() => {
       gap: 6px;
       font-size: 15px;
       font-weight: 600;
-      color: #67C23A;
+      color: var(--macos-success);
 
       .el-icon {
         font-size: 18px;
       }
 
       &.has-error {
-        color: #F56C6C;
+        color: var(--macos-danger);
       }
     }
   }
@@ -642,8 +642,8 @@ onUnmounted(() => {
 .timeline-card {
   :deep(.el-card__header) {
     padding: 14px 20px;
-    border-bottom: 1px solid #EBEEF5;
-    background: #FAFBFC;
+    border-bottom: 1px solid var(--macos-border);
+    background: var(--macos-fill-tertiary);
   }
 
   .panel-header {
@@ -660,7 +660,7 @@ onUnmounted(() => {
 .panel-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1D1D1F;
+  color: var(--macos-text-primary);
 }
 
 .timeline-container {
@@ -669,9 +669,9 @@ onUnmounted(() => {
     border-bottom: 2px solid #E4E7ED;
     padding: 10px 0;
     font-size: 12px;
-    color: #606266;
+    color: var(--macos-text-secondary);
     font-weight: 600;
-    background: #FAFBFC;
+    background: var(--macos-fill-tertiary);
 
     .span-info-header {
       width: 300px;
@@ -695,30 +695,30 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     padding: 10px 0;
-    border-bottom: 1px solid #F0F2F5;
+    border-bottom: 1px solid var(--macos-border);
     cursor: pointer;
     transition: all 0.2s;
     position: relative;
 
     &:hover {
-      background: #F5F7FA;
+      background: var(--macos-fill-secondary);
     }
 
     &.selected {
-      background: #ECF5FF;
+      background: var(--macos-info-bg);
       border-left: 3px solid #409EFF;
     }
 
     &.error {
-      background: #FFF1F0;
+      background: var(--macos-danger-bg);
       border-left: 3px solid #F56C6C;
 
       &:hover {
-        background: #FFE4E1;
+        background: var(--macos-danger-bg);
       }
 
       &.selected {
-        background: #FFE4E1;
+        background: var(--macos-danger-bg);
       }
     }
 
@@ -732,7 +732,7 @@ onUnmounted(() => {
         top: 0;
         bottom: 0;
         width: 2px;
-        background: #D0D3D9;
+        background: var(--macos-bg-tertiary);
       }
 
       .guide-connector {
@@ -740,7 +740,7 @@ onUnmounted(() => {
         top: 50%;
         width: 12px;
         height: 2px;
-        background: #D0D3D9;
+        background: var(--macos-bg-tertiary);
       }
     }
 
@@ -753,7 +753,7 @@ onUnmounted(() => {
       padding-left: 8px;
 
       .error-indicator {
-        color: #F56C6C;
+        color: var(--macos-danger);
         font-size: 16px;
         flex-shrink: 0;
       }
@@ -761,17 +761,17 @@ onUnmounted(() => {
       .service-name {
         font-size: 13px;
         font-weight: 600;
-        color: #409EFF;
+        color: var(--macos-blue);
         white-space: nowrap;
 
         &.error {
-          color: #F56C6C;
+          color: var(--macos-danger);
         }
       }
 
       .operation-name {
         font-size: 12px;
-        color: #606266;
+        color: var(--macos-text-secondary);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -782,7 +782,7 @@ onUnmounted(() => {
       flex: 1;
       height: 26px;
       position: relative;
-      background: #F0F2F5;
+      background: var(--macos-bg-secondary);
       border-radius: 4px;
       margin-right: 12px;
 
@@ -834,8 +834,8 @@ onUnmounted(() => {
 .service-map-card {
   :deep(.el-card__header) {
     padding: 14px 20px;
-    border-bottom: 1px solid #EBEEF5;
-    background: #FAFBFC;
+    border-bottom: 1px solid var(--macos-border);
+    background: var(--macos-fill-tertiary);
   }
 
   .service-map {
@@ -848,8 +848,8 @@ onUnmounted(() => {
 
   :deep(.el-card__header) {
     padding: 14px 20px;
-    border-bottom: 1px solid #EBEEF5;
-    background: #FAFBFC;
+    border-bottom: 1px solid var(--macos-border);
+    background: var(--macos-fill-tertiary);
   }
 
   :deep(.el-card__body) {
@@ -859,7 +859,7 @@ onUnmounted(() => {
   :deep(.el-tabs__header) {
     margin: 0;
     padding: 0 20px;
-    background: #FAFBFC;
+    background: var(--macos-fill-tertiary);
   }
 
   :deep(.el-tabs__content) {
@@ -881,13 +881,13 @@ onUnmounted(() => {
 
     .detail-label {
       font-size: 12px;
-      color: #909399;
+      color: var(--macos-text-tertiary);
       font-weight: 500;
     }
 
     .detail-value {
       font-size: 14px;
-      color: #1D1D1F;
+      color: var(--macos-text-primary);
       font-weight: 500;
 
       &.mono {
@@ -903,11 +903,11 @@ onUnmounted(() => {
       font-weight: 600;
 
       &.success {
-        color: #67C23A;
+        color: var(--macos-success);
       }
 
       &.error {
-        color: #F56C6C;
+        color: var(--macos-danger);
       }
 
       .el-icon {
@@ -920,7 +920,7 @@ onUnmounted(() => {
     .tag-item {
       display: flex;
       padding: 10px 0;
-      border-bottom: 1px solid #F0F2F5;
+      border-bottom: 1px solid var(--macos-border);
 
       &:last-child {
         border-bottom: none;
@@ -929,19 +929,19 @@ onUnmounted(() => {
       .tag-key {
         width: 150px;
         font-size: 13px;
-        color: #606266;
+        color: var(--macos-text-secondary);
         font-family: 'SF Mono', monospace;
       }
 
       .tag-value {
         flex: 1;
         font-size: 13px;
-        color: #1D1D1F;
+        color: var(--macos-text-primary);
         font-family: 'SF Mono', monospace;
         word-break: break-all;
 
         &.error {
-          color: #F56C6C;
+          color: var(--macos-danger);
           font-weight: 500;
         }
       }
@@ -953,18 +953,18 @@ onUnmounted(() => {
       display: flex;
       gap: 16px;
       padding: 10px 0;
-      border-bottom: 1px solid #F0F2F5;
+      border-bottom: 1px solid var(--macos-border);
 
       .log-time {
         font-size: 12px;
-        color: #909399;
+        color: var(--macos-text-tertiary);
         font-family: 'SF Mono', monospace;
         white-space: nowrap;
       }
 
       .log-message {
         font-size: 13px;
-        color: #606266;
+        color: var(--macos-text-secondary);
       }
     }
   }

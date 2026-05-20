@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -30,6 +31,13 @@ public class ComponentStatusService {
      * 应该比 Agent 上报间隔（60秒）稍长，避免状态闪烁
      */
     private static final int STATUS_EXPIRE_SECONDS = 90;
+
+    /**
+     * Vector 内部组件名称，不应暴露给前端可视化配置
+     */
+    private static final Set<String> INTERNAL_COMPONENTS = Set.of(
+            "internal_metrics", "blackhole", "internal_logs"
+    );
     
     /**
      * 更新机器的组件状态
@@ -47,6 +55,11 @@ public class ComponentStatusService {
         if (metrics.getComponentMetrics() != null) {
             log.debug("收到组件指标: machineId={}, components={}", machineId, metrics.getComponentMetrics().keySet());
             metrics.getComponentMetrics().forEach((name, componentMetrics) -> {
+                // 过滤 Vector 内部组件，只保留用户配置的业务组件
+                if (INTERNAL_COMPONENTS.contains(name)) {
+                    return;
+                }
+
                 String componentStatus = componentMetrics.getStatus();
                 if (componentStatus == null) {
                     // 根据错误数判断状态

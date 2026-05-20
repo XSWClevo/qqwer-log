@@ -65,7 +65,7 @@ public class PostgreSQLQueryStrategy implements LogQueryStrategy {
                 .endTime(StatsQueryMapperUtils.format(request.getEndTime()))
                 .pageSize(pageSize)
                 .offset((pageNum - 1) * pageSize)
-                .fieldFilters(StatsQueryMapperUtils.buildPostgreSqlFieldFilters(request.getFieldFilters()))
+                .fieldFilters(StatsQueryMapperUtils.buildPostgreSqlFieldFiltersRaw(request.getFieldFilters()))
                 .messageConditions(StatsQueryMapperUtils.buildMessageConditions(request.getMessageConditions()))
                 .rawConditions(StatsQueryMapperUtils.buildMessageConditions(request.getRawConditions()))
                 .build();

@@ -9,6 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.nodes.Node;
+import org.yaml.snakeyaml.nodes.Tag;
+import org.yaml.snakeyaml.representer.Representer;
 
 import java.util.*;
 
@@ -704,7 +707,33 @@ public class ComponentYamlGeneratorService {
         options.setIndicatorIndent(2);
         options.setDefaultScalarStyle(DumperOptions.ScalarStyle.PLAIN);
 
-        Yaml yaml = new Yaml(options);
+        // 自定义 Representer：对可能被误判为数字/布尔的字符串强制加双引号
+        Representer representer = new Representer(options) {
+            @Override
+            protected Node representScalar(Tag tag, String value, DumperOptions.ScalarStyle style) {
+                if (tag == Tag.STR && style == DumperOptions.ScalarStyle.PLAIN && looksLikeNonString(value)) {
+                    style = DumperOptions.ScalarStyle.DOUBLE_QUOTED;
+                }
+                return super.representScalar(tag, value, style);
+            }
+
+            private boolean looksLikeNonString(String value) {
+                if (value == null || value.isEmpty()) {
+                    return false;
+                }
+                // 纯数字（含小数、负数）
+                if (value.matches("^-?\\d+(\\.\\d+)?$")) {
+                    return true;
+                }
+                // 布尔值
+                String lower = value.toLowerCase();
+                return "true".equals(lower) || "false".equals(lower)
+                    || "yes".equals(lower) || "no".equals(lower)
+                    || "on".equals(lower) || "off".equals(lower);
+            }
+        };
+
+        Yaml yaml = new Yaml(representer, options);
         return yaml.dump(config);
     }
 

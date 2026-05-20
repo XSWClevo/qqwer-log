@@ -1,5 +1,8 @@
 <script setup lang="ts">
-// 主应用组件
+import { useSessionActivity } from '@/composables/useSessionActivity'
+
+// 启动会话活跃监听，监听用户操作并定期发送心跳
+useSessionActivity()
 </script>
 
 <template>

@@ -309,18 +309,18 @@ const handleManualEdit = (value: string) => {
     align-items: center;
     gap: 8px;
     padding: 6px 12px;
-    background: #f5f7fa;
+    background: var(--macos-fill-secondary);
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
 
     &:hover {
-      background: #e4e7ed;
+      background: var(--macos-bg-tertiary);
     }
 
     .example-label {
       font-size: 13px;
-      color: #606266;
+      color: var(--macos-text-secondary);
       font-weight: 500;
       min-width: 80px;
     }
@@ -329,8 +329,8 @@ const handleManualEdit = (value: string) => {
       flex: 1;
       font-family: 'Monaco', 'Courier New', monospace;
       font-size: 12px;
-      color: #409eff;
-      background: #ecf5ff;
+      color: var(--macos-blue);
+      background: var(--macos-info-bg);
       padding: 2px 8px;
       border-radius: 3px;
     }
@@ -338,7 +338,7 @@ const handleManualEdit = (value: string) => {
 }
 
 .visual-builder {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--macos-border);
   border-radius: 4px;
   padding: 16px;
 
@@ -351,14 +351,14 @@ const handleManualEdit = (value: string) => {
     .header-title {
       font-size: 14px;
       font-weight: 600;
-      color: #303133;
+      color: var(--macos-text-primary);
     }
   }
 
   .empty-state {
     text-align: center;
     padding: 40px 0;
-    color: #909399;
+    color: var(--macos-text-tertiary);
 
     p {
       margin-top: 12px;
@@ -389,7 +389,7 @@ const handleManualEdit = (value: string) => {
     .header-title {
       font-size: 14px;
       font-weight: 600;
-      color: #303133;
+      color: var(--macos-text-primary);
     }
   }
 
@@ -397,7 +397,7 @@ const handleManualEdit = (value: string) => {
     :deep(textarea) {
       font-family: 'Monaco', 'Courier New', monospace;
       font-size: 13px;
-      background: #f5f7fa;
+      background: var(--macos-fill-secondary);
     }
   }
 }
@@ -412,10 +412,10 @@ const handleManualEdit = (value: string) => {
     font-size: 13px;
 
     code {
-      background: #f5f7fa;
+      background: var(--macos-fill-secondary);
       padding: 2px 6px;
       border-radius: 3px;
-      color: #409eff;
+      color: var(--macos-blue);
       font-size: 12px;
     }
   }

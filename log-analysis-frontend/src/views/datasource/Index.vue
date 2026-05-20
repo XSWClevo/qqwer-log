@@ -82,7 +82,7 @@
         <el-table-column label="连接信息" min-width="200">
           <template #default="{ row }">
             <div>{{ row.host }}:{{ row.port }}</div>
-            <div v-if="row.databaseName" style="color: #909399; font-size: 12px">
+            <div v-if="row.databaseName" style="color: var(--macos-text-tertiary); font-size: 12px">
               {{ row.databaseName }}
             </div>
           </template>
@@ -112,7 +112,7 @@
                 {{ row.lastCheckStatus === 'success' ? '成功' : '失败' }}
               </el-tag>
             </div>
-            <span v-else style="color: #909399">未检查</span>
+            <span v-else style="color: var(--macos-text-tertiary)">未检查</span>
           </template>
         </el-table-column>
 

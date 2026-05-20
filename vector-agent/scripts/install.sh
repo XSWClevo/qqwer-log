@@ -99,14 +99,14 @@ data_dir: "${DATA_DIR}"
 sources:
   internal_metrics:
     type: internal_metrics
+    scrape_interval_secs: 60
 
 sinks:
-  console:
-    type: console
+  blackhole:
+    type: blackhole
     inputs:
       - internal_metrics
-    encoding:
-      codec: json
+    print_interval_secs: 0
 EOF
 
 # 4. 创建软链接

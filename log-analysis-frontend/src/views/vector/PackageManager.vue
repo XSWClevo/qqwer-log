@@ -54,16 +54,18 @@
             </template>
           </el-table-column>
           <el-table-column prop="changelog" label="更新日志" min-width="200" show-overflow-tooltip />
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="操作" width="180" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button size="small" type="primary" link @click="downloadPackage(row)">
-                <el-icon><Download /></el-icon>
-                下载
-              </el-button>
-              <el-button size="small" type="danger" link @click="deletePackage(row)">
-                <el-icon><Delete /></el-icon>
-                删除
-              </el-button>
+              <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                <el-button size="small" type="primary" @click="downloadPackage(row)">
+                  <el-icon><Download /></el-icon>
+                  下载
+                </el-button>
+                <el-button size="small" type="danger" link @click="deletePackage(row)">
+                  <el-icon><Delete /></el-icon>
+                  删除
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>

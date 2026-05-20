@@ -118,13 +118,13 @@ const trendClass = computed(() => {
     background: rgba(255, 255, 255, 0.2);
 
     &.trend-up {
-      color: #67C23A;
-      background: rgba(103, 194, 58, 0.2);
+      color: var(--macos-success);
+      background: var(--macos-success-light);
     }
 
     &.trend-down {
-      color: #F56C6C;
-      background: rgba(245, 108, 108, 0.2);
+      color: var(--macos-danger);
+      background: var(--macos-danger-light);
     }
   }
 }

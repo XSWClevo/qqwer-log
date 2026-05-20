@@ -16,7 +16,17 @@
           <div class="auto-refresh">
             <span class="refresh-label">自动刷新</span>
             <el-switch v-model="autoRefresh" @change="handleAutoRefreshChange" />
-            <span v-if="autoRefresh" class="refresh-interval">10s</span>
+            <el-select
+              v-if="autoRefresh"
+              v-model="refreshInterval"
+              class="interval-selector"
+              @change="handleIntervalChange"
+            >
+              <el-option label="5s" :value="5000" />
+              <el-option label="10s" :value="10000" />
+              <el-option label="30s" :value="30000" />
+              <el-option label="60s" :value="60000" />
+            </el-select>
           </div>
           <el-dropdown @command="handleCommand">
             <span class="user-info">
@@ -113,6 +123,7 @@ const authStore = useAuthStore()
 // 状态
 const timeRange = ref('1h')
 const autoRefresh = ref(true)
+const refreshInterval = ref(10000) // 默认 10 秒
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 // 日志详情弹窗
@@ -151,6 +162,12 @@ const handleAutoRefreshChange = (val: boolean) => {
   }
 }
 
+const handleIntervalChange = () => {
+  if (autoRefresh.value) {
+    startAutoRefresh()
+  }
+}
+
 const handleCommand = async (command: string) => {
   if (command === 'logout') {
     await authStore.logout()
@@ -173,7 +190,7 @@ const startAutoRefresh = () => {
   stopAutoRefresh()
   refreshTimer = setInterval(() => {
     fetchAllData(timeRange.value)
-  }, 10000)
+  }, refreshInterval.value)
 }
 
 const stopAutoRefresh = () => {
@@ -247,12 +264,8 @@ onUnmounted(() => {
     color: var(--macos-text-secondary);
   }
   
-  .refresh-interval {
-    font-size: 12px;
-    color: var(--macos-text-tertiary);
-    background: var(--macos-bg-primary);
-    padding: 2px 8px;
-    border-radius: 4px;
+  .interval-selector {
+    width: 72px;
   }
 }
 

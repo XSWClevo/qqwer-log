@@ -70,6 +70,11 @@ service.interceptors.response.use(
         case 404:
           ElMessage.error('请求地址不存在')
           break
+        case 440:
+          ElMessage.warning('长时间未操作，会话已过期，请重新登录')
+          clearStoredAuthTokens()
+          window.location.href = '/login'
+          break
         case 500:
           ElMessage.error('服务器内部错误')
           break

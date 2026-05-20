@@ -1,17 +1,16 @@
 <template>
   <AppLayout>
-    <div class="agent-page">
-      <section class="hero-shell">
-        <div class="hero-copy">
+    <div class="agent-page">      <section class="hero-shell" :class="{ collapsed: heroCollapsed }">
+        <div v-show="!heroCollapsed" class="hero-copy">
           <div class="hero-eyebrow">Smart Agent Workspace</div>
           <h1>智能助手</h1>
           <p>
-            让日志查询从“先想筛选条件”变成“先说问题”。当前页面支持历史对话保存、会话切换和删除；如果数据源是
+            让日志查询从"先想筛选条件"变成"先说问题"。当前页面支持历史对话保存、会话切换和删除；如果数据源是
             ClickHouse，还会优先走自然语言统计查询和图表结果展示。
           </p>
         </div>
 
-        <div class="hero-metrics">
+        <div v-show="!heroCollapsed" class="hero-metrics">
           <div class="metric-card">
             <span class="metric-label">历史会话</span>
             <strong>{{ conversations.length }}</strong>
@@ -28,8 +27,12 @@
             <small>{{ currentConversationSubtitle }}</small>
           </div>
         </div>
-      </section>
 
+        <div class="hero-toggle" @click="heroCollapsed = !heroCollapsed">
+          <el-icon><component :is="heroCollapsed ? ArrowDown : ArrowUp" /></el-icon>
+          <span>{{ heroCollapsed ? '展开工作台概览' : '收起' }}</span>
+        </div>
+      </section>
       <div class="workspace-grid">
         <aside class="left-rail">
           <el-card shadow="never" class="panel-card datasource-card">
@@ -477,6 +480,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  ArrowDown,
+  ArrowUp,
   Connection,
   Cpu,
   Delete,
@@ -547,6 +552,7 @@ const readStreamingPreference = () => {
   return stored == null ? true : stored !== 'false'
 }
 
+const heroCollapsed = ref(false)
 const datasourceLoading = ref(false)
 const historyLoading = ref(false)
 const conversationLoading = ref(false)
@@ -1237,9 +1243,9 @@ watch(selectedDatasourceId, (value, oldValue) => {
 .agent-page {
   --agent-ink: #0f172a;
   --agent-muted: #5f6f85;
-  --agent-border: rgba(94, 116, 146, 0.18);
-  --agent-card: rgba(255, 255, 255, 0.84);
-  --agent-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  --agent-border: rgba(94, 116, 146, 0.12);
+  --agent-card: rgba(255, 255, 255, 0.92);
+  --agent-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
   padding: clamp(12px, 1.4vw, 20px);
   height: 100%;
   min-height: 100%;
@@ -1250,12 +1256,53 @@ watch(selectedDatasourceId, (value, oldValue) => {
   max-width: 1680px;
   margin: 0 auto;
   overflow: auto;
-  font-family: 'Avenir Next', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Noto Sans SC', sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(14, 165, 233, 0.14), transparent 26%),
-    radial-gradient(circle at right center, rgba(16, 185, 129, 0.09), transparent 22%),
-    linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.08), transparent 30%),
+    radial-gradient(circle at right center, rgba(16, 185, 129, 0.05), transparent 25%),
+    var(--macos-bg-secondary);
   scrollbar-gutter: stable;
+}
+
+// 暗色模式适配
+html.dark .agent-page {
+  --agent-ink: #f1f5f9;
+  --agent-muted: #94a3b8;
+  --agent-border: rgba(255, 255, 255, 0.08);
+  --agent-card: rgba(30, 30, 30, 0.9);
+  --agent-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+
+  .message-bubble {
+    &.assistant {
+      background: var(--macos-bg-tertiary);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    &.user {
+      background: linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%);
+    }
+  }
+
+  .message-avatar {
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .tool-call-card,
+  .result-panel {
+    background: var(--macos-bg-tertiary);
+    border-color: var(--macos-border);
+  }
+
+  .markdown-body {
+    :deep(code) {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    :deep(blockquote) {
+      background: rgba(15, 118, 110, 0.12);
+      color: #cbd5e1;
+    }
+  }
 }
 
 .hero-shell {
@@ -1270,6 +1317,28 @@ watch(selectedDatasourceId, (value, oldValue) => {
     linear-gradient(135deg, rgba(8, 47, 73, 0.96), rgba(15, 118, 110, 0.94)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
   box-shadow: 0 26px 60px rgba(15, 23, 42, 0.12);
+  transition: all 0.3s ease;
+
+  &.collapsed {
+    padding: 10px 22px;
+    gap: 0;
+  }
+}
+
+.hero-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  padding: 4px 0;
+  transition: color 0.2s;
+
+  &:hover {
+    color: rgba(226, 232, 240, 1);
+  }
 }
 
 .hero-copy {
@@ -1667,17 +1736,28 @@ watch(selectedDatasourceId, (value, oldValue) => {
 .message-list {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 6px 6px 0 2px;
+  gap: 24px;
+  padding: 20px 8px 20px 4px;
+  scroll-behavior: smooth;
+
+  &::-webkit-scrollbar {
+    width: 5px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+  }
 }
 
 .message-row {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 12px;
+  animation: message-in 0.3s ease-out;
 
   &.user {
     flex-direction: row-reverse;
@@ -1688,21 +1768,34 @@ watch(selectedDatasourceId, (value, oldValue) => {
   }
 }
 
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .message-avatar {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0f172a;
+  font-size: 16px;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 3px 12px rgba(102, 126, 234, 0.3);
 }
 
 .message-row.user .message-avatar {
-  background: #0284c7;
+  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+  box-shadow: 0 3px 12px rgba(14, 165, 233, 0.3);
 }
 
 .message-stack {
@@ -1717,33 +1810,35 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .message-bubble {
-  border-radius: 12px;
-  padding: 14px 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-radius: 18px;
+  padding: 16px 20px;
+  position: relative;
 
   &.assistant {
     color: var(--agent-ink);
-    background: #f8fafc;
-    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: var(--macos-card-bg);
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+    border-radius: 18px 18px 18px 4px;
   }
 
   &.assistant.system {
-    background: linear-gradient(180deg, rgba(240, 249, 255, 0.95), rgba(236, 253, 245, 0.95));
+    background: linear-gradient(135deg, rgba(236, 253, 245, 0.8), rgba(240, 249, 255, 0.8));
   }
 
   &.user {
     color: #fff;
-    background: #0ea5e9;
+    background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+    border-radius: 18px 18px 4px 18px;
+    box-shadow: 0 4px 16px rgba(14, 165, 233, 0.25);
   }
 }
 
 .message-role {
-  margin-bottom: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  opacity: 0.72;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.65;
 }
 
 .message-text {
@@ -1867,7 +1962,16 @@ watch(selectedDatasourceId, (value, oldValue) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #475569;
+  color: var(--macos-text-secondary);
+
+  .is-loading {
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .tool-call-list {
@@ -1887,13 +1991,19 @@ watch(selectedDatasourceId, (value, oldValue) => {
 
 .tool-call-card,
 .result-panel {
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: 14px;
+  border: 1px solid var(--macos-border);
+  background: var(--macos-fill-tertiary);
+  backdrop-filter: blur(8px);
 }
 
 .tool-call-card {
-  padding: 12px;
+  padding: 14px 16px;
+  transition: box-shadow 0.2s;
+
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
 }
 
 .tool-call-header {
@@ -1902,10 +2012,15 @@ watch(selectedDatasourceId, (value, oldValue) => {
   gap: 10px;
   align-items: center;
   margin-bottom: 8px;
+
+  strong {
+    font-size: 13px;
+    color: var(--macos-text-primary);
+  }
 }
 
 .tool-call-summary {
-  color: #475569;
+  color: var(--macos-text-secondary);
   line-height: 1.6;
   font-size: 13px;
 }
@@ -1915,8 +2030,9 @@ watch(selectedDatasourceId, (value, oldValue) => {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--macos-text-tertiary);
+  font-size: 11px;
+  font-family: 'SFMono-Regular', monospace;
 }
 
 .result-panel {
@@ -1951,11 +2067,38 @@ watch(selectedDatasourceId, (value, oldValue) => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border-top: 1px solid rgba(148, 163, 184, 0.16);
-  padding-top: 12px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.86) 36%, rgba(255, 255, 255, 0.96) 100%);
+  padding: 16px 0 0;
   flex-shrink: 0;
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: 0;
+    right: 0;
+    height: 20px;
+    background: linear-gradient(to top, var(--macos-card-bg), transparent);
+    pointer-events: none;
+  }
+
+  :deep(.el-textarea__inner) {
+    border-radius: 16px;
+    padding: 14px 18px;
+    font-size: 14px;
+    line-height: 1.6;
+    border: 1.5px solid var(--macos-border);
+    background: var(--macos-fill-tertiary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    transition: all 0.2s ease;
+    resize: none;
+
+    &:focus {
+      border-color: var(--macos-blue);
+      box-shadow: 0 0 0 4px var(--macos-blue-light), 0 2px 8px rgba(0, 0, 0, 0.04);
+      background: var(--macos-card-bg);
+    }
+  }
 }
 
 .composer-footer {
@@ -1966,8 +2109,8 @@ watch(selectedDatasourceId, (value, oldValue) => {
 }
 
 .composer-hint {
-  color: #64748b;
-  font-size: 13px;
+  color: var(--macos-text-tertiary);
+  font-size: 12px;
 }
 
 .composer-actions {
