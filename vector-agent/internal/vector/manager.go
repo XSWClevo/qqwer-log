@@ -162,8 +162,8 @@ func (m *Manager) startDirectProcess() error {
 		}
 	}
 
-	// 使用 config-dir 模式启动
-	cmd := exec.Command(config.VectorBin, "--config-dir", config.ConfigDir)
+	// 使用 config-dir 模式启动，--watch-config 自动监听配置变化并热重载
+	cmd := exec.Command(config.VectorBin, "--config-dir", config.ConfigDir, "--watch-config")
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 

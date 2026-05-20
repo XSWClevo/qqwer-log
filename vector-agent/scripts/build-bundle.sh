@@ -34,7 +34,7 @@ echo ""
 
 # 检查 vector 二进制是否存在，不存在则自动下载
 if [ ! -f "${BIN_DIR}/vector" ]; then
-    echo "Vector 二进制不存在，开始下载..."
+    echo "Vector 二进制不存在，开始下载..., 目录: ${BIN_DIR}/vector"
     echo ""
 
     # 调用下载脚本

@@ -315,7 +315,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { Star, Share, Plus, Close, Search, TrendCharts, WarningFilled, Top, Bottom, DataLine, Histogram } from '@element-plus/icons-vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { ElMessage } from 'element-plus'
 
@@ -565,7 +565,7 @@ watch(chartType, () => {
 <style scoped lang="scss">
 .trend-analysis-container {
   padding: 24px;
-  background: #FAFAFA;
+  background: var(--macos-fill-tertiary);
   min-height: 100vh;
 }
 
@@ -579,7 +579,7 @@ watch(chartType, () => {
     .page-title {
       font-size: 24px;
       font-weight: 600;
-      color: #1D1D1F;
+      color: var(--macos-text-primary);
       margin: 0 0 4px 0;
     }
 
@@ -611,11 +611,11 @@ watch(chartType, () => {
     gap: 12px;
     margin-bottom: 20px;
     padding-bottom: 16px;
-    border-bottom: 1px solid #F0F0F0;
+    border-bottom: 1px solid var(--macos-border);
 
     .section-label {
       font-weight: 600;
-      color: #1D1D1F;
+      color: var(--macos-text-primary);
       min-width: 80px;
     }
 
@@ -645,7 +645,7 @@ watch(chartType, () => {
       align-items: center;
       gap: 10px;
       padding: 12px 16px;
-      background: #FFFFFF;
+      background: var(--macos-card-bg);
       border-bottom: 1px solid #E4E7ED;
 
       .query-badge {
@@ -668,7 +668,7 @@ watch(chartType, () => {
       .query-title {
         font-size: 14px;
         font-weight: 600;
-        color: #303133;
+        color: var(--macos-text-primary);
       }
 
       .remove-query-btn {
@@ -689,7 +689,7 @@ watch(chartType, () => {
 
         .field-label {
           font-size: 12px;
-          color: #909399;
+          color: var(--macos-text-tertiary);
           font-weight: 500;
         }
 
@@ -719,8 +719,8 @@ watch(chartType, () => {
     gap: 8px;
     align-items: center;
     padding: 8px 12px;
-    background: #FFFFFF;
-    border: 1px solid #DCDFE6;
+    background: var(--macos-card-bg);
+    border: 1px solid var(--macos-border);
     border-radius: 6px;
     min-height: 40px;
 
@@ -741,11 +741,11 @@ watch(chartType, () => {
 
       .add-filter-icon {
         cursor: pointer;
-        color: #909399;
+        color: var(--macos-text-tertiary);
         transition: color 0.2s;
 
         &:hover {
-          color: #409EFF;
+          color: var(--macos-blue);
         }
       }
     }
@@ -781,8 +781,8 @@ watch(chartType, () => {
 .chart-card {
   :deep(.el-card__header) {
     padding: 12px 20px;
-    border-bottom: 1px solid #F0F0F0;
-    background: #FAFBFC;
+    border-bottom: 1px solid var(--macos-border);
+    background: var(--macos-fill-tertiary);
   }
 
   .chart-header {
@@ -794,7 +794,7 @@ watch(chartType, () => {
   .chart-type-switcher {
     display: flex;
     gap: 4px;
-    background: #F0F2F5;
+    background: var(--macos-bg-secondary);
     padding: 4px;
     border-radius: 8px;
 
@@ -808,17 +808,17 @@ watch(chartType, () => {
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #909399;
+      color: var(--macos-text-tertiary);
       transition: all 0.2s;
 
       &:hover {
-        color: #606266;
+        color: var(--macos-text-secondary);
         background: rgba(255, 255, 255, 0.5);
       }
 
       &.active {
-        background: #FFFFFF;
-        color: #409EFF;
+        background: var(--macos-card-bg);
+        color: var(--macos-blue);
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       }
 
@@ -851,12 +851,12 @@ watch(chartType, () => {
       border: 1px solid transparent;
 
       &:hover {
-        background: #F5F7FA;
+        background: var(--macos-fill-secondary);
         border-color: #E4E7ED;
       }
 
       &.highlighted {
-        background: #ECF5FF;
+        background: var(--macos-info-bg);
         border-color: #B3D8FF;
       }
 
@@ -876,13 +876,13 @@ watch(chartType, () => {
 
       .legend-name {
         font-size: 13px;
-        color: #606266;
+        color: var(--macos-text-secondary);
       }
 
       .legend-value {
         font-size: 13px;
         font-weight: 600;
-        color: #1D1D1F;
+        color: var(--macos-text-primary);
         font-family: 'SF Mono', monospace;
       }
     }
@@ -892,20 +892,20 @@ watch(chartType, () => {
 .insights-card {
   :deep(.el-card__header) {
     padding: 16px 20px;
-    border-bottom: 1px solid #F0F0F0;
-    background: #FAFBFC;
+    border-bottom: 1px solid var(--macos-border);
+    background: var(--macos-fill-tertiary);
   }
 
   .section-title {
     font-size: 16px;
     font-weight: 600;
-    color: #1D1D1F;
+    color: var(--macos-text-primary);
   }
 
   h4 {
     font-size: 13px;
     font-weight: 600;
-    color: #606266;
+    color: var(--macos-text-secondary);
     margin: 0 0 12px 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -920,9 +920,9 @@ watch(chartType, () => {
       }
 
       :deep(.el-table__header-wrapper th) {
-        background: #FAFBFC;
+        background: var(--macos-fill-tertiary);
         font-weight: 600;
-        color: #606266;
+        color: var(--macos-text-secondary);
       }
     }
   }
@@ -934,7 +934,7 @@ watch(chartType, () => {
       .shift-item {
         display: flex;
         align-items: stretch;
-        background: #FFFFFF;
+        background: var(--macos-card-bg);
         border: 1px solid #E4E7ED;
         border-radius: 8px;
         margin-bottom: 10px;
@@ -959,7 +959,7 @@ watch(chartType, () => {
 
           .shift-message {
             font-size: 13px;
-            color: #303133;
+            color: var(--macos-text-primary);
             line-height: 1.5;
           }
         }
@@ -970,7 +970,7 @@ watch(chartType, () => {
           }
 
           .shift-icon {
-            color: #F56C6C;
+            color: var(--macos-danger);
           }
         }
 
@@ -980,7 +980,7 @@ watch(chartType, () => {
           }
 
           .shift-icon {
-            color: #67C23A;
+            color: var(--macos-success);
           }
         }
       }
@@ -992,7 +992,7 @@ watch(chartType, () => {
       .anomaly-item {
         display: flex;
         align-items: stretch;
-        background: #FFFFFF;
+        background: var(--macos-card-bg);
         border: 1px solid #E4E7ED;
         border-radius: 8px;
         margin-bottom: 10px;
@@ -1012,13 +1012,13 @@ watch(chartType, () => {
 
           .anomaly-time {
             font-size: 11px;
-            color: #909399;
+            color: var(--macos-text-tertiary);
             font-family: 'SF Mono', monospace;
           }
 
           .anomaly-desc {
             font-size: 13px;
-            color: #303133;
+            color: var(--macos-text-primary);
             line-height: 1.5;
           }
         }

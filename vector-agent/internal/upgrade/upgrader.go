@@ -154,10 +154,10 @@ rm -f "%s"
 // UpgradeVector 升级 Vector（兼容旧逻辑，但现在推荐用 UpgradeBundle）
 func (u *Upgrader) UpgradeVector(downloadURL, checksum string, fileSize int64) error {
 	// Bundle 包通常 > 20MB，单个二进制 < 15MB
-	// 或者检查 URL 是否包含 bundle
+	// 如果是 Bundle 包，同时升级 Agent 和 Vector
 	if fileSize > 20*1024*1024 || strings.Contains(downloadURL, "bundle") ||
 		strings.HasSuffix(downloadURL, ".tar.gz") || strings.HasSuffix(downloadURL, ".tgz") {
-		return u.upgradeFromTarGz(downloadURL, checksum, fileSize, "vector")
+		return u.UpgradeBundle(downloadURL, checksum, fileSize)
 	}
 	return u.upgradeVectorBinary(downloadURL, checksum, fileSize)
 }

@@ -298,7 +298,7 @@
                   >
                     {{ host.status || 'offline' }}
                   </el-tag>
-                  <span style="color: #909399; font-size: 12px;">{{ host.ipAddress }}</span>
+                  <span style="color: var(--macos-text-tertiary); font-size: 12px;">{{ host.ipAddress }}</span>
                 </span>
               </div>
             </el-option>
@@ -2022,27 +2022,49 @@ onBeforeUnmount(() => {
   background: var(--macos-bg-secondary);
 }
 
+// ═══════════════════════════════════════
+// 顶部工具栏 - 毛玻璃质感
+// ═══════════════════════════════════════
 .editor-header {
   height: 56px;
   background: var(--macos-bg-primary);
+  backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--macos-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 20px;
   flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 12px;
-    .config-name { 
-      font-size: 16px; 
-      font-weight: 600; 
+    gap: 14px;
+
+    .config-name {
+      font-size: 16px;
+      font-weight: 600;
       color: var(--macos-text-primary);
+      letter-spacing: -0.3px;
     }
   }
-  .header-right { display: flex; gap: 8px; }
+
+  .header-right {
+    display: flex;
+    gap: 10px;
+
+    :deep(.el-button) {
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+
+      &:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      }
+    }
+  }
 }
 
 .editor-body {
@@ -2051,116 +2073,203 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+// ═══════════════════════════════════════
+// 左侧组件面板 - 精致卡片
+// ═══════════════════════════════════════
 .component-panel {
-  width: 240px;
+  width: 256px;
   background: var(--macos-bg-primary);
   border-right: 1px solid var(--macos-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  box-shadow: 1px 0 8px rgba(0, 0, 0, 0.03);
 
   .panel-header {
-    padding: 12px 16px;
-    font-weight: 600;
+    padding: 16px 20px 14px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: -0.2px;
     border-bottom: 1px solid var(--macos-border);
     color: var(--macos-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    &::before {
+      content: '';
+      width: 3px;
+      height: 16px;
+      border-radius: 2px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+    }
   }
 
-  .search-input { padding: 8px 12px; }
+  .search-input {
+    padding: 12px 14px;
+
+    :deep(.el-input__wrapper) {
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04), 0 0 0 1px var(--macos-border);
+
+      &:focus-within {
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2), 0 1px 4px rgba(0, 0, 0, 0.06);
+      }
+    }
+  }
 
   :deep(.el-collapse) {
     border: none;
     flex: 1;
     overflow-y: auto;
     background: transparent;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.12);
+      border-radius: 4px;
+    }
   }
 
   :deep(.el-collapse-item__header) {
-    padding: 0 16px;
-    font-size: 13px;
-    font-weight: 500;
+    padding: 0 18px;
+    height: 40px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     background: transparent;
-    color: var(--macos-text-primary);
+    color: var(--macos-text-secondary);
+    border-bottom: none;
   }
 
   :deep(.el-collapse-item__wrap) {
     background: transparent;
+    border-bottom: none;
   }
 
   :deep(.el-collapse-item__content) {
     background: transparent;
+    padding-bottom: 8px;
   }
 
-  .component-list { padding: 4px 8px; }
+  .component-list {
+    padding: 2px 10px;
+  }
 
   .component-group-label {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--macos-text-tertiary);
-    padding: 8px 12px 4px;
-    font-weight: 500;
+    padding: 10px 12px 6px;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.8px;
+    opacity: 0.7;
   }
 
   .component-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    margin: 4px 0;
+    gap: 10px;
+    padding: 10px 12px;
+    margin: 3px 0;
     background: var(--macos-bg-tertiary);
-    border-radius: 4px;
+    border-radius: 10px;
     cursor: grab;
     font-size: 13px;
-    transition: all 0.2s;
+    font-weight: 450;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     color: var(--macos-text-primary);
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
 
-    &:hover { 
-      background: var(--macos-blue-light); 
+    .el-icon {
+      font-size: 16px;
+      color: var(--macos-text-secondary);
+      flex-shrink: 0;
     }
-    &:active { cursor: grabbing; }
+
+    &:hover {
+      background: var(--macos-blue-light);
+      border-color: rgba(102, 126, 234, 0.2);
+      transform: translateX(2px);
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+
+      .el-icon {
+        color: #667eea;
+      }
+    }
+
+    &:active {
+      cursor: grabbing;
+      transform: translateX(2px) scale(0.98);
+    }
 
     &.custom {
-      background: rgba(103, 194, 58, 0.1);
-      border: 1px solid rgba(103, 194, 58, 0.3);
-      
-      &:hover { 
-        background: rgba(103, 194, 58, 0.2); 
+      background: linear-gradient(135deg, rgba(103, 194, 58, 0.06), rgba(103, 194, 58, 0.02));
+      border: 1px solid rgba(103, 194, 58, 0.25);
+
+      .el-icon {
+        color: #67c23a;
+      }
+
+      &:hover {
+        background: linear-gradient(135deg, rgba(103, 194, 58, 0.12), rgba(103, 194, 58, 0.06));
+        border-color: rgba(103, 194, 58, 0.4);
+        box-shadow: 0 2px 8px rgba(103, 194, 58, 0.12);
       }
     }
 
     &.default {
       background: var(--macos-bg-tertiary);
-      border: 1px dashed var(--macos-border);
+      border: 1px solid var(--macos-border);
+      border-style: solid;
     }
 
-    span { flex: 1; }
+    span {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
     .custom-tag {
       font-size: 10px;
-      padding: 0 4px;
+      padding: 0 6px;
       height: 18px;
-      line-height: 16px;
+      line-height: 18px;
+      border-radius: 6px;
+      font-weight: 500;
     }
 
     .shared-tag {
       font-size: 10px;
-      padding: 0 4px;
+      padding: 0 5px;
       height: 18px;
-      line-height: 16px;
+      line-height: 18px;
       min-width: 18px;
       text-align: center;
       border-radius: 9px;
+      font-weight: 600;
     }
   }
 }
 
+// ═══════════════════════════════════════
+// 画布区域 - 渐变背景 + 浮动工具
+// ═══════════════════════════════════════
 .canvas-area {
   flex: 1;
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(34, 197, 94, 0.08), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.08), transparent 24%);
+    radial-gradient(ellipse at 10% 10%, rgba(102, 126, 234, 0.06), transparent 40%),
+    radial-gradient(ellipse at 90% 90%, rgba(118, 75, 162, 0.05), transparent 40%),
+    radial-gradient(ellipse at 50% 50%, rgba(34, 197, 94, 0.03), transparent 60%);
 
   .canvas-toolbar {
     position: absolute;
@@ -2179,38 +2288,69 @@ onBeforeUnmount(() => {
   .toolbar-actions,
   .status-legend {
     pointer-events: auto;
-    backdrop-filter: blur(14px);
-    background: rgba(255, 255, 255, 0.82);
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(20px) saturate(1.8);
+    -webkit-backdrop-filter: blur(20px) saturate(1.8);
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.06),
+      0 1px 3px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
   }
 
   .toolbar-overview,
   .toolbar-actions {
-    border-radius: 999px;
-    padding: 8px 10px;
+    border-radius: 16px;
+    padding: 8px 12px;
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
+  .toolbar-actions {
+    :deep(.el-button) {
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      border: none;
+      background: rgba(0, 0, 0, 0.04);
+      color: var(--macos-text-secondary);
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+      }
+    }
+  }
+
   .overview-chip {
-    min-width: 70px;
-    padding: 6px 10px;
-    border-radius: 999px;
+    min-width: 64px;
+    padding: 8px 12px;
+    border-radius: 12px;
     background: rgba(15, 23, 42, 0.04);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    gap: 3px;
+    transition: background 0.2s;
+
+    &:hover {
+      background: rgba(15, 23, 42, 0.07);
+    }
 
     span {
-      font-size: 11px;
+      font-size: 10px;
+      font-weight: 500;
       color: var(--macos-text-tertiary);
       line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
 
     strong {
-      font-size: 14px;
+      font-size: 16px;
+      font-weight: 700;
       color: var(--macos-text-primary);
       line-height: 1.2;
     }
@@ -2221,7 +2361,9 @@ onBeforeUnmount(() => {
     text-align: center;
     font-size: 12px;
     color: var(--macos-text-secondary);
-    font-weight: 600;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 0 4px;
   }
 
   .canvas-placeholder {
@@ -2231,8 +2373,27 @@ onBeforeUnmount(() => {
     transform: translate(-50%, -50%);
     text-align: center;
     color: var(--macos-text-tertiary);
-    p { margin: 12px 0 0; }
-    .hint { font-size: 12px; color: var(--macos-text-tertiary); }
+    padding: 40px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(10px);
+    border: 2px dashed var(--macos-border);
+
+    .el-icon {
+      color: rgba(102, 126, 234, 0.4);
+    }
+
+    p {
+      margin: 14px 0 0;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--macos-text-tertiary);
+      margin-top: 6px;
+    }
   }
 
   .status-legend {
@@ -2240,13 +2401,14 @@ onBeforeUnmount(() => {
     left: 16px;
     bottom: 16px;
     z-index: 2;
-    border-radius: 999px;
-    padding: 10px 14px;
+    border-radius: 14px;
+    padding: 10px 16px;
     display: flex;
-    gap: 14px;
+    gap: 16px;
     align-items: center;
     color: var(--macos-text-secondary);
     font-size: 12px;
+    font-weight: 500;
 
     span {
       display: inline-flex;
@@ -2257,91 +2419,226 @@ onBeforeUnmount(() => {
 }
 
 .legend-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   display: inline-block;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04);
 
   &.normal {
     background: #67c23a;
+    box-shadow: 0 0 0 3px rgba(103, 194, 58, 0.15);
   }
 
   &.warning {
     background: #e6a23c;
+    box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.15);
   }
 
   &.error {
     background: #f56c6c;
+    box-shadow: 0 0 0 3px rgba(245, 108, 108, 0.15);
   }
 
   &.stopped {
     background: #909399;
+    box-shadow: 0 0 0 3px rgba(144, 147, 153, 0.15);
   }
 }
 
+// ═══════════════════════════════════════
+// 右侧属性面板 - 分层质感
+// ═══════════════════════════════════════
 .property-panel {
-  width: 280px;
+  width: 300px;
   background: var(--macos-bg-primary);
   border-left: 1px solid var(--macos-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  box-shadow: -1px 0 8px rgba(0, 0, 0, 0.03);
 
   .panel-header {
-    padding: 12px 16px;
-    font-weight: 600;
+    padding: 16px 20px 14px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: -0.2px;
     border-bottom: 1px solid var(--macos-border);
     display: flex;
     justify-content: space-between;
     align-items: center;
     color: var(--macos-text-primary);
+
+    &::before {
+      content: '';
+      width: 3px;
+      height: 16px;
+      border-radius: 2px;
+      background: linear-gradient(135deg, #1890ff, #36cfc9);
+      margin-right: 10px;
+    }
   }
 
   :deep(.el-form) {
-    padding: 16px;
+    padding: 18px 16px;
     overflow-y: auto;
     flex: 1;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.12);
+      border-radius: 4px;
+    }
+  }
+
+  :deep(.el-form-item) {
+    margin-bottom: 20px;
   }
 
   :deep(.el-form-item__label) {
     color: var(--macos-text-secondary);
+    font-weight: 500;
+    font-size: 12px;
+  }
+
+  :deep(.el-input__wrapper) {
+    border-radius: 8px;
+  }
+
+  :deep(.el-divider__text) {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--macos-text-tertiary);
+    background: var(--macos-bg-primary);
   }
 }
 
+// ═══════════════════════════════════════
+// 快速添加弹窗
+// ═══════════════════════════════════════
 .quick-add-list {
-  max-height: 300px;
+  max-height: 320px;
   overflow-y: auto;
   margin-top: 12px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+  }
 
   .quick-add-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: 10px;
+    padding: 10px 14px;
     cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.2s;
+    border-radius: 10px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     color: var(--macos-text-primary);
+    margin: 2px 0;
 
-    &:hover { background: var(--macos-bg-tertiary); }
-    .comp-name { flex: 1; }
+    .el-icon {
+      font-size: 16px;
+      color: var(--macos-text-secondary);
+    }
+
+    &:hover {
+      background: var(--macos-blue-light);
+      transform: translateX(2px);
+
+      .el-icon {
+        color: #667eea;
+      }
+    }
+
+    .comp-name {
+      flex: 1;
+      font-weight: 450;
+    }
   }
 }
 
+// ═══════════════════════════════════════
+// YAML 预览
+// ═══════════════════════════════════════
 .yaml-preview {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  padding: 16px;
-  border-radius: 4px;
-  font-family: 'Monaco', 'Consolas', monospace;
+  background: #1a1b26;
+  color: #c0caf5;
+  padding: 20px;
+  border-radius: 12px;
+  font-family: 'JetBrains Mono', 'Monaco', 'Consolas', monospace;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
   overflow: auto;
   height: calc(100% - 32px);
   white-space: pre-wrap;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+  }
 }
 
+// ═══════════════════════════════════════
+// 暗色模式适配
+// ═══════════════════════════════════════
+:global(html.dark) {
+  .toolbar-overview,
+  .toolbar-actions,
+  .status-legend {
+    background: rgba(30, 30, 32, 0.85) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.3),
+      0 1px 3px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  }
+
+  .overview-chip {
+    background: rgba(255, 255, 255, 0.06) !important;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1) !important;
+    }
+  }
+
+  .canvas-placeholder {
+    background: rgba(30, 30, 32, 0.6) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .component-item {
+    &.default {
+      border-style: solid !important;
+    }
+  }
+}
+
+// ═══════════════════════════════════════
+// 响应式布局
+// ═══════════════════════════════════════
 @media (max-width: 1200px) {
+  .component-panel {
+    width: 220px;
+  }
+
+  .property-panel {
+    width: 260px;
+  }
+
   .canvas-area {
     .canvas-toolbar {
       flex-direction: column;
@@ -2352,7 +2649,7 @@ onBeforeUnmount(() => {
     .toolbar-overview,
     .toolbar-actions,
     .status-legend {
-      border-radius: 18px;
+      border-radius: 14px;
     }
 
     .toolbar-overview {

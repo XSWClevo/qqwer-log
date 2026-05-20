@@ -96,5 +96,5 @@ const handleRowClick = (row: LogRecord) => emit('row-click', row)
 }
 .timestamp { font-family: 'SF Mono', monospace; font-size: 12px; color: var(--macos-text-secondary); }
 .message-text { font-family: 'SF Mono', monospace; font-size: 12px; color: var(--macos-text-primary); }
-:deep(.el-tag--dark) { &.el-tag--danger { background: #FF4D4F; border-color: #FF4D4F; } }
+:deep(.el-tag--dark) { &.el-tag--danger { background: #FF4D4F; border-color: var(--macos-danger); } }
 </style>

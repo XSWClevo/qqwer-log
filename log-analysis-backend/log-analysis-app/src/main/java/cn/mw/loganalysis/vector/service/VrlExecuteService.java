@@ -217,7 +217,12 @@ public class VrlExecuteService {
     }
 
     private String escapeSingleQuotedLiteral(String value) {
-        return value.replace("\\", "\\\\").replace("'", "\\'");
+        // VRL 的 r'...' 原始字符串中反斜杠是字面量，不需要转义
+        // r'...' 内部无法包含单引号，若正则含单引号则抛出异常提示用户
+        if (value.contains("'")) {
+            throw new IllegalArgumentException("正则表达式中不能包含单引号，请使用其他等价写法");
+        }
+        return value;
     }
 
     private String escapeDoubleQuotedLiteral(String value) {

@@ -130,45 +130,22 @@
         </el-button>
       </div>
 
-      <!-- 高级筛选面板 -->
+      <!-- 高级筛选面板 - 动态渲染数据源字段 -->
       <el-collapse-transition>
         <div v-show="showAdvancedFilter" class="advanced-filter">
           <el-divider />
           <el-form :inline="true">
-            <el-form-item label="日志级别">
-              <el-select v-model="searchForm.levels" multiple clearable placeholder="选择日志级别" style="width: 250px" @change="handleSearch">
+            <el-form-item v-for="stat in fieldStats" :key="stat.name" :label="stat.label">
+              <el-select
+                v-model="advancedFilterValues[stat.name]"
+                multiple
+                clearable
+                :placeholder="`选择${stat.label}`"
+                style="width: 250px"
+                @change="handleSearch"
+              >
                 <el-option
-                  v-for="item in fieldStats.find(s => s.name === 'severity')?.topValues || []"
-                  :key="item.value"
-                  :label="`${item.value?.toUpperCase()} (${item.count})`"
-                  :value="item.value"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="来源类型">
-              <el-select v-model="searchForm.sources" multiple clearable placeholder="选择来源类型" style="width: 250px" @change="handleSearch">
-                <el-option
-                  v-for="item in fieldStats.find(s => s.name === 'source_type')?.topValues || []"
-                  :key="item.value"
-                  :label="`${item.value} (${item.count})`"
-                  :value="item.value"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="主机">
-              <el-select v-model="searchForm.hosts" multiple clearable placeholder="选择主机" style="width: 250px" @change="handleSearch">
-                <el-option
-                  v-for="item in fieldStats.find(s => s.name === 'hostname')?.topValues || []"
-                  :key="item.value"
-                  :label="`${item.value} (${item.count})`"
-                  :value="item.value"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="应用名">
-              <el-select v-model="searchForm.services" multiple clearable placeholder="选择应用" style="width: 250px" @change="handleSearch">
-                <el-option
-                  v-for="item in fieldStats.find(s => s.name === 'appname')?.topValues || []"
+                  v-for="item in stat.topValues || []"
                   :key="item.value"
                   :label="`${item.value} (${item.count})`"
                   :value="item.value"
@@ -176,6 +153,9 @@
               </el-select>
             </el-form-item>
           </el-form>
+          <div v-if="fieldStats.length === 0" class="advanced-filter-empty">
+            <el-text type="info">请先执行一次查询以加载可用的筛选字段</el-text>
+          </div>
         </div>
       </el-collapse-transition>
     </el-card>
@@ -549,7 +529,7 @@ import { ref, reactive, onMounted, onUnmounted, watch, computed, nextTick } from
 import { useRoute } from 'vue-router'
 import { useDark } from '@vueuse/core'
 import { Search, Filter, Download, Loading, Close, Star, DataAnalysis, MagicStick, Connection } from '@element-plus/icons-vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import * as yaml from 'js-yaml'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { ElMessage } from 'element-plus'
@@ -971,6 +951,9 @@ const searchForm = reactive<SearchForm>({
   services: []
 })
 
+// 高级筛选动态值：key 为字段名，value 为选中的值数组
+const advancedFilterValues = reactive<Record<string, string[]>>({})
+
 // Convert filters for sidebar display
 const activeFiltersForSidebar = computed(() => {
   return searchForm.filters.map((f, index) => ({
@@ -1027,20 +1010,25 @@ const buildFieldFilters = (): FieldFilter[] | undefined => {
     allFilters.push(...sidebarFilters)
   }
 
-  // 2. 添加高级筛选（需要转换为 FieldFilter 格式）
-  // 高级筛选的字段名需要保持复数形式 (severity, source_types, hostnames, appnames)
-  // 因为后端期望的是这个格式
+  // 2. 添加高级筛选（动态字段，从 advancedFilterValues 获取）
+  Object.entries(advancedFilterValues).forEach(([fieldName, values]) => {
+    if (values && values.length > 0) {
+      allFilters.push({ field: fieldName, type: 'include', values })
+    }
+  })
+
+  // 兼容旧的硬编码字段（如果通过其他方式设置了值）
   if (searchForm.levels.length > 0) {
     allFilters.push({ field: 'severity', type: 'include', values: searchForm.levels })
   }
   if (searchForm.sources.length > 0) {
-    allFilters.push({ field: 'source_types', type: 'include', values: searchForm.sources })
+    allFilters.push({ field: 'source_type', type: 'include', values: searchForm.sources })
   }
   if (searchForm.hosts.length > 0) {
-    allFilters.push({ field: 'hostnames', type: 'include', values: searchForm.hosts })
+    allFilters.push({ field: 'hostname', type: 'include', values: searchForm.hosts })
   }
   if (searchForm.services.length > 0) {
-    allFilters.push({ field: 'appnames', type: 'include', values: searchForm.services })
+    allFilters.push({ field: 'appname', type: 'include', values: searchForm.services })
   }
 
   return allFilters.length > 0 ? allFilters : undefined
@@ -1479,6 +1467,10 @@ const clearAllFilters = () => {
   searchForm.sources = []
   searchForm.hosts = []
   searchForm.services = []
+  // 清除动态高级筛选值
+  Object.keys(advancedFilterValues).forEach(key => {
+    advancedFilterValues[key] = []
+  })
   searchText.value = ''
   ElMessage.success('已清除所有筛选条件')
   handleSearch()
@@ -1505,6 +1497,10 @@ const handleReset = () => {
   searchForm.sources = []
   searchForm.hosts = []
   searchForm.services = []
+  // 清除动态高级筛选值
+  Object.keys(advancedFilterValues).forEach(key => {
+    advancedFilterValues[key] = []
+  })
   timeRange.value = '24h'
   customTimeRange.value = undefined
   pagination.pageNum = 1

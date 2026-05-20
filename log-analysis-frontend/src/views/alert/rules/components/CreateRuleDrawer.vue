@@ -316,7 +316,7 @@ const handleClose = () => {
     .step-title {
       font-size: 18px;
       font-weight: 600;
-      color: #262626;
+      color: var(--macos-text-primary);
       margin: 0 0 24px 0;
     }
 
@@ -332,7 +332,7 @@ const handleClose = () => {
 
     .form-tip {
       font-size: 12px;
-      color: #8C8C8C;
+      color: var(--macos-text-tertiary);
       margin-top: 8px;
     }
 
@@ -349,7 +349,7 @@ const handleClose = () => {
 
   .drawer-footer {
     padding: 16px 24px;
-    border-top: 1px solid #E8E8E8;
+    border-top: 1px solid var(--macos-border);
     display: flex;
     justify-content: flex-end;
     gap: 12px;

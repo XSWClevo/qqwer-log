@@ -194,22 +194,22 @@ const pinChart = () => {
 
 .chart-icon, .pin-icon {
   font-size: 14px;
-  color: #909399;
+  color: var(--macos-text-tertiary);
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    color: #409EFF;
+    color: var(--macos-blue);
     transform: scale(1.1);
   }
 }
 
 .pin-icon:hover {
-  color: #E6A23C;
+  color: var(--macos-warning);
 }
 
 .pin-icon.is-pinned {
-  color: #E6A23C;
+  color: var(--macos-warning);
   cursor: default;
   
   &:hover {
@@ -219,7 +219,7 @@ const pinChart = () => {
 
 .collapse-icon {
   font-size: 12px;
-  color: #909399;
+  color: var(--macos-text-tertiary);
   cursor: pointer;
   transition: transform 0.3s;
 
@@ -280,7 +280,7 @@ const pinChart = () => {
 .value-count {
   font-size: 13px;
   font-weight: 600;
-  color: #409EFF;
+  color: var(--macos-blue);
 }
 
 .value-percent {
@@ -341,7 +341,7 @@ const pinChart = () => {
 .empty-state {
   padding: 20px;
   text-align: center;
-  color: #909399;
+  color: var(--macos-text-tertiary);
   font-size: 13px;
 }
 

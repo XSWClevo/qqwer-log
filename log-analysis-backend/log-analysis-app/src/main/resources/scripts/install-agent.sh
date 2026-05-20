@@ -45,19 +45,27 @@ mkdir -p ${CONFIG_DIR}/history
 chmod -R 755 ${INSTALL_DIR}
 chmod 777 ${LOG_DIR} ${DATA_DIR} ${CONFIG_DIR}
 
+# 检测架构
+ARCH=$(uname -m)
+case "$ARCH" in
+    aarch64|arm64) ARCH="arm64" ;;
+    x86_64|amd64) ARCH="x86_64" ;;
+esac
+
 # 下载安装包
 echo -e "${YELLOW}[2/5] 下载安装包...${NC}"
-DOWNLOAD_URL="${SERVER_URL}/api/vector/agents/download?os=${OS_TYPE}"
+DOWNLOAD_URL="${SERVER_URL}/api/vector/agents/download?os=${OS_TYPE}&arch=${ARCH}"
+echo "  下载地址: ${DOWNLOAD_URL}"
 
 if curl -fsSL "${DOWNLOAD_URL}" -o /tmp/bundle.tar.gz 2>/dev/null; then
     tar -xzf /tmp/bundle.tar.gz -C ${INSTALL_DIR}
     rm -f /tmp/bundle.tar.gz
     echo "  -> 安装包下载成功"
 else
-    echo -e "${YELLOW}无法从服务器下载安装包，请手动放置${NC}"
+    echo -e "${RED}无法从服务器下载安装包${NC}"
+    echo "  请确认已在管理后台上传对应平台的安装包 (os=${OS_TYPE}, arch=${ARCH})"
     if [ ! -f "${BIN_DIR}/vector-agent" ]; then
         echo -e "${RED}错误: ${BIN_DIR}/vector-agent 不存在${NC}"
-        echo "请手动下载安装包并解压到 ${INSTALL_DIR}"
         exit 1
     fi
 fi
@@ -78,14 +86,14 @@ data_dir: "${DATA_DIR}"
 sources:
   internal_metrics:
     type: internal_metrics
+    scrape_interval_secs: 60
 
 sinks:
-  console:
-    type: console
+  blackhole:
+    type: blackhole
     inputs:
       - internal_metrics
-    encoding:
-      codec: json
+    print_interval_secs: 0
 EOF
 echo "  -> 配置文件已创建"
 
@@ -129,7 +137,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${BIN_DIR}/vector --config ${CONFIG_DIR}/vector.yaml
+ExecStart=${BIN_DIR}/vector --config-dir ${CONFIG_DIR} --watch-config
 ExecReload=/bin/kill -HUP \$MAINPID
 Restart=on-failure
 RestartSec=5s

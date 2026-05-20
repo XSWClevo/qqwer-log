@@ -140,7 +140,7 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { Search, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AlertDetailDrawer from './components/AlertDetailDrawer.vue'
 import { queryAlertEvents, getAlertTrend } from '@/api/alert'
@@ -373,13 +373,13 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #F0F2F5;
+  background: var(--macos-bg-secondary);
 }
 
 .page-header {
-  background: #FFFFFF;
+  background: var(--macos-card-bg);
   padding: 24px 32px;
-  border-bottom: 1px solid #E8E8E8;
+  border-bottom: 1px solid var(--macos-border);
 
   .header-content {
     display: flex;
@@ -391,25 +391,25 @@ onMounted(() => {
     .page-title {
       font-size: 24px;
       font-weight: 600;
-      color: #262626;
+      color: var(--macos-text-primary);
       margin: 0 0 8px 0;
     }
 
     .page-subtitle {
       font-size: 14px;
-      color: #8C8C8C;
+      color: var(--macos-text-tertiary);
       margin: 0;
     }
   }
 }
 
 .filter-bar {
-  background: #FFFFFF;
+  background: var(--macos-card-bg);
   padding: 16px 32px;
   display: flex;
   gap: 12px;
   align-items: center;
-  border-bottom: 1px solid #E8E8E8;
+  border-bottom: 1px solid var(--macos-border);
 
   .time-selector {
     width: 180px;
@@ -432,9 +432,9 @@ onMounted(() => {
 }
 
 .timeline-chart {
-  background: #FFFFFF;
+  background: var(--macos-card-bg);
   padding: 16px 32px;
-  border-bottom: 1px solid #E8E8E8;
+  border-bottom: 1px solid var(--macos-border);
 }
 
 .table-container {
@@ -446,13 +446,13 @@ onMounted(() => {
 
   .timestamp {
     font-size: 13px;
-    color: #595959;
+    color: var(--macos-text-secondary);
     font-family: 'Monaco', 'Courier New', monospace;
   }
 
   .rule-name {
     font-size: 14px;
-    color: #1890FF;
+    color: var(--macos-blue);
     cursor: pointer;
 
     &:hover {
@@ -462,13 +462,13 @@ onMounted(() => {
 
   .trigger-value {
     font-size: 13px;
-    color: #595959;
+    color: var(--macos-text-secondary);
     font-family: 'Monaco', 'Courier New', monospace;
   }
 
   .related-entity {
     font-size: 13px;
-    color: #8C8C8C;
+    color: var(--macos-text-tertiary);
   }
 
   .notification-status {
@@ -478,11 +478,11 @@ onMounted(() => {
     gap: 6px;
 
     .status-sent {
-      color: #52C41A;
+      color: var(--macos-success);
     }
 
     .status-failed {
-      color: #FF4D4F;
+      color: var(--macos-danger);
     }
   }
 

@@ -194,7 +194,7 @@ defineExpose({ open })
 .message-box {
   max-height: 400px;
   overflow-y: auto;
-  background-color: #f5f7fa;
+  background-color: var(--macos-fill-secondary);
   padding: 12px;
   border-radius: 4px;
 }
@@ -213,6 +213,6 @@ defineExpose({ open })
 }
 
 .text-gray-500 {
-  color: #909399;
+  color: var(--macos-text-tertiary);
 }
 </style>

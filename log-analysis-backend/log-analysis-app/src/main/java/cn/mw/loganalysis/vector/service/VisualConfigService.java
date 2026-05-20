@@ -154,6 +154,9 @@ public class VisualConfigService {
 
         Path tempFile = null;
         try {
+            // 修正纯数字密码等字段：确保 password 值为 YAML 字符串
+            content = fixYamlStringFields(content);
+
             // 创建临时文件
             tempFile = Files.createTempFile("vector-config-", ".yaml");
             Files.write(tempFile, content.getBytes(StandardCharsets.UTF_8));
@@ -213,5 +216,17 @@ public class VisualConfigService {
                 }
             }
         }
+    }
+
+    /**
+     * 修正 YAML 中需要是字符串但可能被解析为数字/布尔的字段
+     * 例如 password: 12345678 -> password: "12345678"
+     */
+    private String fixYamlStringFields(String yamlContent) {
+        // 匹配 password/user/username 字段后跟纯数字或布尔值的情况，加上双引号
+        return yamlContent.replaceAll(
+            "(?m)^(\\s*(?:password|user|username):\\s*)([0-9]+(?:\\.[0-9]+)?|true|false|yes|no|on|off)\\s*$",
+            "$1\"$2\""
+        );
     }
 }

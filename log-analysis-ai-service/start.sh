@@ -111,9 +111,10 @@ echo ""
 echo -e "${GREEN}正在启动服务...${NC}"
 echo ""
 
-# 使用 uvicorn 启动，支持热重载
+# 使用 uvicorn 启动，支持热重载（仅监控 app 目录，避免 venv 导致无限重载）
 python -m uvicorn app.main:app \
     --host "$SERVICE_HOST" \
     --port "$SERVICE_PORT" \
     --reload \
+    --reload-dir app \
     --log-level "$(echo $LOG_LEVEL | tr '[:upper:]' '[:lower:]')"

@@ -610,7 +610,7 @@ onMounted(() => {
   }
 
   .drag-icon {
-    color: #909399;
+    color: var(--macos-text-tertiary);
     cursor: move;
     font-size: 14px;
   }
@@ -653,7 +653,7 @@ onMounted(() => {
 
   .el-icon {
     font-size: 16px;
-    color: #409EFF;
+    color: var(--macos-blue);
   }
 }
 

@@ -30,7 +30,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch, onUnmounted } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { CircleCheck, Warning } from '@element-plus/icons-vue'
 import type { LogPipeline } from '../types'
 

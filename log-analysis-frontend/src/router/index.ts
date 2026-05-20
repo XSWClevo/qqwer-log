@@ -117,6 +117,13 @@ const routes: RouteRecordRaw[] = [
     name: 'DatabaseConfig',
     component: () => import('@/views/settings/DatabaseConfig.vue'),
     meta: { requiresAuth: true }
+  },
+  // 404 兜底路由
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/error/NotFound.vue'),
+    meta: { requiresAuth: false }
   }
 ]
 

@@ -24,7 +24,7 @@ spring:
           driver-class-name: org.postgresql.Driver
           url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}
           username: ${DB_USER:postgres}
-          password: ${DB_PASSWORD:123456}
+          password: ${DB_PASSWORD:postgres}
           hikari:
             maximum-pool-size: 20
             minimum-idle: 5
@@ -33,7 +33,7 @@ spring:
         # ClickHouse数据源（日志数据库）
         clickhouse:
           driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
-          url: jdbc:clickhouse://${CLICKHOUSE_HOST:ch.orb.local}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
+          url: jdbc:clickhouse://${CLICKHOUSE_HOST:clickhouse.qqwer-log.orb.local}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
           username: ${CLICKHOUSE_USER:default}
           password: ${CLICKHOUSE_PASSWORD:12345678}
           hikari:
@@ -47,7 +47,7 @@ spring:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}
     user: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:123456}
+    password: ${DB_PASSWORD:postgres}
 
   # Redis配置
   data:
@@ -188,6 +188,13 @@ management:
 
 # 日志配置
 logging:
+  file:
+    name: logs/log-analysis-app.log
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 30
+      total-size-cap: 1GB
   level:
     dev:
       langchain4j: debug
@@ -195,5 +202,5 @@ logging:
     #cn.mw.loganalysis: DEBUG
     #org.springframework.security: DEBUG
   pattern:
-    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%thread]){magenta} %clr(%-5level){highlight} %clr(%logger{36}){cyan} %clr(-){faint} %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%thread]){magenta} %clr([%X{traceId}]){yellow} %clr(%-5level){highlight} %clr(%logger{36}){cyan} %clr(-){faint} %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"

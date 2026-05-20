@@ -271,23 +271,23 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--macos-fill-secondary);
   border-radius: 4px;
 
   :deep(.el-button.is-link) {
     &.el-button--primary {
-      color: #409EFF !important;
+      color: var(--macos-blue) !important;
       
       &:hover {
-        color: #66b1ff !important;
+        color: var(--macos-blue-hover) !important;
       }
     }
     
     &.el-button--danger {
-      color: #F56C6C !important;
+      color: var(--macos-danger) !important;
       
       &:hover {
-        color: #f78989 !important;
+        opacity: 0.8;
       }
     }
   }
@@ -296,7 +296,7 @@ defineExpose({
 .header-title {
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--macos-text-primary);
 }
 
 .field-section {
@@ -311,17 +311,17 @@ defineExpose({
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: #606266;
-  background: #fafafa;
+  color: var(--macos-text-secondary);
+  background: var(--macos-fill-tertiary);
   border-radius: 4px;
   margin-bottom: 8px;
 
   :deep(.el-button.is-link) {
     &.el-button--danger {
-      color: #F56C6C !important;
+      color: var(--macos-danger) !important;
       
       &:hover {
-        color: #f78989 !important;
+        opacity: 0.8;
       }
     }
   }
@@ -348,23 +348,23 @@ defineExpose({
 }
 
 .field-item.selected {
-  background: #ecf5ff;
-  border-color: #d9ecff;
+  background: var(--macos-blue-light);
+  border-color: var(--macos-blue-light);
   cursor: move;
 }
 
 .field-item.selected:hover {
-  background: #d9ecff;
-  border-color: #b3d8ff;
+  background: var(--macos-info-bg);
+  border-color: var(--macos-info-border);
 }
 
 .field-item.available {
-  background: #f5f7fa;
+  background: var(--macos-fill-secondary);
 }
 
 .field-item.available:hover {
-  background: #e4e7ed;
-  border-color: #dcdfe6;
+  background: var(--macos-bg-tertiary);
+  border-color: var(--macos-border-hover);
 }
 
 .field-name {

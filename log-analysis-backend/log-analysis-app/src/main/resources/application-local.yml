@@ -3,13 +3,13 @@ langchain4j:
     chat-model:
       # DashScope Qwen via OpenAI-compatible API.
       # Replace this with your own DashScope API key from Model Studio. ${DASHSCOPE_API_KEY}
-      api-key: ${DASHSCOPE_API_KEY:}
+      api-key: sk-3fb4597857c87f8602c74efbe1194b480228c80962edc437eaf102691a0322f0
       # Beijing region endpoint. For Singapore region use:
       # https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      base-url: https://api.clawto.link
       # qwen-plus is a safer default for tool calling.
       # If you need stronger reasoning, switch to qwen-max.
-      model-name: qwen3.5-plus
+      model-name: gpt-5.5
       wire-api: chat-completions
       temperature: 0.2
       strict-tools: false

@@ -17,36 +17,51 @@
 
       <!-- 搜索和过滤栏 -->
       <div class="filter-bar">
-        <el-input
-          v-model="searchText"
-          placeholder="搜索规则名称、查询条件或标签..."
-          :prefix-icon="Search"
-          clearable
-          class="search-input"
-        />
-        <el-select v-model="filters.status" placeholder="状态" clearable class="filter-select">
-          <el-option label="全部" value="" />
-          <el-option label="已启用" value="enabled" />
-          <el-option label="已禁用" value="disabled" />
-        </el-select>
-        <el-select v-model="filters.severity" placeholder="严重程度" clearable class="filter-select">
-          <el-option label="全部" value="" />
-          <el-option label="严重" value="critical" />
-          <el-option label="警告" value="warning" />
-          <el-option label="信息" value="info" />
-        </el-select>
-        <el-select v-model="filters.type" placeholder="类型" clearable class="filter-select">
-          <el-option label="全部" value="" />
-          <el-option label="日志查询" value="log_query" />
-          <el-option label="指标阈值" value="metric_threshold" />
-          <el-option label="异常检测" value="anomaly" />
-        </el-select>
-        <el-select v-model="filters.channel" placeholder="通知渠道" clearable class="filter-select">
-          <el-option label="全部" value="" />
-          <el-option label="Slack" value="slack" />
-          <el-option label="邮件" value="email" />
-          <el-option label="Webhook" value="webhook" />
-        </el-select>
+        <div class="filter-bar-main">
+          <el-input
+            v-model="searchText"
+            placeholder="搜索规则名称、查询条件或标签..."
+            :prefix-icon="Search"
+            clearable
+            class="search-input"
+          />
+          <el-button
+            :type="showAdvancedFilter ? 'primary' : 'default'"
+            @click="showAdvancedFilter = !showAdvancedFilter"
+          >
+            <el-icon><Filter /></el-icon>
+            高级筛选
+            <el-badge v-if="activeFilterCount > 0" :value="activeFilterCount" class="filter-badge" />
+          </el-button>
+        </div>
+        <Transition name="filter-expand">
+          <div v-show="showAdvancedFilter" class="filter-bar-advanced">
+            <el-select v-model="filters.status" placeholder="状态" clearable class="filter-select">
+              <el-option label="全部" value="" />
+              <el-option label="已启用" value="enabled" />
+              <el-option label="已禁用" value="disabled" />
+            </el-select>
+            <el-select v-model="filters.severity" placeholder="严重程度" clearable class="filter-select">
+              <el-option label="全部" value="" />
+              <el-option label="严重" value="critical" />
+              <el-option label="警告" value="warning" />
+              <el-option label="信息" value="info" />
+            </el-select>
+            <el-select v-model="filters.type" placeholder="类型" clearable class="filter-select">
+              <el-option label="全部" value="" />
+              <el-option label="日志查询" value="log_query" />
+              <el-option label="指标阈值" value="metric_threshold" />
+              <el-option label="异常检测" value="anomaly" />
+            </el-select>
+            <el-select v-model="filters.channel" placeholder="通知渠道" clearable class="filter-select">
+              <el-option label="全部" value="" />
+              <el-option label="Slack" value="slack" />
+              <el-option label="邮件" value="email" />
+              <el-option label="Webhook" value="webhook" />
+            </el-select>
+            <el-button text @click="resetFilters" class="reset-btn">重置筛选</el-button>
+          </div>
+        </Transition>
       </div>
 
       <!-- 规则列表表格 -->
@@ -152,7 +167,8 @@ import {
   MoreFilled,
   Message,
   ChatDotRound,
-  Link
+  Link,
+  Filter
 } from '@element-plus/icons-vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import CreateRuleDrawer from './components/CreateRuleDrawer.vue'
@@ -166,12 +182,23 @@ import {
 
 // 搜索和过滤
 const searchText = ref('')
+const showAdvancedFilter = ref(false)
 const filters = ref({
   status: '',
   severity: '',
   type: '',
   channel: ''
 })
+
+// 计算激活的筛选数量
+const activeFilterCount = computed(() => {
+  return Object.values(filters.value).filter(v => v !== '').length
+})
+
+// 重置筛选
+const resetFilters = () => {
+  filters.value = { status: '', severity: '', type: '', channel: '' }
+}
 
 // 显示创建抽屉
 const showCreateDrawer = ref(false)
@@ -385,13 +412,13 @@ const handleCreateSuccess = () => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #F0F2F5;
+  background: var(--macos-bg-secondary);
 }
 
 .page-header {
-  background: #FFFFFF;
+  background: var(--macos-card-bg);
   padding: 24px 32px;
-  border-bottom: 1px solid #E8E8E8;
+  border-bottom: 1px solid var(--macos-border);
 
   .header-content {
     display: flex;
@@ -403,33 +430,68 @@ const handleCreateSuccess = () => {
     .page-title {
       font-size: 24px;
       font-weight: 600;
-      color: #262626;
+      color: var(--macos-text-primary);
       margin: 0 0 8px 0;
     }
 
     .page-subtitle {
       font-size: 14px;
-      color: #8C8C8C;
+      color: var(--macos-text-tertiary);
       margin: 0;
     }
   }
 }
 
 .filter-bar {
-  background: #FFFFFF;
+  background: var(--macos-bg-primary, #FFFFFF);
   padding: 16px 32px;
   display: flex;
+  flex-direction: column;
   gap: 12px;
-  border-bottom: 1px solid #E8E8E8;
+  border-bottom: 1px solid var(--macos-border, #E8E8E8);
 
-  .search-input {
-    flex: 1;
-    max-width: 400px;
+  .filter-bar-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .search-input {
+      flex: 1;
+      max-width: 400px;
+    }
+
+    .filter-badge {
+      margin-left: 4px;
+    }
   }
 
-  .filter-select {
-    width: 150px;
+  .filter-bar-advanced {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--macos-border, #E8E8E8);
+
+    .filter-select {
+      width: 150px;
+    }
+
+    .reset-btn {
+      color: var(--macos-text-tertiary);
+    }
   }
+}
+
+.filter-expand-enter-active,
+.filter-expand-leave-active {
+  transition: all 0.25s ease;
+  overflow: hidden;
+}
+.filter-expand-enter-from,
+.filter-expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
 }
 
 .table-container {
@@ -441,7 +503,7 @@ const handleCreateSuccess = () => {
     .rule-name {
       font-size: 14px;
       font-weight: 500;
-      color: #1890FF;
+      color: var(--macos-blue);
       cursor: pointer;
       margin-bottom: 4px;
 
@@ -452,14 +514,14 @@ const handleCreateSuccess = () => {
 
     .rule-description {
       font-size: 12px;
-      color: #8C8C8C;
+      color: var(--macos-text-tertiary);
       font-family: 'Monaco', 'Courier New', monospace;
     }
   }
 
   .trigger-condition {
     font-size: 13px;
-    color: #595959;
+    color: var(--macos-text-secondary);
   }
 
   .notification-icons {
@@ -470,7 +532,7 @@ const handleCreateSuccess = () => {
 
   .last-triggered {
     font-size: 13px;
-    color: #8C8C8C;
+    color: var(--macos-text-tertiary);
   }
 }
 </style>
