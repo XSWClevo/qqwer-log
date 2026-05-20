@@ -8,9 +8,11 @@ import cn.mw.loganalysis.vector.entity.VisualConfig;
 import cn.mw.loganalysis.vector.mapper.MachineConfigMapper;
 import cn.mw.loganalysis.vector.mapper.VectorDeploymentMapper;
 import cn.mw.loganalysis.vector.mapper.VectorMachineMapper;
+import cn.mw.loganalysis.vector.mapper.VisualConfigMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +36,8 @@ public class VectorDeploymentService {
     private final VectorMachineMapper machineMapper;
     private final MachineConfigMapper machineConfigMapper;
     private final ConfigDirGeneratorService configDirGeneratorService;
+    private final VisualConfigMapper visualConfigMapper;
+    private final VisualConfigYamlService visualConfigYamlService;
 
     /**
      * 创建部署任务（Pipeline 模式）
@@ -42,6 +46,7 @@ public class VectorDeploymentService {
     @Transactional(rollbackFor = Exception.class)
     public List<VectorDeployment> createDeployments(DeployConfigRequest request, String userId) {
         List<VectorDeployment> deployments = new ArrayList<>();
+        String configContent = resolveConfigContent(request.getConfigId());
         
         // 生成配置版本号
         String configVersion = UUID.randomUUID().toString().substring(0, 8) + "-" + System.currentTimeMillis();
@@ -56,8 +61,7 @@ public class VectorDeploymentService {
             VectorDeployment deployment = new VectorDeployment();
             deployment.setMachineId(hostId);
             deployment.setConfigId(request.getConfigId());
-            // 直接使用前端传来的 YAML 内容
-            deployment.setConfigContent(request.getConfigContent());
+            deployment.setConfigContent(configContent);
             deployment.setConfigVersion(configVersion);
             deployment.setDeployMode(request.getDeployMode());
             deployment.setStatus("pending");
@@ -73,6 +77,26 @@ public class VectorDeploymentService {
         }
 
         return deployments;
+    }
+
+    private String resolveConfigContent(String configId) {
+        VisualConfig config = visualConfigMapper.selectById(configId);
+        if (config == null) {
+            throw new RuntimeException("配置不存在: " + configId);
+        }
+
+        if (StringUtils.isNotBlank(config.getContent())) {
+            return config.getContent();
+        }
+
+        String content = visualConfigYamlService.generateContentFromGraphData(config.getGraphData());
+        if (StringUtils.isBlank(content)) {
+            throw new RuntimeException("配置内容为空，请先保存可视化配置");
+        }
+
+        config.setContent(content);
+        visualConfigMapper.updateById(config);
+        return content;
     }
 
     /**

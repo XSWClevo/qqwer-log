@@ -2,6 +2,8 @@ package cn.mw.loganalysis.vector.controller;
 
 import cn.mw.loganalysis.common.response.Result;
 import cn.mw.loganalysis.vector.dto.CreateVisualConfigRequest;
+import cn.mw.loganalysis.vector.dto.PreviewVisualConfigRequest;
+import cn.mw.loganalysis.vector.dto.PreviewVisualConfigResponse;
 import cn.mw.loganalysis.vector.dto.UpdateVisualConfigRequest;
 import cn.mw.loganalysis.vector.dto.ValidateConfigRequest;
 import cn.mw.loganalysis.vector.dto.ValidateConfigResponse;
@@ -58,6 +60,15 @@ public class VisualConfigController {
         String userId = "system";
         VisualConfig config = visualConfigService.createConfig(request, userId);
         return Result.success(config);
+    }
+
+    /**
+     * 根据流程图数据生成 YAML 预览
+     */
+    @PostMapping("/preview")
+    public Result<PreviewVisualConfigResponse> previewConfig(@RequestBody PreviewVisualConfigRequest request) {
+        String content = visualConfigService.generateContentFromGraphData(request.getGraphData());
+        return Result.success(new PreviewVisualConfigResponse(content));
     }
 
     /**

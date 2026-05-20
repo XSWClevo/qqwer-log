@@ -14,6 +14,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * VRL 表达式执行服务
@@ -240,6 +242,7 @@ public class VrlExecuteService {
             if (output.isEmpty()) {
                 return VrlExecuteResponse.error("解析结果为空");
             }
+            output = fixTimestampFormat(output);
             
             // 解析 JSON 输出
             Map<String, Object> result = objectMapper.readValue(output, 
@@ -265,6 +268,13 @@ public class VrlExecuteService {
             log.error("解析 VRL 输出失败: {}", output, e);
             return VrlExecuteResponse.error("解析输出失败: " + e.getMessage());
         }
+    }
+
+    public static String fixTimestampFormat(String invalidJson) {
+        // 匹配 t'任意内容' 的模式
+        Pattern pattern = Pattern.compile("t'([^']*)'");
+        Matcher matcher = pattern.matcher(invalidJson);
+        return matcher.replaceAll("\"$1\"");
     }
     
     /**

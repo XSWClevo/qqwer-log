@@ -180,7 +180,6 @@ export const vectorDeploymentApi = {
   createDeployment(data: {
     hostIds: string[]
     configId: string
-    configContent: string
     deployMode: string
   }): Promise<any[]> {
     return request.post('/api/vector/deployments', data)
@@ -580,6 +579,10 @@ export interface UpdateVisualConfigRequest {
   nodeCount?: number
 }
 
+export interface PreviewVisualConfigResponse {
+  content: string
+}
+
 export const visualConfigApi = {
   /**
    * 查询可视化配置列表
@@ -600,6 +603,13 @@ export const visualConfigApi = {
    */
   create(data: CreateVisualConfigRequest): Promise<VisualConfig> {
     return request.post('/api/vector/visual-configs', data)
+  },
+
+  /**
+   * 根据 graphData 生成 YAML 预览
+   */
+  preview(graphData: string): Promise<PreviewVisualConfigResponse> {
+    return request.post('/api/vector/visual-configs/preview', { graphData })
   },
 
   /**

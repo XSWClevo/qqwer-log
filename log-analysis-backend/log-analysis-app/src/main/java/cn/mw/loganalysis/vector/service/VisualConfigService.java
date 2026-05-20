@@ -32,6 +32,7 @@ public class VisualConfigService {
     private final VisualConfigMapper visualConfigMapper;
     private final MachineConfigMapper machineConfigMapper;
     private final VectorDeploymentService deploymentService;
+    private final VisualConfigYamlService visualConfigYamlService;
 
     @Value("${vector.binary-path:vector}")
     private String vectorBinaryPath;
@@ -85,6 +86,7 @@ public class VisualConfigService {
         }
         if (request.getGraphData() != null) {
             config.setGraphData(request.getGraphData());
+            config.setContent(generateContentFromGraphData(request.getGraphData()));
         }
         if (request.getContent() != null) {
             config.setContent(request.getContent());
@@ -142,6 +144,13 @@ public class VisualConfigService {
             throw new RuntimeException("配置不存在");
         }
         return config.getContent();
+    }
+
+    /**
+     * 根据 graphData 生成 YAML 内容
+     */
+    public String generateContentFromGraphData(String graphData) {
+        return visualConfigYamlService.generateContentFromGraphData(graphData);
     }
 
     /**

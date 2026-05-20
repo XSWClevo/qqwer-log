@@ -112,7 +112,6 @@
       <!-- 画布区域 -->
       <div class="canvas-area" @drop="onDrop" @dragover.prevent>
         <VueFlow
-          ref="vueFlowRef"
           v-model:nodes="nodes"
           v-model:edges="edges"
           :node-types="nodeTypes"
@@ -152,6 +151,15 @@
             <div class="overview-chip"><span>Sink</span><strong>{{ sinkNodeCount }}</strong></div>
           </div>
           <div class="toolbar-actions">
+            <el-button
+              v-if="selectedNode"
+              size="small"
+              type="danger"
+              plain
+              @click="deleteSelectedNode"
+            >
+              删除选中组件
+            </el-button>
             <el-button size="small" @click="arrangeGraph">整理布局</el-button>
             <el-button size="small" @click="fitView">适配视图</el-button>
           </div>
@@ -161,10 +169,15 @@
       <!-- 右侧属性面板 -->
       <div class="property-panel" v-if="selectedNode">
         <div class="panel-header">
-          属性配置
-          <el-button text size="small" @click="selectedNode = null; selectedStepIndex = -1">
-            <el-icon><Close /></el-icon>
-          </el-button>
+          <span>属性配置</span>
+          <div class="panel-header-actions">
+            <el-button text size="small" type="danger" @click="deleteSelectedNode">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+            <el-button text size="small" @click="selectedNode = null; selectedStepIndex = -1">
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
         </div>
 
         <!-- Processors 容器面板 -->
@@ -264,7 +277,9 @@
               <el-divider>{{ selectedNode.data.steps[selectedStepIndex].label }} 配置</el-divider>
               <component
                 :is="getConfigComponent(selectedNode.data.steps[selectedStepIndex].type + '_transform')"
+                :key="`${selectedNode.id}-${selectedNode.data.steps[selectedStepIndex].id}`"
                 v-model="selectedNode.data.steps[selectedStepIndex].config"
+                :context="getStepEditorContext()"
                 @change="onStepConfigChange"
               />
             </template>
@@ -283,7 +298,9 @@
             <el-divider>组件配置</el-divider>
             <component
               :is="getConfigComponent(selectedNode.data.componentType)"
+              :key="selectedNode.id"
               v-model="selectedNode.data.config"
+              :context="getNodeEditorContext(selectedNode)"
             />
           </el-form>
         </template>
@@ -336,17 +353,16 @@ import { ref, computed, onMounted, markRaw, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft, View, Check, Search, Upload, Operation, Download, Close, Promotion, Plus, Clock, UserFilled
+  ArrowLeft, View, Check, Search, Upload, Operation, Download, Close, Promotion, Plus, Clock, UserFilled, Delete
 } from '@element-plus/icons-vue'
-import { VueFlow, Position } from '@vue-flow/core'
+import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
 import type { Connection, Node, Edge, NodeChange } from '@vue-flow/core'
 import SourceSinkNode from './components/SourceSinkNode.vue'
 import ProcessorsNode from './components/ProcessorsNode.vue'
-import yaml from 'js-yaml'
-import { visualConfigApi, configComponentApi, vectorMachineApi, vectorDeploymentApi, vectorMetricsApi, type ConfigComponent } from '@/api/vector'
+import { visualConfigApi, configComponentApi, vectorMachineApi, vectorDeploymentApi, type ConfigComponent } from '@/api/vector'
 
 import FileSourceConfig from './components/FileSourceConfig.vue'
 import KafkaSourceConfig from './components/KafkaSourceConfig.vue'
@@ -385,21 +401,29 @@ interface TransformGroup {
   items: ComponentItem[]
 }
 
+interface EditorContext {
+  currentNodeId?: string
+  upstreamNodeIds: string[]
+  upstreamSourceNodeIds: string[]
+  upstreamSourceComponentIds: string[]
+  upstreamSourceNames: string[]
+}
+
 // ═══════════════════════════════════════════════════════════
 // Vue Flow Setup
 // ═══════════════════════════════════════════════════════════
 
-const nodeTypes = {
-  source: markRaw(SourceSinkNode),
-  sink: markRaw(SourceSinkNode),
-  processors: markRaw(ProcessorsNode)
+const nodeTypes: Record<string, any> = {
+  source: SourceSinkNode,
+  sink: SourceSinkNode,
+  processors: ProcessorsNode
 }
 
 const defaultEdgeOptions = {
   type: 'smoothstep',
   animated: false,
   style: { stroke: '#94a3b8', strokeWidth: 1.5 },
-  markerEnd: { type: 'arrowclosed', color: '#94a3b8' }
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -408,6 +432,7 @@ const defaultEdgeOptions = {
 
 const route = useRoute()
 const router = useRouter()
+const { screenToFlowCoordinate, fitView: fitFlowView } = useVueFlow()
 const configId = route.params.id as string
 
 const configName = ref('加载中...')
@@ -444,14 +469,6 @@ const defaultSources: ComponentItem[] = [
   { type: 'syslog', label: 'Syslog' },
   { type: 'socket', label: 'Socket' },
   { type: 'docker_logs', label: 'Docker Logs' }
-]
-
-const defaultTransforms: ComponentItem[] = [
-  { type: 'filter', label: 'Filter (过滤)' },
-  { type: 'remap', label: 'Remap (VRL)' },
-  { type: 'sample', label: 'Sample (采样)' },
-  { type: 'dedupe', label: 'Dedupe (去重)' },
-  { type: 'throttle', label: 'Quota (限流)' }
 ]
 
 const defaultSinks: ComponentItem[] = [
@@ -564,8 +581,6 @@ const onDragStart = (event: DragEvent, category: string, comp: any) => {
   event.dataTransfer?.setData('application/json', JSON.stringify({ category, comp }))
 }
 
-const vueFlowRef = ref<any>(null)
-
 const onDrop = (event: DragEvent) => {
   event.preventDefault()
   if (!dragData) return
@@ -573,8 +588,7 @@ const onDrop = (event: DragEvent) => {
   const { category, comp } = dragData
   const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
   const rawPos = { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
-  // 通过 VueFlow 实例的 project 方法转换坐标（考虑 zoom/pan）
-  const position = vueFlowRef.value?.project?.(rawPos) ?? rawPos
+  const position = screenToFlowCoordinate(rawPos)
 
   createNode(category, comp, position)
   dragData = null
@@ -607,6 +621,7 @@ const createNode = (category: string, comp: any, position: { x: number; y: numbe
       data: {
         category,
         componentType: `${comp.type}_${category}`,
+        componentId: comp.id || undefined,
         name: nodeName,
         config: initialConfig,
         isShared: false,
@@ -639,7 +654,7 @@ const onConnect = (connection: Connection) => {
     target: connection.target!,
     type: 'smoothstep',
     style: { stroke: '#94a3b8', strokeWidth: 1.5 },
-    markerEnd: { type: 'arrowclosed', color: '#94a3b8' }
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' }
   }
   edges.value = [...edges.value, newEdge]
 }
@@ -672,6 +687,17 @@ const onNodesChange = (changes: NodeChange[]) => {
   }
 }
 
+const deleteSelectedNode = () => {
+  if (!selectedNode.value) return
+
+  const nodeId = selectedNode.value.id
+  nodes.value = nodes.value.filter(node => node.id !== nodeId)
+  edges.value = edges.value.filter(edge => edge.source !== nodeId && edge.target !== nodeId)
+  selectedNode.value = null
+  selectedStepIndex.value = -1
+  ElMessage.success('组件已删除')
+}
+
 // ═══════════════ Processor Steps ═══════════════
 
 const selectProcessor = async (comp: ComponentItem) => {
@@ -690,13 +716,14 @@ const selectProcessor = async (comp: ComponentItem) => {
   if (nodeIndex === -1) return
 
   const node = nodes.value[nodeIndex]
+  if (!node) return
   const updatedSteps = [...(node.data.steps || []), newStep]
   // 直接替换整个节点来触发响应式更新
   nodes.value[nodeIndex] = { ...node, data: { ...node.data, steps: updatedSteps } }
   nodes.value = [...nodes.value]
 
   await nextTick()
-  selectedNode.value = nodes.value[nodeIndex]
+  selectedNode.value = nodes.value[nodeIndex] ?? null
   selectedStepIndex.value = updatedSteps.length - 1
   saveRecentTransform(comp)
   addProcessorPopoverRef.value?.hide?.()
@@ -709,6 +736,7 @@ const removeProcessorStep = async (idx: number) => {
   if (nodeIndex === -1) return
 
   const node = nodes.value[nodeIndex]
+  if (!node) return
   const currentSteps = [...(node.data.steps || [])]
   if (currentSteps.length <= 1) {
     nodes.value = nodes.value.filter(n => n.id !== nodeId)
@@ -723,7 +751,7 @@ const removeProcessorStep = async (idx: number) => {
   nodes.value = [...nodes.value]
 
   await nextTick()
-  selectedNode.value = nodes.value[nodeIndex]
+  selectedNode.value = nodes.value[nodeIndex] ?? null
   selectedStepIndex.value = Math.min(selectedStepIndex.value, currentSteps.length - 1)
 }
 
@@ -731,10 +759,62 @@ const onStepConfigChange = () => {
   // Vue Flow 自动响应式，无需额外操作
 }
 
+const collectUpstreamSourceNodes = (nodeId: string, visited = new Set<string>()): Node[] => {
+  if (visited.has(nodeId)) return []
+  visited.add(nodeId)
+
+  const incomingNodes = edges.value
+    .filter(edge => edge.target === nodeId)
+    .map(edge => nodes.value.find(node => node.id === edge.source))
+    .filter((node): node is Node => Boolean(node))
+
+  const directSources = incomingNodes.filter(node => node.type === 'source')
+  const nestedSources = incomingNodes
+    .filter(node => node.type !== 'source')
+    .flatMap(node => collectUpstreamSourceNodes(node.id, visited))
+
+  const unique = new Map<string, Node>()
+  ;[...directSources, ...nestedSources].forEach(node => unique.set(node.id, node))
+  return Array.from(unique.values())
+}
+
+const getNodeEditorContext = (node: Node | null): EditorContext => {
+  if (!node) {
+    return {
+      upstreamNodeIds: [],
+      upstreamSourceNodeIds: [],
+      upstreamSourceComponentIds: [],
+      upstreamSourceNames: []
+    }
+  }
+
+  const upstreamNodes = edges.value
+    .filter(edge => edge.target === node.id)
+    .map(edge => nodes.value.find(candidate => candidate.id === edge.source))
+    .filter((candidate): candidate is Node => Boolean(candidate))
+  const upstreamSources = collectUpstreamSourceNodes(node.id)
+
+  return {
+    currentNodeId: node.id,
+    upstreamNodeIds: upstreamNodes.map(item => item.id),
+    upstreamSourceNodeIds: upstreamSources.map(item => item.id),
+    upstreamSourceComponentIds: upstreamSources
+      .map(item => item.data?.componentId)
+      .filter((id): id is string => Boolean(id)),
+    upstreamSourceNames: upstreamSources
+      .map(item => item.data?.name)
+      .filter((name): name is string => Boolean(name))
+  }
+}
+
+const getStepEditorContext = (): EditorContext => {
+  return getNodeEditorContext(selectedNode.value)
+}
+
 // ═══════════════ Layout ═══════════════
 
 const fitView = () => {
-  vueFlowRef.value?.fitView?.({ padding: 0.2 })
+  fitFlowView({ padding: 0.2 })
 }
 
 const arrangeGraph = () => {
@@ -757,53 +837,22 @@ const arrangeGraph = () => {
 }
 
 // ═══════════════ YAML Generation ═══════════════
+const serializeGraphData = () => JSON.stringify({ nodes: nodes.value, edges: edges.value })
 
-const generateYamlFromGraph = (): string => {
-  const config: any = { sources: {}, transforms: {}, sinks: {} }
-
-  nodes.value.forEach(node => {
-    const data = node.data
-    if (node.type === 'source') {
-      const compType = (data.componentType || '').replace('_source', '')
-      config.sources[data.name] = { type: compType, ...(data.config || {}) }
-    } else if (node.type === 'processors') {
-      const steps = data.steps || []
-      steps.forEach((step: ProcessorStep, idx: number) => {
-        const transformName = `${data.name}_${step.type}_${idx}`
-        const inputs = idx === 0
-          ? edges.value.filter(e => e.target === node.id).map(e => {
-              const src = nodes.value.find(n => n.id === e.source)
-              return src?.data?.name || e.source
-            })
-          : [`${data.name}_${steps[idx - 1].type}_${idx - 1}`]
-        config.transforms[transformName] = { type: step.type, inputs, ...(step.config || {}) }
-      })
-    } else if (node.type === 'sink') {
-      const compType = (data.componentType || '').replace('_sink', '')
-      const inputs = edges.value.filter(e => e.target === node.id).map(e => {
-        const src = nodes.value.find(n => n.id === e.source)
-        if (src?.type === 'processors') {
-          const steps = src.data.steps || []
-          return steps.length > 0 ? `${src.data.name}_${steps[steps.length - 1].type}_${steps.length - 1}` : src.data.name
-        }
-        return src?.data?.name || e.source
-      })
-      config.sinks[data.name] = { type: compType, inputs, ...(data.config || {}) }
-    }
-  })
-
-  return yaml.dump(config, { lineWidth: -1 })
+const generateYamlFromGraph = async (): Promise<string> => {
+  const result = await visualConfigApi.preview(serializeGraphData()) as any
+  return result.content ?? result.data?.content ?? ''
 }
 
-const previewYaml = () => {
-  generatedYaml.value = generateYamlFromGraph()
+const previewYaml = async () => {
+  generatedYaml.value = await generateYamlFromGraph()
   showYamlPreview.value = true
 }
 
 const validateYaml = async () => {
   validating.value = true
   try {
-    const yamlContent = generateYamlFromGraph()
+    const yamlContent = await generateYamlFromGraph()
     const result = await visualConfigApi.validate(yamlContent)
     if (result.valid) {
       ElMessage.success('配置校验通过')
@@ -822,9 +871,8 @@ const validateYaml = async () => {
 const saveConfig = async () => {
   saving.value = true
   try {
-    const content = generateYamlFromGraph()
-    const graphData = JSON.stringify({ nodes: nodes.value, edges: edges.value })
-    await visualConfigApi.update(configId, { content, graphData, nodeCount: nodes.value.length })
+    const graphData = serializeGraphData()
+    await visualConfigApi.update(configId, { graphData, nodeCount: nodes.value.length })
     ElMessage.success('保存成功')
   } catch (e: any) {
     ElMessage.error(e.message || '保存失败')
@@ -833,14 +881,18 @@ const saveConfig = async () => {
   }
 }
 
+const persistCurrentGraph = async () => {
+  const graphData = serializeGraphData()
+  await visualConfigApi.update(configId, { graphData, nodeCount: nodes.value.length })
+}
+
 const deployConfig = async () => {
   deploying.value = true
   try {
-    const yamlContent = generateYamlFromGraph()
+    await persistCurrentGraph()
     await vectorDeploymentApi.createDeployment({
       hostIds: deployTargetHosts.value,
       configId,
-      configContent: yamlContent,
       deployMode: deployMode.value
     })
     ElMessage.success('部署任务已创建')
@@ -1058,6 +1110,11 @@ onMounted(async () => {
   font-weight: 600;
   border-bottom: 1px solid var(--macos-border-light, #f0f0f0);
   margin-bottom: 12px;
+}
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .processors-panel .processors-title {
   display: flex;

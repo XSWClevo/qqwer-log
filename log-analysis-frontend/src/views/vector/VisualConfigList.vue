@@ -132,12 +132,18 @@ const rules: FormRules = {
 }
 
 const formatTime = (time: string) => dayjs(time).fromNow()
+const unwrapResult = <T>(response: T | { data?: T }): T => {
+  if (response && typeof response === 'object' && 'data' in response) {
+    return response.data as T
+  }
+  return response as T
+}
 
 const fetchConfigs = async () => {
   loading.value = true
   try {
     const res = await visualConfigApi.getList()
-    configs.value = res.data || []
+    configs.value = unwrapResult<VisualConfig[]>(res) || []
   } catch {
     ElMessage.error('加载配置列表失败')
   } finally {
@@ -151,9 +157,13 @@ const createConfig = async () => {
     creating.value = true
     try {
       const res = await visualConfigApi.create(form)
+      const createdConfig = unwrapResult<VisualConfig>(res)
       ElMessage.success('创建成功')
       showCreateDialog.value = false
-      router.push(`/vector/visual-config/${res.data.id}`)
+      form.name = ''
+      form.description = ''
+      form.format = 'namespace_yaml'
+      router.push(`/vector/visual-config/${createdConfig.id}`)
     } catch (e: any) {
       ElMessage.error(e.message || '创建失败')
     } finally {
@@ -185,8 +195,9 @@ const deleteConfig = (config: VisualConfig) => {
     .then(async () => {
       await visualConfigApi.delete(config.id)
       ElMessage.success('删除成功')
-      fetchConfigs()
+      await fetchConfigs()
     })
+    .catch(() => undefined)
 }
 
 onMounted(fetchConfigs)

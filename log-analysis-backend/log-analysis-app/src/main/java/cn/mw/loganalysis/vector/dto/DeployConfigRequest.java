@@ -25,12 +25,6 @@ public class DeployConfigRequest {
     private String configId;
 
     /**
-     * 配置内容（YAML）
-     */
-    @NotBlank(message = "配置内容不能为空")
-    private String configContent;
-
-    /**
      * 部署方式: restart/reload
      */
     private String deployMode = "restart";

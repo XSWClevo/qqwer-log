@@ -24,7 +24,7 @@ spring:
           driver-class-name: org.postgresql.Driver
           url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}
           username: ${DB_USER:postgres}
-          password: ${DB_PASSWORD:123456}
+          password: ${DB_PASSWORD:postgres}
           hikari:
             maximum-pool-size: 20
             minimum-idle: 5
@@ -33,7 +33,7 @@ spring:
         # ClickHouse数据源（日志数据库）
         clickhouse:
           driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
-          url: jdbc:clickhouse://${CLICKHOUSE_HOST:ch.orb.local}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
+          url: jdbc:clickhouse://${CLICKHOUSE_HOST:clickhouse.qqwer.orb.local}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
           username: ${CLICKHOUSE_USER:default}
           password: ${CLICKHOUSE_PASSWORD:12345678}
           hikari:
@@ -45,14 +45,14 @@ spring:
     enabled: ${LIQUIBASE_ENABLED:true}
     change-log: classpath:db/changelog/db.changelog-master.yaml
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}
+    url: jdbc:postgresql://${DB_HOST:postgres.qqwer.orb.local}:${DB_PORT:5432}/${DB_NAME:postgres}
     user: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:123456}
+    password: ${DB_PASSWORD:postgres}
 
   # Redis配置
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:redis.qqwer.orb.local}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: 0
