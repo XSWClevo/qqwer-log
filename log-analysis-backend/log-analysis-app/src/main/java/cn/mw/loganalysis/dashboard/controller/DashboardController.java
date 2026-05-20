@@ -6,10 +6,13 @@ import cn.mw.loganalysis.dashboard.service.DashboardService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 /**
  * Dashboard 控制器 - 提供仪表盘统计 API
@@ -21,6 +24,9 @@ import java.util.concurrent.CompletableFuture;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    @Qualifier("dashboardTaskExecutor")
+    @Autowired
+    private Executor dashboardExecutor;
 
     /**
      * 获取系统指标
@@ -218,18 +224,28 @@ public class DashboardController {
             String startTime = request.getStartTime();
             String endTime = request.getEndTime();
 
-            // 所有查询全部并行执行
-            CompletableFuture<SystemMetricsDTO> metricsFuture = dashboardService.getSystemMetricsAsync();
-            CompletableFuture<LogTrendDTO> trendFuture = dashboardService.getLogTrendAsync(startTime, endTime, request.getGranularity());
-            CompletableFuture<TopEntityDTO> topHostsFuture = dashboardService.getTopEntitiesAsync("host", startTime, endTime);
-            CompletableFuture<TopEntityDTO> topAppsFuture = dashboardService.getTopEntitiesAsync("app", startTime, endTime);
-            CompletableFuture<RecurringExceptionDTO> exceptionsFuture = dashboardService.getRecurringExceptionsAsync(startTime, endTime);
-            CompletableFuture<AlertLogDTO> alertLogsFuture = dashboardService.getLatestAlertLogsAsync(startTime, endTime, request.getPageNum(), request.getPageSize());
-            CompletableFuture<LogPipelineDTO> pipelineFuture = dashboardService.getLogPipelineAsync(startTime, endTime);
-            CompletableFuture<CoreOverviewDTO> coreOverviewFuture = dashboardService.getCoreOverviewAsync();
-            CompletableFuture<DatabaseStatusDTO> dbStatusFuture = dashboardService.getDatabaseStatusAsync();
+            // 使用 supplyAsync + 线程池并行执行所有查询
+            // 不使用 @Async 是因为 @DS 动态数据源注解在异步线程中需要显式切换
+            CompletableFuture<SystemMetricsDTO> metricsFuture = CompletableFuture.supplyAsync(
+                    dashboardService::getSystemMetrics, dashboardExecutor);
+            CompletableFuture<LogTrendDTO> trendFuture = CompletableFuture.supplyAsync(
+                    () -> dashboardService.getLogTrend(startTime, endTime, request.getGranularity()), dashboardExecutor);
+            CompletableFuture<TopEntityDTO> topHostsFuture = CompletableFuture.supplyAsync(
+                    () -> dashboardService.getTopEntities("host", startTime, endTime), dashboardExecutor);
+            CompletableFuture<TopEntityDTO> topAppsFuture = CompletableFuture.supplyAsync(
+                    () -> dashboardService.getTopEntities("app", startTime, endTime), dashboardExecutor);
+            CompletableFuture<RecurringExceptionDTO> exceptionsFuture = CompletableFuture.supplyAsync(
+                    () -> dashboardService.getRecurringExceptions(startTime, endTime), dashboardExecutor);
+            CompletableFuture<AlertLogDTO> alertLogsFuture = CompletableFuture.supplyAsync(
+                    () -> dashboardService.getLatestAlertLogs(startTime, endTime, request.getPageNum(), request.getPageSize()), dashboardExecutor);
+            CompletableFuture<LogPipelineDTO> pipelineFuture = CompletableFuture.supplyAsync(
+                    () -> dashboardService.getLogPipeline(startTime, endTime), dashboardExecutor);
+            CompletableFuture<CoreOverviewDTO> coreOverviewFuture = CompletableFuture.supplyAsync(
+                    dashboardService::getCoreOverview, dashboardExecutor);
+            CompletableFuture<DatabaseStatusDTO> dbStatusFuture = CompletableFuture.supplyAsync(
+                    dashboardService::getDatabaseStatus, dashboardExecutor);
 
-            // 等待所有异步任务完成
+            // 等待所有并行任务完成
             CompletableFuture.allOf(
                     metricsFuture, trendFuture, topHostsFuture, topAppsFuture,
                     exceptionsFuture, alertLogsFuture, pipelineFuture,

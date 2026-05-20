@@ -21,9 +21,9 @@ public class DashboardCacheConfig {
     @Bean(name = "dashboardTaskExecutor")
     public Executor dashboardTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(8);
-        executor.setQueueCapacity(100);
+        executor.setCorePoolSize(10);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("dashboard-async-");
         executor.setKeepAliveSeconds(60);
         executor.initialize();

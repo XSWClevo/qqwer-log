@@ -4,6 +4,8 @@ import cn.mw.loganalysis.dashboard.dto.*;
 import cn.mw.loganalysis.dashboard.entity.*;
 import cn.mw.loganalysis.dashboard.mapper.DashboardMapper;
 import com.baomidou.dynamic.datasource.annotation.DS;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
@@ -21,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -40,6 +43,45 @@ public class DashboardService {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final SystemInfo systemInfo = new SystemInfo();
 
+    /**
+     * CPU 使用率后台采样器
+     * 每 3 秒采样一次，接口直接读取最新值，无需 sleep 等待
+     */
+    private static final AtomicReference<Double> latestCpuUsage = new AtomicReference<>(0.0);
+    private static volatile long[] prevCpuTicks;
+    private static Thread cpuSamplerThread;
+
+    @PostConstruct
+    public void startCpuSampler() {
+        CentralProcessor processor = systemInfo.getHardware().getProcessor();
+        prevCpuTicks = processor.getSystemCpuLoadTicks();
+
+        cpuSamplerThread = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(3000);
+                    long[] currentTicks = processor.getSystemCpuLoadTicks();
+                    double cpuLoad = processor.getSystemCpuLoadBetweenTicks(prevCpuTicks) * 100;
+                    latestCpuUsage.set(Math.round(cpuLoad * 100.0) / 100.0);
+                    prevCpuTicks = currentTicks;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }, "cpu-sampler");
+        cpuSamplerThread.setDaemon(true);
+        cpuSamplerThread.start();
+        log.info("CPU 后台采样器已启动 (间隔3秒)");
+    }
+
+    @PreDestroy
+    public void stopCpuSampler() {
+        if (cpuSamplerThread != null) {
+            cpuSamplerThread.interrupt();
+        }
+    }
+
     // ==================== 1. 系统指标 ====================
 
     @Cacheable(value = "systemMetrics", key = "'metrics'", unless = "#result == null")
@@ -58,17 +100,10 @@ public class DashboardService {
     }
 
     private SystemMetricsDTO.CpuMetrics getCpuMetrics(CentralProcessor processor) {
-        long[] prevTicks = processor.getSystemCpuLoadTicks();
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        double cpuLoad = processor.getSystemCpuLoadBetweenTicks(prevTicks) * 100;
         double[] loadAverage = processor.getSystemLoadAverage(1);
-        
+
         return SystemMetricsDTO.CpuMetrics.builder()
-                .usagePercent(Math.round(cpuLoad * 100.0) / 100.0)
+                .usagePercent(latestCpuUsage.get())
                 .cores(processor.getLogicalProcessorCount())
                 .loadAverage(loadAverage.length > 0 ? loadAverage[0] : 0.0)
                 .build();
@@ -186,7 +221,7 @@ public class DashboardService {
 
     // ==================== 2. 日志趋势 ====================
 
-    @Cacheable(value = "logTrend", key = "#startTime + '_' + #endTime", unless = "#result == null")
+    @Cacheable(value = "logTrend", key = "'latest'", unless = "#result == null")
     public LogTrendDTO getLogTrend(String startTime, String endTime, String granularity) {
         log.info("Fetching log trend from {} to {} with granularity {}", startTime, endTime, granularity);
         
@@ -254,7 +289,7 @@ public class DashboardService {
 
     // ==================== 3. Top 实体 ====================
 
-    @Cacheable(value = "topEntities", key = "#type + '_' + #startTime + '_' + #endTime", unless = "#result == null")
+    @Cacheable(value = "topEntities", key = "#type", unless = "#result == null")
     public TopEntityDTO getTopEntities(String type, String startTime, String endTime) {
         log.info("Fetching top {} from {} to {}", type, startTime, endTime);
         
@@ -284,7 +319,7 @@ public class DashboardService {
 
     // ==================== 4. 重复异常 ====================
 
-    @Cacheable(value = "recurringExceptions", key = "#startTime + '_' + #endTime", unless = "#result == null")
+    @Cacheable(value = "recurringExceptions", key = "'latest'", unless = "#result == null")
     public RecurringExceptionDTO getRecurringExceptions(String startTime, String endTime) {
         log.info("Fetching recurring exceptions from {} to {}", startTime, endTime);
         
