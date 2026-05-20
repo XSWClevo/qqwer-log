@@ -215,41 +215,41 @@ public class DashboardController {
         log.info("[{}] Fetching dashboard overview: {} to {}", traceId, request.getStartTime(), request.getEndTime());
         
         try {
-            // 并行获取各项数据
-            CompletableFuture<SystemMetricsDTO> metricsFuture = 
-                    dashboardService.getSystemMetricsAsync();
-            CompletableFuture<LogTrendDTO> trendFuture = 
-                    dashboardService.getLogTrendAsync(request.getStartTime(), request.getEndTime(), request.getGranularity());
-            
-            // 同步获取其他数据
-            TopEntityDTO topHosts = dashboardService.getTopEntities("host", request.getStartTime(), request.getEndTime());
-            TopEntityDTO topApps = dashboardService.getTopEntities("app", request.getStartTime(), request.getEndTime());
-            RecurringExceptionDTO exceptions = dashboardService.getRecurringExceptions(request.getStartTime(), request.getEndTime());
-            AlertLogDTO alertLogs = dashboardService.getLatestAlertLogs(
-                    request.getStartTime(), request.getEndTime(), 
-                    request.getPageNum(), request.getPageSize());
-            LogPipelineDTO pipeline = dashboardService.getLogPipeline(request.getStartTime(), request.getEndTime());
-            CoreOverviewDTO coreOverview = dashboardService.getCoreOverview();
-            DatabaseStatusDTO dbStatus = dashboardService.getDatabaseStatus();
-            
-            // 等待异步任务完成
-            SystemMetricsDTO metrics = metricsFuture.join();
-            LogTrendDTO trend = trendFuture.join();
-            
+            String startTime = request.getStartTime();
+            String endTime = request.getEndTime();
+
+            // 所有查询全部并行执行
+            CompletableFuture<SystemMetricsDTO> metricsFuture = dashboardService.getSystemMetricsAsync();
+            CompletableFuture<LogTrendDTO> trendFuture = dashboardService.getLogTrendAsync(startTime, endTime, request.getGranularity());
+            CompletableFuture<TopEntityDTO> topHostsFuture = dashboardService.getTopEntitiesAsync("host", startTime, endTime);
+            CompletableFuture<TopEntityDTO> topAppsFuture = dashboardService.getTopEntitiesAsync("app", startTime, endTime);
+            CompletableFuture<RecurringExceptionDTO> exceptionsFuture = dashboardService.getRecurringExceptionsAsync(startTime, endTime);
+            CompletableFuture<AlertLogDTO> alertLogsFuture = dashboardService.getLatestAlertLogsAsync(startTime, endTime, request.getPageNum(), request.getPageSize());
+            CompletableFuture<LogPipelineDTO> pipelineFuture = dashboardService.getLogPipelineAsync(startTime, endTime);
+            CompletableFuture<CoreOverviewDTO> coreOverviewFuture = dashboardService.getCoreOverviewAsync();
+            CompletableFuture<DatabaseStatusDTO> dbStatusFuture = dashboardService.getDatabaseStatusAsync();
+
+            // 等待所有异步任务完成
+            CompletableFuture.allOf(
+                    metricsFuture, trendFuture, topHostsFuture, topAppsFuture,
+                    exceptionsFuture, alertLogsFuture, pipelineFuture,
+                    coreOverviewFuture, dbStatusFuture
+            ).join();
+
             // 组装结果
             DashboardOverviewDTO overview = DashboardOverviewDTO.builder()
-                    .systemMetrics(metrics)
-                    .logTrend(trend)
-                    .logPipeline(pipeline)
-                    .coreOverview(coreOverview)
-                    .databaseStatus(dbStatus)
-                    .topHosts(topHosts)
-                    .topApps(topApps)
-                    .recurringExceptions(exceptions)
-                    .alertLogs(alertLogs)
+                    .systemMetrics(metricsFuture.join())
+                    .logTrend(trendFuture.join())
+                    .logPipeline(pipelineFuture.join())
+                    .coreOverview(coreOverviewFuture.join())
+                    .databaseStatus(dbStatusFuture.join())
+                    .topHosts(topHostsFuture.join())
+                    .topApps(topAppsFuture.join())
+                    .recurringExceptions(exceptionsFuture.join())
+                    .alertLogs(alertLogsFuture.join())
                     .traceId(traceId)
                     .build();
-            
+
             return Result.success(overview);
         } catch (Exception e) {
             log.error("[{}] Failed to fetch dashboard overview", traceId, e);

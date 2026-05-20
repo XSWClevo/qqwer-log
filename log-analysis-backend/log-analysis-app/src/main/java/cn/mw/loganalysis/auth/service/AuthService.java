@@ -143,11 +143,13 @@ public class AuthService {
      */
     private void storeSession(Long userId, String accessToken, String refreshToken) {
         String sessionKey = AuthConstants.SESSION_KEY_PREFIX + userId;
+        long now = System.currentTimeMillis();
 
         // 存储会话信息
         redisTemplate.opsForHash().put(sessionKey, "accessToken", accessToken);
         redisTemplate.opsForHash().put(sessionKey, "refreshToken", refreshToken);
-        redisTemplate.opsForHash().put(sessionKey, "loginTime", System.currentTimeMillis());
+        redisTemplate.opsForHash().put(sessionKey, "loginTime", now);
+        redisTemplate.opsForHash().put(sessionKey, "lastActivity", now);
 
         // 设置过期时间
         redisTemplate.expire(sessionKey, AuthConstants.SESSION_TTL_DAYS, TimeUnit.DAYS);

@@ -633,20 +633,20 @@ const initGraph = () => {
         return graph!.createEdge({
           attrs: {
             line: {
-              stroke: themeColors.edgeStroke,  // 默认灰色（停止状态）
-              strokeWidth: 2,
-              targetMarker: { name: 'block', width: 12, height: 8 }
+              stroke: themeColors.edgeStroke,
+              strokeWidth: 1.5,
+              targetMarker: { name: 'block', width: 8, height: 5 }
             }
           },
           router: {
             name: 'manhattan',
             args: {
-              padding: 10,
+              padding: 16,
               startDirections: ['right'],
               endDirections: ['left']
             }
           },
-          connector: { name: 'rounded', args: { radius: 8 } },
+          connector: { name: 'rounded', args: { radius: 12 } },
           zIndex: 0
         })
       },
@@ -927,10 +927,26 @@ const arrangeGraph = () => {
 }
 
 const createNode = (category: string, comp: any, x: number, y: number) => {
+  // Datadog 风格配色
   const colors: Record<string, string> = {
-    source: '#52c41a',
-    transform: '#1890ff',
-    sink: '#722ed1'
+    source: '#22c55e',
+    transform: '#3b82f6',
+    sink: '#8b5cf6'
+  }
+  const colorsBg: Record<string, string> = {
+    source: 'rgba(34, 197, 94, 0.08)',
+    transform: 'rgba(59, 130, 246, 0.08)',
+    sink: 'rgba(139, 92, 246, 0.08)'
+  }
+  const categoryLabels: Record<string, string> = {
+    source: 'SOURCE',
+    transform: 'TRANSFORM',
+    sink: 'SINK'
+  }
+  const categoryIcons: Record<string, string> = {
+    source: '⬇',
+    transform: '⚙',
+    sink: '⬆'
   }
 
   const themeColors = getThemeColors()
@@ -1027,17 +1043,34 @@ const createNode = (category: string, comp: any, x: number, y: number) => {
     }
   }
   
+  // Datadog 风格节点：左侧彩色竖条 + 图标 + 名称 + 类型标签
+  const nodeWidth = 200
+  // route 组件需要更高，其他组件固定 56px
+  if (!isRouteComponent) {
+    nodeHeight = 56
+  }
+
   const node = graph!.addNode({
     id: nodeId,
     x,
     y,
-    width: 180,
+    width: nodeWidth,
     height: nodeHeight,
     shape: 'rect',
     markup: [
+      // 外层阴影/背景矩形
+      { tagName: 'rect', selector: 'shadow' },
+      // 主体矩形
       { tagName: 'rect', selector: 'body' },
+      // 左侧彩色竖条
+      { tagName: 'rect', selector: 'stripe' },
+      // 图标
+      { tagName: 'text', selector: 'icon' },
+      // 名称
       { tagName: 'text', selector: 'label' },
-      // 共享标记图标（链接图标）
+      // 类型副标题
+      { tagName: 'text', selector: 'subtitle' },
+      // 共享标记
       {
         tagName: 'g',
         selector: 'sharedBadge',
@@ -1048,37 +1081,82 @@ const createNode = (category: string, comp: any, x: number, y: number) => {
       }
     ],
     attrs: {
+      shadow: {
+        width: nodeWidth,
+        height: nodeHeight,
+        rx: 10,
+        ry: 10,
+        fill: 'rgba(0, 0, 0, 0.04)',
+        stroke: 'none',
+        refX: 1,
+        refY: 2
+      },
       body: {
+        width: nodeWidth,
+        height: nodeHeight,
         fill: themeColors.nodeFill,
-        stroke: colors[category],
-        strokeWidth: 2,
-        rx: 6,
-        ry: 6
+        stroke: 'rgba(0, 0, 0, 0.08)',
+        strokeWidth: 1,
+        rx: 10,
+        ry: 10,
+        filter: 'none'
+      },
+      stripe: {
+        width: 4,
+        height: nodeHeight - 16,
+        x: 8,
+        y: 8,
+        rx: 2,
+        ry: 2,
+        fill: colors[category]
+      },
+      icon: {
+        text: categoryIcons[category],
+        fontSize: 16,
+        x: 22,
+        y: nodeHeight / 2 - 4,
+        textAnchor: 'start',
+        textVerticalAnchor: 'middle',
+        fill: colors[category]
       },
       label: {
         text: comp.label,
         fill: themeColors.nodeLabel,
         fontSize: 13,
-        refX: '50%',
-        refY: '50%',
-        textAnchor: 'middle',
+        fontWeight: '600',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        x: 42,
+        y: nodeHeight / 2 - 6,
+        textAnchor: 'start',
+        textVerticalAnchor: 'middle'
+      },
+      subtitle: {
+        text: categoryLabels[category] + ' · ' + comp.type,
+        fill: themeColors.nodeLabel,
+        fontSize: 10,
+        fontWeight: '400',
+        opacity: 0.5,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        x: 42,
+        y: nodeHeight / 2 + 10,
+        textAnchor: 'start',
         textVerticalAnchor: 'middle'
       },
       // 共享标记背景圆
       sharedBadgeBg: {
-        r: 10,
-        fill: isShared ? '#ff9800' : 'transparent',
+        r: 9,
+        fill: isShared ? '#f59e0b' : 'transparent',
         refX: '100%',
         refY: 0,
         refX2: -14,
         refY2: 14,
         cursor: 'pointer'
       },
-      // 共享标记图标（使用 🔗 或数字）
+      // 共享标记数字
       sharedBadgeIcon: {
         text: isShared ? (refCount > 9 ? '9+' : String(refCount)) : '',
         fill: '#fff',
-        fontSize: 10,
+        fontSize: 9,
         fontWeight: 'bold',
         refX: '100%',
         refY: 0,
@@ -1094,46 +1172,40 @@ const createNode = (category: string, comp: any, x: number, y: number) => {
         in: {
           position: 'left',
           attrs: {
-            circle: { 
-              r: 8,
-              magnet: true, 
-              stroke: '#5F95FF', 
-              strokeWidth: 2, 
+            circle: {
+              r: 5,
+              magnet: true,
+              stroke: colors[category],
+              strokeWidth: 2,
               fill: themeColors.portFill,
-              style: {
-                cursor: 'crosshair'
-              }
+              style: { cursor: 'crosshair' }
             }
           }
         },
         out: {
           position: {
             name: 'right',
-            args: {
-              // 多个输出端口时垂直分布
-              strict: true
-            }
+            args: { strict: true }
           },
           attrs: {
-            circle: { 
-              r: 8,
-              magnet: true, 
-              stroke: '#5F95FF', 
-              strokeWidth: 2, 
+            circle: {
+              r: 5,
+              magnet: true,
+              stroke: colors[category],
+              strokeWidth: 2,
               fill: themeColors.portFill,
-              style: {
-                cursor: 'crosshair'
-              }
+              style: { cursor: 'crosshair' }
             },
             text: {
-              fontSize: 10,
-              fill: 'var(--macos-text-secondary)'
+              fontSize: 9,
+              fill: themeColors.nodeLabel,
+              opacity: 0.6
             }
           },
           label: {
             position: {
               name: 'right',
-              args: { x: 12, y: 0 }
+              args: { x: 10, y: 0 }
             }
           }
         }
@@ -1146,9 +1218,9 @@ const createNode = (category: string, comp: any, x: number, y: number) => {
       name: nodeName,
       config: initialConfig,
       isRoute: isRouteComponent,
-      componentId: comp.id || null,  // 保存组件库 ID，用于同步最新配置
-      isShared: isShared,  // 是否被其他配置引用
-      referenceCount: refCount  // 被引用次数
+      componentId: comp.id || null,
+      isShared: isShared,
+      referenceCount: refCount
     }
   })
 
@@ -1465,7 +1537,7 @@ const loadConfig = async () => {
           nodeData.referenceCount = refCount
           
           // 更新共享标记的显示
-          node.attr('sharedBadgeBg/fill', isShared ? '#ff9800' : 'transparent')
+          node.attr('sharedBadgeBg/fill', isShared ? '#f59e0b' : 'transparent')
           node.attr('sharedBadgeIcon/text', isShared ? (refCount > 9 ? '9+' : String(refCount)) : '')
           
           // 同步组件库的最新名称
@@ -1723,14 +1795,31 @@ const updateNodeStatus = (nodeName: string, status: ComponentStatus) => {
   
   console.log(`更新节点状态: ${nodeName} -> ${status}`)
   
-  // 更新节点边框颜色
-  const colors: Record<ComponentStatus, string> = {
-    normal: '#67c23a',
-    warning: '#e6a23c',
-    error: '#f56c6c',
-    stopped: '#909399'
+  // 更新节点状态视觉：通过左侧竖条颜色 + body 边框指示状态
+  const categoryColors: Record<string, string> = {
+    source: '#22c55e',
+    transform: '#3b82f6',
+    sink: '#8b5cf6'
   }
-  node.attr('body/stroke', colors[status])
+  const statusColors: Record<ComponentStatus, string> = {
+    normal: '', // normal 使用原始类别颜色
+    warning: '#f59e0b',
+    error: '#ef4444',
+    stopped: '#9ca3af'
+  }
+  
+  const nodeCategory = node.getData()?.category || ''
+  if (status === 'normal') {
+    // 恢复原始类别颜色
+    node.attr('stripe/fill', categoryColors[nodeCategory] || '#22c55e')
+    node.attr('body/stroke', 'rgba(0, 0, 0, 0.08)')
+    node.attr('body/strokeWidth', 1)
+  } else {
+    // 异常状态：左侧竖条变色 + body 加粗边框
+    node.attr('stripe/fill', statusColors[status])
+    node.attr('body/stroke', statusColors[status])
+    node.attr('body/strokeWidth', 2)
+  }
   
   // 更新相关边的状态
   const outgoingEdges = graph.getOutgoingEdges(node)
@@ -1869,11 +1958,20 @@ const fetchComponentStatus = async () => {
     // 检查 Vector 是否运行
     const vectorRunning = responseData?.vectorRunning === true
     
-    if (vectorRunning && responseData?.componentStatus && Object.keys(responseData.componentStatus).length > 0) {
-      // Vector 运行中且有组件状态数据
+    // 获取画布上所有节点名称，用于判断后端返回的组件是否与画布匹配
+    const canvasNodeNames = new Set(
+      nodes.value.map(n => n.getData()?.name).filter(Boolean)
+    )
+
+    // 判断后端返回的组件状态中是否有任何一个能匹配到画布节点
+    const hasMatchingComponents = responseData?.componentStatus
+      && Object.keys(responseData.componentStatus).some(name => canvasNodeNames.has(name))
+
+    if (vectorRunning && hasMatchingComponents) {
+      // Vector 运行中且有匹配画布节点的组件状态数据
       updateAllComponentStatus(responseData.componentStatus)
     } else if (vectorRunning) {
-      // Vector 运行中但没有组件状态数据，显示正常状态
+      // Vector 运行中但没有匹配的组件状态数据，标记所有节点为正常（在线）
       const normalStatus: Record<string, ComponentStatus> = {}
       nodes.value.forEach(node => {
         const name = node.getData()?.name
@@ -1930,16 +2028,18 @@ const updateGraphTheme = () => {
   graph.drawBackground({ color: themeColors.canvasBg })
   graph.drawGrid({ type: 'dot', args: { color: themeColors.gridColor } })
   
-  // 更新所有节点的颜色
+  // 更新所有节点的颜色（Datadog 风格节点）
   graph.getNodes().forEach(node => {
     node.attr('body/fill', themeColors.nodeFill)
+    node.attr('shadow/fill', isDarkMode() ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.04)')
+    node.attr('body/stroke', isDarkMode() ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)')
     node.attr('label/fill', themeColors.nodeLabel)
+    node.attr('subtitle/fill', themeColors.nodeLabel)
     
     // 更新端口颜色和文字颜色
     const ports = (node as any).getPorts()
     ports.forEach((port: any) => {
       node.setPortProp(port.id, 'attrs/circle/fill', themeColors.portFill)
-      // 更新端口文字颜色（route 组件的输出端口有文字标签）
       if (port.group === 'out') {
         node.setPortProp(port.id, 'attrs/text/fill', themeColors.nodeLabel)
       }

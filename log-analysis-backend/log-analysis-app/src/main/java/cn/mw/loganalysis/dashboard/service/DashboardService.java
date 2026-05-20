@@ -89,20 +89,80 @@ public class DashboardService {
     private SystemMetricsDTO.DiskMetrics getDiskMetrics() {
         FileSystem fileSystem = systemInfo.getOperatingSystem().getFileSystem();
         List<OSFileStore> fileStores = fileSystem.getFileStores();
-        
+
+        // 过滤虚拟文件系统，只保留真实本地磁盘分区
+        // macOS APFS 容器中多个卷（Data、System等）共享同一块物理磁盘空间，
+        // 它们的 totalSpace 完全相同，需要按 totalSpace 去重，只计算一次
+        Set<Long> seenTotalSizes = new HashSet<>();
         long totalSpace = 0, usableSpace = 0;
+
         for (OSFileStore store : fileStores) {
-            totalSpace += store.getTotalSpace();
+            String type = store.getType();
+            String mount = store.getMount();
+
+            // 跳过虚拟文件系统和非本地文件系统
+            if (isVirtualFileSystem(type, mount)) {
+                continue;
+            }
+
+            long storeTotalSpace = store.getTotalSpace();
+            if (storeTotalSpace <= 0) {
+                continue;
+            }
+
+            // APFS 容器的多个卷共享相同的 totalSpace，只统计一次
+            if (!seenTotalSizes.add(storeTotalSpace)) {
+                continue;
+            }
+
+            totalSpace += storeTotalSpace;
             usableSpace += store.getUsableSpace();
         }
-        
+
         long usedSpace = totalSpace - usableSpace;
         double usagePercent = totalSpace > 0 ? (double) usedSpace / totalSpace * 100 : 0;
-        
+
         return SystemMetricsDTO.DiskMetrics.builder()
                 .total(totalSpace).used(usedSpace).available(usableSpace)
                 .usagePercent(Math.round(usagePercent * 100.0) / 100.0)
                 .build();
+    }
+
+    /**
+     * 判断是否为虚拟/伪文件系统或非主磁盘挂载
+     * 只保留根分区(/)和数据卷(/System/Volumes/Data)作为主磁盘
+     */
+    private boolean isVirtualFileSystem(String fsType, String mountPoint) {
+        if (org.apache.commons.lang3.StringUtils.isBlank(fsType)
+                || org.apache.commons.lang3.StringUtils.isBlank(mountPoint)) {
+            return true;
+        }
+
+        // 常见虚拟文件系统类型
+        String typeLower = fsType.toLowerCase();
+        if (typeLower.equals("devfs") || typeLower.equals("tmpfs") || typeLower.equals("proc")
+                || typeLower.equals("sysfs") || typeLower.equals("devtmpfs")
+                || typeLower.equals("overlay") || typeLower.equals("squashfs")
+                || typeLower.equals("autofs") || typeLower.equals("nullfs")
+                || typeLower.equals("fusefs") || typeLower.equals("osxfuse")) {
+            return true;
+        }
+
+        // 只保留根分区和 /System/Volumes/Data，其他全部跳过
+        // 这确保 macOS APFS 只统计一次主磁盘
+        if (mountPoint.equals("/") || mountPoint.equals("/System/Volumes/Data")) {
+            return false;
+        }
+
+        // Linux: 只保留挂载在 / 或 /home、/data 等常见数据目录的分区
+        if (mountPoint.equals("/home") || mountPoint.equals("/data")
+                || mountPoint.equals("/var") || mountPoint.equals("/opt")) {
+            return false;
+        }
+
+        // 其他所有挂载点视为非主磁盘（包括 /Volumes/*, /System/Volumes/VM,
+        // /System/Volumes/Preboot, OrbStack, AppTranslocation, DMG 等）
+        return true;
     }
 
     private SystemMetricsDTO.StorageMetrics getClickHouseStorageMetrics() {
@@ -430,6 +490,36 @@ public class DashboardService {
     @Async
     public CompletableFuture<LogTrendDTO> getLogTrendAsync(String startTime, String endTime, String granularity) {
         return CompletableFuture.completedFuture(getLogTrend(startTime, endTime, granularity));
+    }
+
+    @Async
+    public CompletableFuture<TopEntityDTO> getTopEntitiesAsync(String type, String startTime, String endTime) {
+        return CompletableFuture.completedFuture(getTopEntities(type, startTime, endTime));
+    }
+
+    @Async
+    public CompletableFuture<RecurringExceptionDTO> getRecurringExceptionsAsync(String startTime, String endTime) {
+        return CompletableFuture.completedFuture(getRecurringExceptions(startTime, endTime));
+    }
+
+    @Async
+    public CompletableFuture<AlertLogDTO> getLatestAlertLogsAsync(String startTime, String endTime, Integer pageNum, Integer pageSize) {
+        return CompletableFuture.completedFuture(getLatestAlertLogs(startTime, endTime, pageNum, pageSize));
+    }
+
+    @Async
+    public CompletableFuture<LogPipelineDTO> getLogPipelineAsync(String startTime, String endTime) {
+        return CompletableFuture.completedFuture(getLogPipeline(startTime, endTime));
+    }
+
+    @Async
+    public CompletableFuture<CoreOverviewDTO> getCoreOverviewAsync() {
+        return CompletableFuture.completedFuture(getCoreOverview());
+    }
+
+    @Async
+    public CompletableFuture<DatabaseStatusDTO> getDatabaseStatusAsync() {
+        return CompletableFuture.completedFuture(getDatabaseStatus());
     }
 
     // ==================== 工具方法 ====================

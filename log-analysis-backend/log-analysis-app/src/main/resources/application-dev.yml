@@ -115,6 +115,10 @@ jwt:
   expiration: 900000  # 15分钟 (毫秒)
   refresh-expiration: 604800000  # 7天 (毫秒)
 
+# 会话活跃超时配置
+session:
+  activity-timeout-minutes: ${SESSION_ACTIVITY_TIMEOUT_MINUTES:30}  # 无操作超时时间(分钟)，默认30分钟
+
 # 日志提取配置
 extraction:
   batch-size: 1000  # 批量读取日志数量
