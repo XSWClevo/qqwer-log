@@ -1,11 +1,14 @@
 package cn.mw.loganalysis.vector.service;
 
+import cn.mw.loganalysis.vector.entity.ConfigComponent;
+import cn.mw.loganalysis.vector.mapper.ConfigComponentMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.yaml.snakeyaml.DumperOptions;
@@ -15,6 +18,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 将可视化画布 graphData 转换为 Vector YAML。
@@ -25,6 +30,7 @@ import java.util.Map;
 public class VisualConfigYamlService {
 
     private final ObjectMapper objectMapper;
+    private final ConfigComponentMapper configComponentMapper;
 
     public String generateContentFromGraphData(String graphData) {
         if (StringUtils.isBlank(graphData)) {
@@ -60,7 +66,10 @@ public class VisualConfigYamlService {
 
                 if (StringUtils.equals("source", nodeType)) {
                     String compType = StringUtils.removeEnd(data.path("componentType").asText(), "_source");
-                    getSection(config, "sources").put(nodeId, buildSectionConfig(compType, data.path("config"), null));
+                    getSection(config, "sources").put(
+                            nodeId,
+                            buildSectionConfig("sources", compType, data.path("componentId").asText(null), data.path("config"), null)
+                    );
                 } else if (StringUtils.equals("processors", nodeType)) {
                     JsonNode steps = data.path("steps");
                     if (!steps.isArray()) {
@@ -76,13 +85,16 @@ public class VisualConfigYamlService {
                                 : List.of(steps.get(i - 1).path("id").asText());
                         getSection(config, "transforms").put(
                                 stepId,
-                                buildSectionConfig(stepType, step.path("config"), inputs)
+                                buildSectionConfig("transforms", stepType, step.path("componentId").asText(null), step.path("config"), inputs)
                         );
                     }
                 } else if (StringUtils.equals("sink", nodeType)) {
                     String compType = StringUtils.removeEnd(data.path("componentType").asText(), "_sink");
                     List<String> inputs = getIncomingInputIds(nodeId, edges, nodeMap);
-                    getSection(config, "sinks").put(nodeId, buildSectionConfig(compType, data.path("config"), inputs));
+                    getSection(config, "sinks").put(
+                            nodeId,
+                            buildSectionConfig("sinks", compType, data.path("componentId").asText(null), data.path("config"), inputs)
+                    );
                 }
             }
 
@@ -104,11 +116,18 @@ public class VisualConfigYamlService {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> buildSectionConfig(String type, JsonNode configNode, List<String> inputs) {
+    private Map<String, Object> buildSectionConfig(String sectionName, String type, String componentId, JsonNode configNode, List<String> inputs) {
         Map<String, Object> section = new LinkedHashMap<>();
         section.put("type", type);
         if (CollectionUtils.isNotEmpty(inputs)) {
             section.put("inputs", inputs);
+        }
+
+        Map<String, Object> componentConfig = loadComponentConfig(componentId);
+        if (MapUtils.isNotEmpty(componentConfig)) {
+            componentConfig.remove("type");
+            componentConfig.remove("inputs");
+            section.putAll(normalizeComponentConfig(sectionName, type, componentConfig));
         }
 
         if (configNode != null && !configNode.isMissingNode() && !configNode.isNull()) {
@@ -116,11 +135,108 @@ public class VisualConfigYamlService {
             if (rawConfig != null) {
                 rawConfig.remove("type");
                 rawConfig.remove("inputs");
-                section.putAll(rawConfig);
+                section.putAll(normalizeComponentConfig(sectionName, type, rawConfig));
             }
         }
 
         return section;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> loadComponentConfig(String componentId) {
+        if (StringUtils.isBlank(componentId)) {
+            return new LinkedHashMap<>();
+        }
+
+        ConfigComponent component = configComponentMapper.selectById(componentId);
+        if (component == null || StringUtils.isBlank(component.getConfigYaml())) {
+            return new LinkedHashMap<>();
+        }
+
+        try {
+            Object parsed = new Yaml().load(component.getConfigYaml());
+            if (parsed instanceof Map<?, ?> map) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() != null) {
+                        result.put(String.valueOf(entry.getKey()), entry.getValue());
+                    }
+                }
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("解析组件 YAML 失败: componentId={}, error={}", componentId, e.getMessage());
+        }
+
+        return new LinkedHashMap<>();
+    }
+
+    private Map<String, Object> normalizeComponentConfig(String sectionName, String type, Map<String, Object> rawConfig) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+
+        for (Map.Entry<String, Object> entry : rawConfig.entrySet()) {
+            Object value = normalizeValue(entry.getValue());
+            if (value != null) {
+                normalized.put(entry.getKey(), value);
+            }
+        }
+
+        if (StringUtils.equals(sectionName, "sources") && StringUtils.equals(type, "file")) {
+            normalizeStringListField(normalized, "include");
+            normalizeStringListField(normalized, "exclude");
+        }
+        if (StringUtils.equals(sectionName, "sources") && StringUtils.equals(type, "kafka")) {
+            normalizeStringListField(normalized, "topics");
+        }
+        if (StringUtils.equals(sectionName, "sinks") && StringUtils.equals(type, "elasticsearch")) {
+            normalizeStringListField(normalized, "endpoints");
+        }
+
+        return normalized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object normalizeValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String stringValue) {
+            return StringUtils.isBlank(stringValue) ? null : stringValue;
+        }
+        if (value instanceof Map<?, ?> mapValue) {
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                Object normalizedValue = normalizeValue(entry.getValue());
+                if (entry.getKey() != null && normalizedValue != null) {
+                    normalized.put(String.valueOf(entry.getKey()), normalizedValue);
+                }
+            }
+            return normalized.isEmpty() ? null : normalized;
+        }
+        if (value instanceof List<?> listValue) {
+            List<Object> normalized = listValue.stream()
+                    .map(this::normalizeValue)
+                    .filter(item -> item != null)
+                    .collect(Collectors.toList());
+            return normalized.isEmpty() ? null : normalized;
+        }
+        return value;
+    }
+
+    private void normalizeStringListField(Map<String, Object> config, String fieldName) {
+        Object value = config.get(fieldName);
+        if (value instanceof String stringValue) {
+            String[] parts = StringUtils.split(stringValue, ',');
+            List<String> values = parts == null ? List.of() : Stream.of(parts)
+                    .map(StringUtils::trimToEmpty)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toList());
+            if (CollectionUtils.isEmpty(values)) {
+                config.remove(fieldName);
+            } else {
+                config.put(fieldName, values);
+            }
+        }
     }
 
     private List<String> getIncomingInputIds(String targetNodeId, JsonNode edges, Map<String, JsonNode> nodeMap) {

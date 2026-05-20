@@ -583,6 +583,13 @@ export interface PreviewVisualConfigResponse {
   content: string
 }
 
+const unwrapApiResult = <T>(response: T | { data?: T }): T => {
+  if (response && typeof response === 'object' && 'data' in response) {
+    return response.data as T
+  }
+  return response as T
+}
+
 export const visualConfigApi = {
   /**
    * 查询可视化配置列表
@@ -609,7 +616,9 @@ export const visualConfigApi = {
    * 根据 graphData 生成 YAML 预览
    */
   preview(graphData: string): Promise<PreviewVisualConfigResponse> {
-    return request.post('/api/vector/visual-configs/preview', { graphData })
+    return request
+      .post('/api/vector/visual-configs/preview', { graphData })
+      .then(res => unwrapApiResult<PreviewVisualConfigResponse>(res))
   },
 
   /**
@@ -639,7 +648,9 @@ export const visualConfigApi = {
    * 校验配置（使用 Vector 命令行校验）
    */
   validate(content: string): Promise<{ valid: boolean; error?: string }> {
-    return request.post('/api/vector/visual-configs/validate', { content })
+    return request
+      .post('/api/vector/visual-configs/validate', { content })
+      .then(res => unwrapApiResult<{ valid: boolean; error?: string }>(res))
   }
 }
 
