@@ -5,7 +5,6 @@ import cn.mw.loganalysis.vector.entity.VectorLog;
 import cn.mw.loganalysis.vector.service.VectorLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -18,10 +17,11 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Vector 日志控制器
+ * Vector 运行日志控制器
  */
 @Slf4j
 @RestController
@@ -31,154 +31,106 @@ public class VectorLogController {
 
     private final VectorLogService vectorLogService;
 
-    // 存储所有活跃的 SSE 连接
-    private final Map<String, SseEmitter> sseEmitters = new ConcurrentHashMap<>();
-
-    // 定时任务执行器
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private final Map<String, ScheduledFuture<?>> pollingTasks = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
 
     /**
-     * 查询日志列表（分页）
-     *
-     * @param machineId 机器ID（可选）
-     * @param logLevel  日志级别（可选）
-     * @param keyword   关键词（可选）
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @param pageNum   页码
-     * @param pageSize  每页大小
-     * @return 日志列表
+     * 分页查询日志（默认返回最新数据）
      */
     @GetMapping("/query")
     public Result<Map<String, Object>> queryLogs(
             @RequestParam(required = false) String machineId,
-            @RequestParam(required = false) String logLevel,
+            @RequestParam(required = false) String fileName,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
-            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
             @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "100") int pageSize) {
-
-        // 如果没有指定时间范围，默认查询最近1小时
-        if (startTime == null) {
-            startTime = LocalDateTime.now().minusHours(1);
-        }
-        if (endTime == null) {
-            endTime = LocalDateTime.now();
-        }
+            @RequestParam(defaultValue = "200") int pageSize) {
 
         Map<String, Object> result = vectorLogService.queryLogs(
-                machineId, logLevel, keyword, startTime, endTime, pageNum, pageSize
+                machineId, fileName, keyword, pageNum, pageSize
         );
-
         return Result.success(result);
     }
 
     /**
      * SSE 实时推送日志
-     * 客户端通过 EventSource 连接此接口，服务器会持续推送新日志
-     *
-     * @param machineId 机器ID（可选）
-     * @param logLevel  日志级别（可选）
-     * @return SSE Emitter
      */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamLogs(
             @RequestParam(required = false) String machineId,
-            @RequestParam(required = false) String logLevel) {
+            @RequestParam(required = false) String fileName) {
 
-        // 创建 SSE Emitter，超时时间30分钟
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
-
         String emitterId = UUID.randomUUID().toString();
-        sseEmitters.put(emitterId, emitter);
 
-        log.info("新的 SSE 连接建立: {}, machineId={}, logLevel={}", emitterId, machineId, logLevel);
+        log.info("SSE 连接建立: {}, machineId={}, fileName={}", emitterId, machineId, fileName);
 
-        // 连接完成或超时时移除
-        emitter.onCompletion(() -> {
-            sseEmitters.remove(emitterId);
-            log.info("SSE 连接完成: {}", emitterId);
-        });
-
-        emitter.onTimeout(() -> {
-            sseEmitters.remove(emitterId);
-            log.info("SSE 连接超时: {}", emitterId);
-        });
-
-        emitter.onError((ex) -> {
-            sseEmitters.remove(emitterId);
-            log.error("SSE 连接错误: {}", emitterId, ex);
-        });
-
-        // 发送初始连接成功消息
-        try {
-            emitter.send(SseEmitter.event()
-                    .name("connected")
-                    .data("连接成功"));
-        } catch (IOException e) {
-            log.error("发送初始消息失败", e);
-        }
-
-        // 启动定时任务，每2秒查询一次新日志
         LocalDateTime[] lastTimestamp = {LocalDateTime.now()};
 
-        scheduler.scheduleAtFixedRate(() -> {
+        ScheduledFuture<?> pollingTask = scheduler.scheduleAtFixedRate(() -> {
             try {
                 List<VectorLog> newLogs = vectorLogService.getLogsAfter(
-                        lastTimestamp[0], machineId, logLevel
+                        lastTimestamp[0], machineId, fileName
                 );
-
                 if (!newLogs.isEmpty()) {
-                    // 更新最后时间戳
                     lastTimestamp[0] = newLogs.get(newLogs.size() - 1).getTimestamp();
-
-                    // 发送新日志
-                    for (VectorLog log : newLogs) {
-                        emitter.send(SseEmitter.event()
-                                .name("log")
-                                .data(log));
+                    for (VectorLog logEntry : newLogs) {
+                        emitter.send(SseEmitter.event().name("log").data(logEntry));
                     }
                 }
             } catch (IOException e) {
-                log.error("发送日志失败，关闭连接: {}", emitterId, e);
-                sseEmitters.remove(emitterId);
+                log.info("SSE 连接已断开: {}", emitterId);
+                cleanup(emitterId);
                 emitter.completeWithError(e);
             } catch (Exception e) {
-                log.error("查询新日志失败: {}", emitterId, e);
+                log.error("查询日志失败: {}", emitterId, e);
             }
         }, 0, 2, TimeUnit.SECONDS);
 
+        pollingTasks.put(emitterId, pollingTask);
+
+        Runnable cleanupAction = () -> cleanup(emitterId);
+        emitter.onCompletion(cleanupAction);
+        emitter.onTimeout(cleanupAction);
+        emitter.onError(ex -> cleanupAction.run());
+
+        try {
+            emitter.send(SseEmitter.event().name("connected").data(emitterId));
+        } catch (IOException e) {
+            cleanupAction.run();
+        }
         return emitter;
     }
 
     /**
-     * 获取所有主机名列表
+     * 主动关闭 SSE 连接（前端页面离开时调用，支持 POST 以兼容 sendBeacon）
      */
-    @GetMapping("/hostnames")
-    public Result<List<String>> getHostnames() {
-        List<String> hostnames = vectorLogService.getDistinctHostnames();
-        return Result.success(hostnames);
+    @RequestMapping(value = "/stream/{emitterId}/close", method = {RequestMethod.POST, RequestMethod.DELETE})
+    public Result<Void> closeStream(@PathVariable String emitterId) {
+        cleanup(emitterId);
+        log.info("SSE 连接主动关闭: {}", emitterId);
+        return Result.success(null);
+    }
+
+    private void cleanup(String emitterId) {
+        ScheduledFuture<?> task = pollingTasks.remove(emitterId);
+        if (task != null) {
+            task.cancel(false);
+        }
     }
 
     /**
-     * 获取所有IP地址列表
+     * 获取所有日志文件名列表
      */
-    @GetMapping("/ip-addresses")
-    public Result<List<String>> getIpAddresses() {
-        List<String> ipAddresses = vectorLogService.getDistinctIpAddresses();
-        return Result.success(ipAddresses);
+    @GetMapping("/files")
+    public Result<List<String>> getFileNames() {
+        return Result.success(vectorLogService.getDistinctFileNames());
     }
 
     /**
-     * 获取活跃的 SSE 连接数
+     * 获取所有机器ID列表
      */
-    @GetMapping("/connections")
-    public Result<Map<String, Object>> getConnections() {
-        Map<String, Object> result = Map.of(
-                "activeConnections", sseEmitters.size(),
-                "connectionIds", sseEmitters.keySet()
-        );
-        return Result.success(result);
+    @GetMapping("/machines")
+    public Result<List<String>> getMachineIds() {
+        return Result.success(vectorLogService.getDistinctMachineIds());
     }
 }

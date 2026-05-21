@@ -33,21 +33,14 @@ spring:
         # ClickHouse数据源（日志数据库）
         clickhouse:
           driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
-          url: jdbc:clickhouse://${CLICKHOUSE_HOST:clickhouse.qqwer.orb.local}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
+          url: jdbc:clickhouse://${CLICKHOUSE_HOST:localhost}:${CLICKHOUSE_PORT:8123}/${CLICKHOUSE_DB:default}
           username: ${CLICKHOUSE_USER:default}
           password: ${CLICKHOUSE_PASSWORD:12345678}
           hikari:
             maximum-pool-size: 10
             minimum-idle: 2
-            connection-timeout: 10000
-
-  liquibase:
-    enabled: ${LIQUIBASE_ENABLED:true}
-    change-log: classpath:db/changelog/db.changelog-master.yaml
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${DB_HOST:postgres.qqwer.orb.local}:${DB_PORT:5432}/${DB_NAME:postgres}
-    user: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:postgres}
+            connection-timeout: 30000
+            connection-test-query: SELECT 1
 
   # Redis配置
   data:

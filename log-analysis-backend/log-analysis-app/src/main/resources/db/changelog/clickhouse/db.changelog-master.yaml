@@ -1,0 +1,3 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/clickhouse/changes/20260521-vector-logs.sql

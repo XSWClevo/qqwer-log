@@ -23,44 +23,39 @@ public class VectorLogService {
     private final VectorLogMapper vectorLogMapper;
 
     /**
-     * 查询日志列表（分页）
+     * 分页查询日志（默认返回最新数据）
      */
-    public Map<String, Object> queryLogs(String machineId, String logLevel, String keyword,
-                                         LocalDateTime startTime, LocalDateTime endTime,
+    public Map<String, Object> queryLogs(String machineId, String fileName, String keyword,
                                          int pageNum, int pageSize) {
         Page<VectorLog> page = new Page<>(pageNum, pageSize);
-
-        // 调用 Mapper 的 default 方法进行分页查询
-        page = vectorLogMapper.selectLogsPage(page, machineId, logLevel, keyword, startTime, endTime);
+        page = vectorLogMapper.selectLogsPage(page, machineId, fileName, keyword);
 
         Map<String, Object> result = new HashMap<>();
         result.put("logs", page.getRecords());
         result.put("total", page.getTotal());
         result.put("pageNum", page.getCurrent());
         result.put("pageSize", page.getSize());
-        result.put("totalPages", page.getPages());
-
         return result;
     }
 
     /**
-     * 获取最新的日志（用于实时推送）
+     * 获取指定时间之后的日志（SSE 实时推送用）
      */
-    public List<VectorLog> getLogsAfter(LocalDateTime afterTimestamp, String machineId, String logLevel) {
-        return vectorLogMapper.selectLogsAfter(afterTimestamp, machineId, logLevel);
+    public List<VectorLog> getLogsAfter(LocalDateTime afterTimestamp, String machineId, String fileName) {
+        return vectorLogMapper.selectLogsAfter(afterTimestamp, machineId, fileName);
     }
 
     /**
-     * 获取所有主机名列表
+     * 获取所有日志文件名（去重）
      */
-    public List<String> getDistinctHostnames() {
-        return vectorLogMapper.selectDistinctHostnames();
+    public List<String> getDistinctFileNames() {
+        return vectorLogMapper.selectDistinctFileNames();
     }
 
     /**
-     * 获取所有IP地址列表
+     * 获取所有机器ID（去重）
      */
-    public List<String> getDistinctIpAddresses() {
-        return vectorLogMapper.selectDistinctIpAddresses();
+    public List<String> getDistinctMachineIds() {
+        return vectorLogMapper.selectDistinctMachineIds();
     }
 }

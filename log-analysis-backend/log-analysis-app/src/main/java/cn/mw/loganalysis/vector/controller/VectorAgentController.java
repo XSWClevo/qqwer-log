@@ -386,6 +386,15 @@ public class VectorAgentController {
     }
 
     /**
+     * 重新下发指定机器的全量配置（含内部 pipeline）
+     */
+    @PostMapping("/redeploy/{machineId}")
+    public Result<VectorDeployment> redeployConfig(@PathVariable String machineId) {
+        VectorDeployment deployment = deploymentService.redeployAllConfig(machineId, "system");
+        return Result.success(deployment);
+    }
+
+    /**
      * 调试接口：查看机器的合并配置
      * 用于排查配置合并问题
      */

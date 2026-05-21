@@ -583,7 +583,7 @@ func (m *Manager) InitDefaultConfig() error {
 	log.Println("初始化默认 Vector 配置...")
 
 	defaultConfig := fmt.Sprintf(`# Vector 配置文件
-# 由 Vector Agent 自动管理
+# 由 Vector Agent 自动管理，实际 pipeline 由服务器下发
 
 data_dir: "%s"
 
@@ -591,19 +591,6 @@ data_dir: "%s"
 api:
   enabled: true
   address: "127.0.0.1:8686"
-
-# 默认配置：内部指标输出到控制台
-sources:
-  internal_metrics:
-    type: internal_metrics
-
-sinks:
-  console:
-    type: console
-    inputs:
-      - internal_metrics
-    encoding:
-      codec: json
 `, config.DataDir)
 
 	if err := os.MkdirAll(config.ConfigDir, 0755); err != nil {

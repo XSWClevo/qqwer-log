@@ -5,7 +5,9 @@ import cn.mw.loganalysis.common.enums.MachineStatus;
 import cn.mw.loganalysis.common.exception.ResourceNotFoundException;
 import cn.mw.loganalysis.vector.dto.AddMachineRequest;
 import cn.mw.loganalysis.vector.dto.AgentRegisterRequest;
+import cn.mw.loganalysis.vector.entity.VectorDeployment;
 import cn.mw.loganalysis.vector.entity.VectorMachine;
+import cn.mw.loganalysis.vector.mapper.VectorDeploymentMapper;
 import cn.mw.loganalysis.vector.mapper.VectorMachineMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -27,6 +29,7 @@ import java.util.List;
 public class VectorMachineService extends ServiceImpl<VectorMachineMapper, VectorMachine> {
 
     private final VectorMachineMapper vectorMachineMapper;
+    private final VectorDeploymentMapper vectorDeploymentMapper;
 
     /**
      * 分页查询机器列表
@@ -112,7 +115,31 @@ public class VectorMachineService extends ServiceImpl<VectorMachineMapper, Vecto
         
         vectorMachineMapper.insert(machine);
         log.info("Agent 首次注册: {}", machine.getName());
+
+        // 自动创建初始部署任务，确保内部日志 pipeline 能立即下发
+        createInitialDeployment(machine);
+
         return machine;
+    }
+
+    /**
+     * 为新注册的机器创建初始部署任务（内部日志采集 pipeline）
+     */
+    private void createInitialDeployment(VectorMachine machine) {
+        try {
+            VectorDeployment deployment = new VectorDeployment();
+            deployment.setMachineId(machine.getId());
+            deployment.setConfigId("_internal_logs");
+            deployment.setConfigContent("");
+            deployment.setConfigVersion("init-" + System.currentTimeMillis());
+            deployment.setDeployMode("restart");
+            deployment.setStatus("pending");
+            deployment.setCreatedBy("system");
+            vectorDeploymentMapper.insert(deployment);
+            log.info("为机器 {} 创建初始部署任务，内部日志 pipeline 将在下次拉取配置时下发", machine.getName());
+        } catch (Exception e) {
+            log.warn("创建初始部署任务失败，不影响注册: {}", e.getMessage());
+        }
     }
 
     /**

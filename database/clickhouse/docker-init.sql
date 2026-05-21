@@ -66,36 +66,26 @@ FROM syslog
 GROUP BY day, severity, hostname;
 
 -- ============================================================================
--- Vector 运行日志
+-- Vector 运行日志（兼容旧表：存在则删除重建）
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS vector_logs (
-    id String DEFAULT generateUUIDv4(),
+DROP TABLE IF EXISTS vector_logs;
+
+CREATE TABLE vector_logs (
     machine_id String,
-    hostname String,
-    ip_address String,
-    log_level LowCardinality(String),
+    file_name String,
     message String,
-    timestamp DateTime64(3),
-    raw_log String,
-    metadata String DEFAULT '',
-    created_at DateTime DEFAULT now()
+    timestamp DateTime DEFAULT now()
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
-ORDER BY (timestamp, machine_id, log_level)
-TTL toDateTime(timestamp) + toIntervalDay(180)
+ORDER BY (timestamp, machine_id, file_name)
+TTL timestamp + toIntervalDay(30)
 SETTINGS index_granularity = 8192;
 
 ALTER TABLE vector_logs
-    ADD INDEX IF NOT EXISTS idx_vector_logs_timestamp timestamp TYPE minmax GRANULARITY 4;
+    ADD INDEX IF NOT EXISTS idx_vector_logs_machine_id machine_id TYPE bloom_filter GRANULARITY 4;
 ALTER TABLE vector_logs
-    ADD INDEX IF NOT EXISTS idx_vector_logs_log_level log_level TYPE set(10) GRANULARITY 4;
-ALTER TABLE vector_logs
-    ADD INDEX IF NOT EXISTS idx_vector_logs_hostname hostname TYPE bloom_filter GRANULARITY 4;
-ALTER TABLE vector_logs
-    ADD INDEX IF NOT EXISTS idx_vector_logs_ip_address ip_address TYPE bloom_filter GRANULARITY 4;
-ALTER TABLE vector_logs
-    ADD INDEX IF NOT EXISTS idx_vector_logs_message message TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 4;
+    ADD INDEX IF NOT EXISTS idx_vector_logs_file_name file_name TYPE set(20) GRANULARITY 4;
 
 -- ============================================================================
 -- 机器指标

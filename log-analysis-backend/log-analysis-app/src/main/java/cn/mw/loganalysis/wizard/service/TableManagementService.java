@@ -10,8 +10,11 @@ import cn.mw.loganalysis.wizard.dto.CreateTableRequest;
 import cn.mw.loganalysis.wizard.dto.CreateTableResponse;
 import cn.mw.loganalysis.wizard.mapper.ClickHouseTableMapper;
 import com.clickhouse.jdbc.ClickHouseDataSource;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Service;
@@ -19,7 +22,9 @@ import org.springframework.stereotype.Service;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -36,6 +41,7 @@ public class TableManagementService {
 
     private final DatasourceMapper datasourceMapper;
     private final ConfigComponentService componentService;
+    private final ObjectMapper objectMapper;
 
     /**
      * 创建表并自动创建对应的 Vector 组件
@@ -258,10 +264,20 @@ public class TableManagementService {
 
         request.setConfigYaml(yaml.toString());
 
-        // 保存可视化数据
-        Map<String, Object> visualData = new HashMap<>();
-        visualData.put("parseMethod", parseMethod);
-        visualData.put("vrlScript", vrlScript);
+        // 保存可视化数据（字段名与前端 visualConfig 完全一致）
+        Map<String, Object> visualData = new LinkedHashMap<>();
+        visualData.put("parse_method", StringUtils.defaultString(parseMethod, "custom"));
+        visualData.put("regex_pattern", "");
+        visualData.put("grok_pattern", "");
+        visualData.put("vrl_source", StringUtils.defaultString(vrlScript, ""));
+        visualData.put("generate_uuid", false);
+        visualData.put("keep_raw", false);
+        visualData.put("extract_source_ip", false);
+        visualData.put("convert_procid", false);
+        visualData.put("add_fields", Collections.emptyList());
+        visualData.put("remove_fields", Collections.emptyList());
+        visualData.put("log_sample", "");
+        visualData.put("parsed_fields", Collections.emptyList());
         request.setVisualData(toJson(visualData));
 
         return componentService.create(request, "wizard").getId();
@@ -286,64 +302,60 @@ public class TableManagementService {
         request.setDisplayName(tableName);
 
         // 生成 YAML 配置
+        String endpoint = "http://" + datasource.getHost() + ":" + datasource.getPort();
+        String username = ObjectUtils.defaultIfNull(datasource.getUsername(), "default");
+        String password = ObjectUtils.defaultIfNull(datasource.getPassword(), "");
+        String database = StringUtils.defaultIfBlank(datasource.getDatabaseName(), "default");
+
         StringBuilder yaml = new StringBuilder();
         yaml.append("type: clickhouse\n");
-//        yaml.append("inputs:\n");
-//        if (StringUtils.hasText(remapComponentId)) {
-//            yaml.append("  - ").append(remapComponentId).append("\n");
-//        } else {
-//            yaml.append("  - <source_id>\n");
-//        }
-        yaml.append("endpoint: http://").append(datasource.getHost()).append(":").append(datasource.getPort()).append("\n");
-        yaml.append("database: ").append(datasource.getDatabaseName()).append("\n");
+        yaml.append("endpoint: ").append(endpoint).append("\n");
+        yaml.append("database: ").append(database).append("\n");
         yaml.append("table: ").append(tableName).append("\n");
+        yaml.append("skip_unknown_fields: true\n");
+        yaml.append("encoding:\n");
+        yaml.append("  timestamp_format: unix\n");
         yaml.append("auth:\n");
         yaml.append("  strategy: basic\n");
-        yaml.append("  user: ").append(datasource.getUsername()).append("\n");
-        yaml.append("  password: ").append(datasource.getPassword()).append("\n");
+        yaml.append("  user: ").append(username).append("\n");
+        yaml.append("  password: \"").append(password).append("\"\n");
         yaml.append("batch:\n");
-        yaml.append("  max_events: 1000\n");
+        yaml.append("  max_bytes: 10000000\n");
         yaml.append("  timeout_secs: 10\n");
+        yaml.append("buffer:\n");
+        yaml.append("  type: memory\n");
+        yaml.append("  max_events: 500000\n");
 
         request.setConfigYaml(yaml.toString());
 
-        // 保存可视化数据
-        Map<String, Object> visualData = new HashMap<>();
-        visualData.put("datasourceId", datasourceId);
-        visualData.put("tableName", tableName);
-        visualData.put("host", datasource.getHost());
-        visualData.put("port", datasource.getPort());
-        visualData.put("database", datasource.getDatabaseName());
+        // 保存可视化数据（字段名与前端 visualConfig 保持一致）
+        Map<String, Object> visualData = new LinkedHashMap<>();
+        visualData.put("endpoint", endpoint);
+        visualData.put("database", database);
+        visualData.put("table", tableName);
+        visualData.put("clickhouse_user", username);
+        visualData.put("clickhouse_password", password);
+        visualData.put("clickhouse_format", "json_each_row");
+        visualData.put("clickhouse_compression", "gzip");
+        visualData.put("clickhouse_skip_unknown", true);
+        visualData.put("clickhouse_timestamp_format", "unix");
+        visualData.put("clickhouse_batch_max_bytes", "10000000");
+        visualData.put("clickhouse_batch_timeout", "10");
+        visualData.put("clickhouse_buffer_type", "memory");
+        visualData.put("clickhouse_buffer_max_events", "500000");
         request.setVisualData(toJson(visualData));
+        request.setDatasourceId(datasourceId);
 
         return componentService.create(request, "wizard").getId();
     }
 
     /**
-     * 将 Map 转换为 JSON 字符串
+     * 将 Map 转换为 JSON 字符串（支持数组、嵌套对象、布尔值等复杂类型）
      */
     private String toJson(Map<String, Object> map) {
         try {
-            StringBuilder json = new StringBuilder("{");
-            boolean first = true;
-            for (Map.Entry<String, Object> entry : map.entrySet()) {
-                if (!first) {
-                    json.append(",");
-                }
-                json.append("\"").append(entry.getKey()).append("\":");
-                Object value = entry.getValue();
-                if (value instanceof String) {
-                    json.append("\"").append(((String) value).replace("\"", "\\\"")).append("\"");
-                } else if (value instanceof Number || value instanceof Boolean) {
-                    json.append(value);
-                } else {
-                    json.append("\"").append(value).append("\"");
-                }
-                first = false;
-            }
-            json.append("}");
-            return json.toString();
-        } catch (Exception e) {
+            return objectMapper.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
             log.error("转换 JSON 失败", e);
             return "{}";
         }

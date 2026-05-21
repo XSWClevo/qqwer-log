@@ -95,18 +95,6 @@ EOF
 
 cat > ${CONFIG_DIR}/vector.yaml <<EOF
 data_dir: "${DATA_DIR}"
-
-sources:
-  internal_metrics:
-    type: internal_metrics
-    scrape_interval_secs: 60
-
-sinks:
-  blackhole:
-    type: blackhole
-    inputs:
-      - internal_metrics
-    print_interval_secs: 0
 EOF
 
 # 4. 创建软链接
@@ -118,8 +106,8 @@ ln -sf ${BIN_DIR}/vector-agent /usr/local/bin/vector-agent 2>/dev/null || true
 echo -e "${YELLOW}[5/6] 创建系统服务...${NC}"
 
 if [ "$OS" = "darwin" ]; then
-    # macOS: 使用 launchd
-    PLIST_DIR="$HOME/Library/LaunchAgents"
+    # macOS: 使用 launchd（系统级 LaunchDaemons，避免 sudo 导致 $HOME 指向 /var/root）
+    PLIST_DIR="/Library/LaunchDaemons"
     mkdir -p ${PLIST_DIR}
     
     # Vector Agent plist

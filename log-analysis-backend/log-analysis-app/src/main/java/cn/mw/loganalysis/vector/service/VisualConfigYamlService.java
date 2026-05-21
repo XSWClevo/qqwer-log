@@ -103,7 +103,8 @@ public class VisualConfigYamlService {
             options.setPrettyFlow(true);
             options.setIndent(2);
             options.setWidth(Integer.MAX_VALUE);
-            return new Yaml(options).dump(config);
+            // 使用自定义 Representer，确保 password 值始终带双引号
+            return new Yaml(new PasswordQuotingRepresenter(options)).dump(config);
         } catch (JsonProcessingException e) {
             log.warn("解析 graphData 失败: {}", e.getMessage());
             throw new RuntimeException("流程图数据解析失败");
@@ -190,6 +191,15 @@ public class VisualConfigYamlService {
         }
         if (StringUtils.equals(sectionName, "sinks") && StringUtils.equals(type, "elasticsearch")) {
             normalizeStringListField(normalized, "endpoints");
+        }
+
+        // ClickHouse sink 默认补充 skip_unknown_fields 和 encoding.timestamp_format
+        if (StringUtils.equals(sectionName, "sinks") && StringUtils.equals(type, "clickhouse")) {
+            normalized.putIfAbsent("skip_unknown_fields", true);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> encoding = (Map<String, Object>) normalized
+                    .computeIfAbsent("encoding", k -> new LinkedHashMap<String, Object>());
+            encoding.putIfAbsent("timestamp_format", "unix");
         }
 
         return normalized;

@@ -140,6 +140,7 @@ public class VectorDeploymentService {
      */
     public Map<String, String> generateConfigDirFromDeployment(VectorDeployment deployment) {
         return configDirGeneratorService.generateConfigDirFromContent(
+                deployment.getMachineId(),
                 deployment.getConfigId(), 
                 deployment.getConfigContent()
         );
@@ -304,5 +305,33 @@ public class VectorDeploymentService {
             log.info("创建重新部署任务: 机器={}, 版本={}, 剩余配置数={}",
                     machine.getName(), configVersion, remainingConfigs.size());
         }
+    }
+
+    /**
+     * 为指定机器重新下发全量配置（包括内部 pipeline）
+     * 不依赖可视化配置表，直接创建 pending 部署记录，由 Agent 拉取时通过 getMergedConfigDir 生成最新配置
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public VectorDeployment redeployAllConfig(String machineId, String userId) {
+        VectorMachine machine = machineMapper.selectById(machineId);
+        if (machine == null) {
+            throw new RuntimeException("机器不存在: " + machineId);
+        }
+
+        String configVersion = "redeploy-all-" + UUID.randomUUID().toString().substring(0, 8) + "-" + System.currentTimeMillis();
+
+        VectorDeployment deployment = new VectorDeployment();
+        deployment.setMachineId(machineId);
+        deployment.setConfigId("_system_redeploy");
+        deployment.setConfigContent("");
+        deployment.setConfigVersion(configVersion);
+        deployment.setDeployMode("restart");
+        deployment.setStatus("pending");
+        deployment.setCreatedBy(userId);
+
+        deploymentMapper.insert(deployment);
+        log.info("创建全量重新部署任务: 机器={}, 版本={}", machine.getName(), configVersion);
+
+        return deployment;
     }
 }

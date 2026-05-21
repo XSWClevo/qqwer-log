@@ -14,29 +14,14 @@ import java.time.LocalDateTime;
 public class VectorLog {
 
     /**
-     * 日志ID
-     */
-    private String id;
-
-    /**
      * 关联的机器ID
      */
     private String machineId;
 
     /**
-     * 主机名
+     * 日志文件名
      */
-    private String hostname;
-
-    /**
-     * IP地址
-     */
-    private String ipAddress;
-
-    /**
-     * 日志级别: error, warn, info, debug, trace
-     */
-    private String logLevel;
+    private String fileName;
 
     /**
      * 日志消息
@@ -47,19 +32,4 @@ public class VectorLog {
      * 时间戳
      */
     private LocalDateTime timestamp;
-
-    /**
-     * 原始日志内容
-     */
-    private String rawLog;
-
-    /**
-     * 额外的元数据（JSON格式）
-     */
-    private String metadata;
-
-    /**
-     * 创建时间
-     */
-    private LocalDateTime createdAt;
 }

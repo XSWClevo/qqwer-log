@@ -45,6 +45,11 @@
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.goodforgod</groupId>
+            <artifactId>liquibase-clickhouse</artifactId>
+            <version>0.9.1</version>
+        </dependency>
 
         <!-- Spring Boot Actuator -->
         <dependency>

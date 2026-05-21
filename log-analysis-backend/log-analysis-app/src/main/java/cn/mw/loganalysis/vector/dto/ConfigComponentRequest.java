@@ -36,4 +36,9 @@ public class ConfigComponentRequest {
      * 数据源显示名称
      */
     private String displayName;
+
+    /**
+     * 关联的数据源ID（仅 Sink 组件使用）
+     */
+    private String datasourceId;
 }

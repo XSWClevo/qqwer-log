@@ -5,6 +5,7 @@ import cn.mw.loganalysis.vector.mapper.MachineConfigMapper;
 import cn.mw.loganalysis.vector.mapper.VisualConfigMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -33,6 +34,21 @@ public class ConfigDirGeneratorService {
     private final VisualConfigMapper visualConfigMapper;
     private final MachineConfigMapper machineConfigMapper;
 
+    @Value("${CLICKHOUSE_HOST:localhost}")
+    private String clickhouseHost;
+
+    @Value("${CLICKHOUSE_PORT:8123}")
+    private String clickhousePort;
+
+    @Value("${CLICKHOUSE_DB:default}")
+    private String clickhouseDatabase;
+
+    @Value("${CLICKHOUSE_USER:default}")
+    private String clickhouseUser;
+
+    @Value("${CLICKHOUSE_PASSWORD:12345678}")
+    private String clickhousePassword;
+
     /**
      * 为指定机器生成完整的 config-dir 结构
      * 
@@ -52,15 +68,18 @@ public class ConfigDirGeneratorService {
                     config.getContent() != null ? config.getContent().length() : 0);
         }
         
+        // 2. 添加全局配置（包含 API 配置用于状态监控）— 始终生成
+        configFiles.put("global.yaml", generateGlobalConfig());
+        
+        // 3. 添加 Vector 自身运行日志采集 pipeline — 始终生成，传入 machineId 用于日志归属
+        configFiles.putAll(generateInternalLogsPipeline(machineId));
+        
         if (deployedConfigs.isEmpty()) {
-            log.warn("机器 {} 没有已部署的配置", machineId);
+            log.warn("机器 {} 没有已部署的用户配置，仅生成全局配置和内部日志 pipeline", machineId);
             return configFiles;
         }
         
-        // 2. 添加全局配置（包含 API 配置用于状态监控）
-        configFiles.put("global.yaml", generateGlobalConfig());
-        
-        // 3. 为每个配置生成独立的组件文件
+        // 4. 为每个配置生成独立的组件文件
         for (VisualConfig config : deployedConfigs) {
             log.info("处理配置: {}, content:\n{}", config.getName(), config.getContent());
             generatePipelineFiles(configFiles, config.getName(), config.getContent());
@@ -73,10 +92,11 @@ public class ConfigDirGeneratorService {
     /**
      * 为单个配置生成 pipeline 目录结构
      * 
-     * @param configId 配置ID
+     * @param machineId 机器ID
+     * @param configId  配置ID
      * @return Map<文件路径, 文件内容>
      */
-    public Map<String, String> generatePipelineConfig(String configId) {
+    public Map<String, String> generatePipelineConfig(String machineId, String configId) {
         Map<String, String> configFiles = new LinkedHashMap<>();
         
         VisualConfig config = visualConfigMapper.selectById(configId);
@@ -86,6 +106,9 @@ public class ConfigDirGeneratorService {
         
         // 添加全局配置（包含 API 配置）
         configFiles.put("global.yaml", generateGlobalConfig());
+
+        // 添加 Vector 自身运行日志采集 pipeline
+        configFiles.putAll(generateInternalLogsPipeline(machineId));
         
         // 生成 pipeline 文件
         String pipelineName = getPipelineName(config);
@@ -98,11 +121,12 @@ public class ConfigDirGeneratorService {
      * 直接从配置内容生成 config-dir 结构
      * 不依赖数据库状态，用于部署时生成配置
      * 
-     * @param configId 配置ID（用于获取 pipeline 名称）
+     * @param machineId   机器ID
+     * @param configId    配置ID（用于获取 pipeline 名称）
      * @param yamlContent 配置内容
      * @return Map<文件路径, 文件内容>
      */
-    public Map<String, String> generateConfigDirFromContent(String configId, String yamlContent) {
+    public Map<String, String> generateConfigDirFromContent(String machineId, String configId, String yamlContent) {
         Map<String, String> configFiles = new LinkedHashMap<>();
         
         if (yamlContent == null || yamlContent.trim().isEmpty()) {
@@ -112,6 +136,9 @@ public class ConfigDirGeneratorService {
         
         // 添加全局配置（包含 API 配置）
         configFiles.put("global.yaml", generateGlobalConfig());
+
+        // 添加 Vector 自身运行日志采集 pipeline
+        configFiles.putAll(generateInternalLogsPipeline(machineId));
         
         // 获取 pipeline 名称
         String pipelineName;
@@ -267,5 +294,61 @@ public class ConfigDirGeneratorService {
                "api:\n" +
                "  enabled: true\n" +
                "  address: \"127.0.0.1:8686\"\n";
+    }
+
+    /**
+     * 生成 Vector 运行日志采集 pipeline 的配置文件集合。
+     * file source 读取 /opt/vector-agent/logs/*.log → remap 提取文件名 → clickhouse sink 写入 vector_logs 表
+     *
+     * @param machineId 机器ID（UUID），写入日志的 machine_id 字段，用于关联机器
+     */
+    private Map<String, String> generateInternalLogsPipeline(String machineId) {
+        Map<String, String> files = new LinkedHashMap<>();
+
+        // 1. file source：读取 /opt/vector-agent/logs/ 下所有 .log 文件
+        String sourceYaml =
+                "type: file\n" +
+                "include:\n" +
+                "  - /opt/vector-agent/logs/*.log\n" +
+                "read_from: end\n" +
+                "fingerprint:\n" +
+                "  strategy: device_and_inode\n";
+        files.put("sources/_vector_file_logs.yaml", sourceYaml);
+
+        // 2. remap transform：提取文件名，设置 machine_id 和时间戳
+        String remapVrl =
+                "type: remap\n" +
+                "inputs:\n" +
+                "  - _vector_file_logs\n" +
+                "source: |-\n" +
+                "  .file_name = replace(to_string(.file) ?? \"unknown\", \"/opt/vector-agent/logs/\", \"\")\n" +
+                "  .machine_id = \"" + machineId + "\"\n" +
+                "  .timestamp = format_timestamp!(now(), format: \"%Y-%m-%d %H:%M:%S\", timezone: \"Asia/Shanghai\")\n";
+        files.put("transforms/_vector_log_remap.yaml", remapVrl);
+
+        // 3. clickhouse sink：写入 vector_logs 表
+        String sinkYaml =
+                "type: clickhouse\n" +
+                "inputs:\n" +
+                "  - _vector_log_remap\n" +
+                "endpoint: http://" + clickhouseHost + ":" + clickhousePort + "\n" +
+                "database: " + clickhouseDatabase + "\n" +
+                "table: vector_logs\n" +
+                "skip_unknown_fields: true\n" +
+                "encoding:\n" +
+                "  timestamp_format: rfc3339\n" +
+                "auth:\n" +
+                "  strategy: basic\n" +
+                "  user: " + clickhouseUser + "\n" +
+                "  password: \"" + clickhousePassword + "\"\n" +
+                "batch:\n" +
+                "  max_bytes: 5000000\n" +
+                "  timeout_secs: 15\n" +
+                "buffer:\n" +
+                "  type: memory\n" +
+                "  max_events: 10000\n";
+        files.put("sinks/_vector_log_sink.yaml", sinkYaml);
+
+        return files;
     }
 }
