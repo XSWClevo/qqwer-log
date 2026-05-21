@@ -43,7 +43,7 @@ public interface VectorLogMapper extends BaseMapper<VectorLog> {
         wrapper.eq(StringUtils.hasText(machineId), VectorLog::getMachineId, machineId);
         wrapper.eq(StringUtils.hasText(fileName), VectorLog::getFileName, fileName);
         wrapper.orderByAsc(VectorLog::getTimestamp)
-               .last("LIMIT 100");
+               .last("LIMIT 500");
         return selectList(wrapper);
     }
 

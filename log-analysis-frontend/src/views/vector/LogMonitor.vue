@@ -78,9 +78,9 @@
               <el-icon><Delete /></el-icon>
               清空
             </el-button>
-            <el-button @click="scrollToBottom">
-              <el-icon><Bottom /></el-icon>
-              底部
+            <el-button @click="scrollToTop">
+              <el-icon><Top /></el-icon>
+              顶部
             </el-button>
           </el-button-group>
           <el-tag type="info" style="margin-left: 12px;">共 {{ logs.length }} 条</el-tag>
@@ -89,7 +89,7 @@
 
       <!-- 日志显示区域 -->
       <el-card shadow="never" class="log-display-card">
-        <div ref="logContainer" class="log-container" @scroll="handleScroll">
+        <div ref="logContainer" class="log-container log-container--reversed" @scroll="handleScroll">
           <div v-if="logs.length === 0" class="empty-logs">
             <el-empty description="暂无日志数据，请确认 Vector 已部署并运行" />
           </div>
@@ -100,7 +100,7 @@
               class="log-item"
               :class="{ 'log-highlight': isHighlighted(logItem) }"
             >
-              <span class="log-message" v-html="highlightKeyword(logItem.message)"></span>
+              <span class="log-message">{{ logItem.message }}</span>
             </div>
           </div>
         </div>
@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, VideoPlay, VideoPause, Delete, Bottom } from '@element-plus/icons-vue'
+import { Search, Refresh, VideoPlay, VideoPause, Delete, Top } from '@element-plus/icons-vue'
 import axios from 'axios'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
@@ -136,13 +136,35 @@ const fileNames = ref<string[]>([])
 const isPaused = ref(false)
 const isConnected = ref(false)
 const logContainer = ref<HTMLElement | null>(null)
-const autoScroll = ref(true)
 const reconnectCount = ref(0)
 const maxReconnectAttempts = 10
 
 let eventSource: EventSource | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let currentEmitterId: string | null = null
+let pendingLogs: VectorLog[] = []
+let flushScheduled = false
+
+const MAX_LOGS = 1000
+
+/** 批量刷新：将 buffer 中的日志一次性写入响应式数组，减少重渲染次数 */
+const flushPendingLogs = () => {
+  flushScheduled = false
+  if (pendingLogs.length === 0) return
+  // push 到数组末尾（配合 CSS column-reverse 最新显示在顶部）
+  logs.value.push(...pendingLogs)
+  pendingLogs = []
+  // 超出上限则裁剪旧数据（数组头部是最早的）
+  if (logs.value.length > MAX_LOGS) {
+    logs.value = logs.value.slice(-MAX_LOGS)
+  }
+}
+
+const scheduleFlush = () => {
+  if (flushScheduled) return
+  flushScheduled = true
+  requestAnimationFrame(flushPendingLogs)
+}
 
 const filters = reactive({
   machineId: '',
@@ -208,9 +230,10 @@ const handleLoadHistory = async () => {
 
     const { data } = await axios.get('/api/vector/logs/query', { params })
     if (data.code === 200 && data.data) {
-      logs.value = data.data.logs || []
-      await nextTick()
-      scrollToBottom()
+      const records: VectorLog[] = data.data.logs || []
+      // 后端按时间倒序返回（最新在前），反转为升序存储
+      // 配合 CSS column-reverse，数组末尾（最新）显示在顶部
+      logs.value = records.reverse()
     }
   } catch (error) {
     console.error('加载历史日志失败:', error)
@@ -249,9 +272,9 @@ const connectSSE = () => {
     try {
       const logEntry: VectorLog = JSON.parse(event.data)
       if (filters.keyword && !logEntry.message?.includes(filters.keyword)) return
-      logs.value.push(logEntry)
-      if (logs.value.length > 5000) logs.value.shift()
-      if (autoScroll.value) nextTick(() => scrollToBottom())
+      // 批量 buffer：收集消息，用 rAF 合并渲染
+      pendingLogs.push(logEntry)
+      scheduleFlush()
     } catch (error) {
       console.error('解析日志失败:', error)
     }
@@ -294,14 +317,14 @@ const handleSearch = () => handleLoadHistory()
 const togglePause = () => { isPaused.value = !isPaused.value }
 const handleClear = () => { logs.value = [] }
 
-const scrollToBottom = () => {
-  if (logContainer.value) logContainer.value.scrollTop = logContainer.value.scrollHeight
+const scrollToTop = () => {
+  if (logContainer.value) {
+    logContainer.value.scrollTop = 0
+  }
 }
 
 const handleScroll = () => {
-  if (!logContainer.value) return
-  const { scrollTop, scrollHeight, clientHeight } = logContainer.value
-  autoScroll.value = scrollHeight - scrollTop - clientHeight < 50
+  // 保留 scroll handler 以备将来扩展
 }
 
 const highlightKeyword = (text: string) => {
@@ -404,6 +427,12 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.6;
   padding: 12px;
+
+  // 最新日志显示在顶部：数组末尾的元素（最新 push 进来的）渲染在容器顶部
+  &.log-container--reversed {
+    display: flex;
+    flex-direction: column-reverse;
+  }
 
   .empty-logs {
     display: flex;

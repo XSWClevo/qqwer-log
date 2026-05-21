@@ -1,8 +1,8 @@
 package cn.mw.loganalysis.vector.controller;
 
 import cn.mw.loganalysis.common.response.Result;
-import cn.mw.loganalysis.vector.entity.VectorLog;
 import cn.mw.loganalysis.vector.service.VectorLogService;
+import cn.mw.loganalysis.vector.service.VectorLogSseManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -10,15 +10,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Vector 运行日志控制器
@@ -30,9 +24,7 @@ import java.util.concurrent.TimeUnit;
 public class VectorLogController {
 
     private final VectorLogService vectorLogService;
-
-    private final Map<String, ScheduledFuture<?>> pollingTasks = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private final VectorLogSseManager sseManager;
 
     /**
      * 分页查询日志（默认返回最新数据）
@@ -52,7 +44,7 @@ public class VectorLogController {
     }
 
     /**
-     * SSE 实时推送日志
+     * SSE 实时推送日志（基于 Redis Pub/Sub，延迟 <100ms）
      */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamLogs(
@@ -64,39 +56,12 @@ public class VectorLogController {
 
         log.info("SSE 连接建立: {}, machineId={}, fileName={}", emitterId, machineId, fileName);
 
-        LocalDateTime[] lastTimestamp = {LocalDateTime.now()};
-
-        ScheduledFuture<?> pollingTask = scheduler.scheduleAtFixedRate(() -> {
-            try {
-                List<VectorLog> newLogs = vectorLogService.getLogsAfter(
-                        lastTimestamp[0], machineId, fileName
-                );
-                if (!newLogs.isEmpty()) {
-                    lastTimestamp[0] = newLogs.get(newLogs.size() - 1).getTimestamp();
-                    for (VectorLog logEntry : newLogs) {
-                        emitter.send(SseEmitter.event().name("log").data(logEntry));
-                    }
-                }
-            } catch (IOException e) {
-                log.info("SSE 连接已断开: {}", emitterId);
-                cleanup(emitterId);
-                emitter.completeWithError(e);
-            } catch (Exception e) {
-                log.error("查询日志失败: {}", emitterId, e);
-            }
-        }, 0, 2, TimeUnit.SECONDS);
-
-        pollingTasks.put(emitterId, pollingTask);
-
-        Runnable cleanupAction = () -> cleanup(emitterId);
-        emitter.onCompletion(cleanupAction);
-        emitter.onTimeout(cleanupAction);
-        emitter.onError(ex -> cleanupAction.run());
+        sseManager.register(emitterId, emitter, machineId, fileName);
 
         try {
             emitter.send(SseEmitter.event().name("connected").data(emitterId));
         } catch (IOException e) {
-            cleanupAction.run();
+            sseManager.unregister(emitterId);
         }
         return emitter;
     }
@@ -106,16 +71,9 @@ public class VectorLogController {
      */
     @RequestMapping(value = "/stream/{emitterId}/close", method = {RequestMethod.POST, RequestMethod.DELETE})
     public Result<Void> closeStream(@PathVariable String emitterId) {
-        cleanup(emitterId);
+        sseManager.unregister(emitterId);
         log.info("SSE 连接主动关闭: {}", emitterId);
         return Result.success(null);
-    }
-
-    private void cleanup(String emitterId) {
-        ScheduledFuture<?> task = pollingTasks.remove(emitterId);
-        if (task != null) {
-            task.cancel(false);
-        }
     }
 
     /**
