@@ -9,12 +9,15 @@ import cn.mw.loganalysis.vector.mapper.MachineConfigMapper;
 import cn.mw.loganalysis.vector.mapper.VectorDeploymentMapper;
 import cn.mw.loganalysis.vector.mapper.VectorMachineMapper;
 import cn.mw.loganalysis.vector.mapper.VisualConfigMapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.yaml.snakeyaml.Yaml;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -132,6 +135,13 @@ public class VectorDeploymentService {
      */
     public Map<String, String> getMergedConfigDir(String machineId) {
         return configDirGeneratorService.generateConfigDir(machineId);
+    }
+
+    /**
+     * 获取机器上所有配置的合并内容，并按本次 Agent 请求地址生成回调后端的通知 URL。
+     */
+    public Map<String, String> getMergedConfigDir(String machineId, String serverUrl) {
+        return configDirGeneratorService.generateConfigDir(machineId, serverUrl);
     }
 
     /**
@@ -333,5 +343,106 @@ public class VectorDeploymentService {
         log.info("创建全量重新部署任务: 机器={}, 版本={}", machine.getName(), configVersion);
 
         return deployment;
+    }
+
+    /**
+     * 白名单策略变化后，重新下发包含 syslog/socket source 的机器配置。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<VectorDeployment> redeployManagedLogSourceConfigs(String userId) {
+        List<MachineConfig> machineConfigs = machineConfigMapper.selectList(
+                Wrappers.<MachineConfig>lambdaQuery()
+                        .in(MachineConfig::getStatus, List.of("pending", "deployed"))
+        );
+        if (CollectionUtils.isEmpty(machineConfigs)) {
+            return List.of();
+        }
+
+        Set<String> machineIds = new LinkedHashSet<>();
+        for (MachineConfig machineConfig : machineConfigs) {
+            if (StringUtils.isNotBlank(machineConfig.getMachineId())) {
+                machineIds.add(machineConfig.getMachineId());
+            }
+        }
+
+        List<VectorDeployment> deployments = new ArrayList<>();
+        String configVersion = "log-source-policy-" + UUID.randomUUID().toString().substring(0, 8) + "-" + System.currentTimeMillis();
+
+        for (String machineId : machineIds) {
+            if (getPendingDeployment(machineId) != null) {
+                log.info("机器 {} 已存在待部署任务，跳过日志源策略重新下发", machineId);
+                continue;
+            }
+
+            List<VisualConfig> configs = machineConfigMapper.selectDeployedConfigsByMachineId(machineId);
+            if (!containsManagedLogSource(configs)) {
+                continue;
+            }
+
+            VectorDeployment deployment = new VectorDeployment();
+            deployment.setMachineId(machineId);
+            deployment.setConfigId("_system_log_source_policy");
+            deployment.setConfigContent("");
+            deployment.setConfigVersion(configVersion);
+            deployment.setDeployMode("restart");
+            deployment.setStatus("pending");
+            deployment.setCreatedBy(userId);
+
+            deploymentMapper.insert(deployment);
+            deployments.add(deployment);
+            log.info("创建日志源策略重新部署任务: machineId={}, version={}", machineId, configVersion);
+        }
+
+        return deployments;
+    }
+
+    private boolean containsManagedLogSource(List<VisualConfig> configs) {
+        if (CollectionUtils.isEmpty(configs)) {
+            return false;
+        }
+
+        for (VisualConfig config : configs) {
+            if (config != null && hasManagedLogSource(config.getContent())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean hasManagedLogSource(String yamlContent) {
+        if (StringUtils.isBlank(yamlContent)) {
+            return false;
+        }
+
+        Object loaded;
+        try {
+            loaded = new Yaml().load(yamlContent);
+        } catch (Exception e) {
+            log.warn("解析配置判断日志源策略失败: {}", e.getMessage());
+            return false;
+        }
+
+        if (!(loaded instanceof Map<?, ?> root)) {
+            return false;
+        }
+
+        Object sourcesObj = root.get("sources");
+        if (!(sourcesObj instanceof Map<?, ?> sources)) {
+            return false;
+        }
+
+        for (Object sourceConfig : sources.values()) {
+            if (!(sourceConfig instanceof Map<?, ?> sourceMap)) {
+                continue;
+            }
+            Object type = sourceMap.get("type");
+            if (type != null && (StringUtils.equals(String.valueOf(type), "syslog")
+                    || StringUtils.equals(String.valueOf(type), "socket"))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

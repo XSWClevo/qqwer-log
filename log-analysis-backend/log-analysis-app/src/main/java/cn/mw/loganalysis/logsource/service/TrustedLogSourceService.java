@@ -7,6 +7,7 @@ import cn.mw.loganalysis.logsource.dto.TrustLogSourceRequest;
 import cn.mw.loganalysis.logsource.entity.TrustedLogSource;
 import cn.mw.loganalysis.logsource.mapper.TrustedLogSourceMapper;
 import cn.mw.loganalysis.logsource.repository.TrustedLogSourceRepository;
+import cn.mw.loganalysis.vector.service.VectorDeploymentService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
 
     private final LogSourceConverter logSourceConverter;
     private final TrustedLogSourceRepository trustedLogSourceRepository;
+    private final VectorDeploymentService vectorDeploymentService;
 
     /**
      * 获取所有信任的日志源
@@ -82,6 +84,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
             existing.setRemark(request.getRemark());
             trustedLogSourceRepository.updateById(existing);
             log.info("日志源 {} 已更新为信任状态，操作人: {}", request.getSourceIp(), username);
+            redeployManagedLogSourceConfigs(username);
             return logSourceConverter.toDTO(existing);
         } else {
             // 创建新记录
@@ -98,6 +101,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
             newSource.setRemark(request.getRemark());
             trustedLogSourceRepository.save(newSource);
             log.info("新日志源 {} 已添加到信任列表，操作人: {}", request.getSourceIp(), username);
+            redeployManagedLogSourceConfigs(username);
             return logSourceConverter.toDTO(newSource);
         }
     }
@@ -116,6 +120,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
         source.setTrustedBy(username);
         trustedLogSourceRepository.updateById(source);
         log.info("日志源 {} 已拉黑，操作人: {}", sourceIp, username);
+        redeployManagedLogSourceConfigs(username);
     }
 
     /**
@@ -130,6 +135,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
 
         trustedLogSourceRepository.deleteById(source.getId());
         log.info("日志源 {} 已删除", sourceIp);
+        redeployManagedLogSourceConfigs("system");
     }
 
     /**
@@ -154,6 +160,7 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
             newSource.setLogCount(logCount != null ? logCount : 0L);
             trustedLogSourceRepository.save(newSource);
             log.warn("发现新日志源: {} ({}), 等待审核", sourceIp, hostname);
+            redeployManagedLogSourceConfigs("system");
             return false; // 需要审核
         } else {
             // 更新最后活跃时间
@@ -205,5 +212,9 @@ public class TrustedLogSourceService extends ServiceImpl<TrustedLogSourceMapper,
     public boolean isBlocked(String sourceIp) {
         TrustedLogSource source = trustedLogSourceRepository.findByIp(sourceIp);
         return source != null && "blocked".equals(source.getStatus());
+    }
+
+    private void redeployManagedLogSourceConfigs(String username) {
+        vectorDeploymentService.redeployManagedLogSourceConfigs(username);
     }
 }

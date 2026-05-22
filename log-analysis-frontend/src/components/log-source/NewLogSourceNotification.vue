@@ -1,61 +1,100 @@
 <template>
-  <div v-if="newSources.length > 0" class="new-log-source-notification">
-    <el-alert
-      v-for="source in newSources"
-      :key="source.sourceIp"
-      type="warning"
-      :closable="true"
-      @close="handleDismiss(source.sourceIp)"
-      class="notification-item"
+  <div class="log-source-mailbox">
+    <el-popover
+      v-model:visible="panelVisible"
+      placement="bottom-end"
+      :width="420"
+      trigger="click"
+      popper-class="log-source-mailbox-popper"
+      @show="handleOpen"
     >
-      <template #title>
-        <div class="notification-content">
-          <div class="notification-header">
-            <el-icon class="warning-icon"><Warning /></el-icon>
-            <span class="title-text">发现新的日志源</span>
-          </div>
-          <div class="notification-body">
-            <div class="source-info">
-              <span class="label">IP地址:</span>
-              <span class="value">{{ source.sourceIp }}</span>
-            </div>
-            <div v-if="source.hostname" class="source-info">
-              <span class="label">主机名:</span>
-              <span class="value">{{ source.hostname }}</span>
-            </div>
-            <div class="source-info">
-              <span class="label">日志数量:</span>
-              <span class="value">{{ source.logCount }}</span>
-            </div>
-            <div v-if="source.recentLogPreview" class="log-preview">
-              <span class="label">最近日志:</span>
-              <span class="value">{{ source.recentLogPreview }}</span>
-            </div>
-          </div>
-          <div class="notification-actions">
-            <el-button type="success" size="small" @click="handleTrust(source)">
-              <el-icon><Select /></el-icon>
-              信任
-            </el-button>
-            <el-button type="warning" size="small" @click="handleBlock(source)">
-              <el-icon><CircleClose /></el-icon>
-              拉黑
-            </el-button>
-            <el-button size="small" @click="handleViewDetails">
-              查看详情
-            </el-button>
-          </div>
-        </div>
+      <template #reference>
+        <button
+          class="mailbox-trigger"
+          :class="{ 'has-unread': unreadCount > 0 }"
+          type="button"
+          aria-label="日志源通知"
+        >
+          <el-badge
+            :value="unreadCount"
+            :hidden="unreadCount === 0"
+            :max="99"
+            class="mailbox-badge"
+          >
+            <el-icon><Bell /></el-icon>
+          </el-badge>
+        </button>
       </template>
-    </el-alert>
+
+      <div class="mailbox-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">站内信</div>
+            <div class="panel-subtitle">{{ unreadCount }} 条待审核日志源</div>
+          </div>
+          <el-button text circle :loading="loading" @click="checkNewSources">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </div>
+
+        <el-scrollbar max-height="420px">
+          <div v-if="newSources.length > 0" class="message-list">
+            <div
+              v-for="source in newSources"
+              :key="source.sourceIp"
+              class="message-item"
+            >
+              <div class="message-dot" />
+              <div class="message-content">
+                <div class="message-topline">
+                  <span class="message-title">发现新的日志源</span>
+                  <span class="message-count">{{ source.logCount || 0 }} 条</span>
+                </div>
+                <div class="source-line">
+                  <span class="label">IP</span>
+                  <span class="value">{{ source.sourceIp }}</span>
+                </div>
+                <div v-if="source.hostname" class="source-line">
+                  <span class="label">主机</span>
+                  <span class="value">{{ source.hostname }}</span>
+                </div>
+                <div v-if="source.recentLogPreview" class="log-preview">
+                  {{ source.recentLogPreview }}
+                </div>
+                <div class="message-actions">
+                  <el-button type="success" size="small" plain @click="handleTrust(source)">
+                    <el-icon><Select /></el-icon>
+                    信任
+                  </el-button>
+                  <el-button type="warning" size="small" plain @click="handleBlock(source)">
+                    <el-icon><CircleClose /></el-icon>
+                    拉黑
+                  </el-button>
+                  <el-button size="small" text @click="handleViewDetails">
+                    <el-icon><View /></el-icon>
+                    详情
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <el-empty
+            v-else
+            :image-size="72"
+            description="暂无待审核日志源"
+          />
+        </el-scrollbar>
+      </div>
+    </el-popover>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Warning, Select, CircleClose } from '@element-plus/icons-vue'
+import { Bell, Select, CircleClose, Refresh, View } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import {
   trustLogSource,
@@ -65,10 +104,15 @@ import {
 
 const router = useRouter()
 const newSources = ref<NewLogSourceNotification[]>([])
+const panelVisible = ref(false)
+const loading = ref(false)
 let pollingTimer: number | null = null
+
+const unreadCount = computed(() => newSources.value.length)
 
 // 检测新日志源（改为获取待审核通知）
 const checkNewSources = async () => {
+  loading.value = true
   try {
     // 调用新接口获取待审核的通知
     const { data } = await request<NewLogSourceNotification[]>({
@@ -83,6 +127,8 @@ const checkNewSources = async () => {
     }
   } catch (error) {
     console.error('获取待审核通知失败:', error)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -95,8 +141,7 @@ const handleTrust = async (source: NewLogSourceNotification) => {
       description: `自动检测到的日志源，首次发现于 ${source.firstSeenAt}`
     })
     ElMessage.success(`已信任 ${source.sourceIp}`)
-    // 从列表中移除
-    newSources.value = newSources.value.filter(s => s.sourceIp !== source.sourceIp)
+    await checkNewSources()
   } catch (error: any) {
     console.error('信任日志源失败:', error)
     ElMessage.error(error.message || '操作失败')
@@ -106,15 +151,9 @@ const handleTrust = async (source: NewLogSourceNotification) => {
 // 拉黑日志源
 const handleBlock = async (source: NewLogSourceNotification) => {
   try {
-    // 先信任（创建记录），再拉黑
-    await trustLogSource({
-      sourceIp: source.sourceIp,
-      hostname: source.hostname
-    })
     await blockLogSource(source.sourceIp)
     ElMessage.success(`已拉黑 ${source.sourceIp}`)
-    // 从列表中移除
-    newSources.value = newSources.value.filter(s => s.sourceIp !== source.sourceIp)
+    await checkNewSources()
   } catch (error: any) {
     console.error('拉黑日志源失败:', error)
     ElMessage.error(error.message || '操作失败')
@@ -123,20 +162,20 @@ const handleBlock = async (source: NewLogSourceNotification) => {
 
 // 查看详情
 const handleViewDetails = () => {
+  panelVisible.value = false
   router.push('/log-source')
 }
 
-// 忽略通知
-const handleDismiss = (sourceIp: string) => {
-  newSources.value = newSources.value.filter(s => s.sourceIp !== sourceIp)
+const handleOpen = () => {
+  checkNewSources()
 }
 
 // 开始轮询
 const startPolling = () => {
   // 立即检测一次
   checkNewSources()
-  // 每5分钟检测一次
-  pollingTimer = window.setInterval(checkNewSources, 5 * 60 * 1000)
+  // 每30秒检测一次
+  pollingTimer = window.setInterval(checkNewSources, 30 * 1000)
 }
 
 // 停止轮询
@@ -159,91 +198,165 @@ onUnmounted(() => {
 <style scoped lang="scss">
 @use '@/assets/styles/macos.scss' as *;
 
-.new-log-source-notification {
+.log-source-mailbox {
   position: fixed;
-  top: 80px;
+  top: 18px;
   right: 24px;
   z-index: 2000;
-  max-width: 500px;
+}
 
-  .notification-item {
-    margin-bottom: 12px;
-    border-radius: var(--macos-radius-md);
-    box-shadow: var(--macos-shadow-lg);
+.mailbox-trigger {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--macos-border);
+  border-radius: 50%;
+  background: var(--macos-bg-primary);
+  color: var(--macos-text-secondary);
+  box-shadow: var(--macos-shadow-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--macos-transition-fast);
 
-    :deep(.el-alert__content) {
-      width: 100%;
+  &:hover,
+  &.has-unread {
+    color: var(--macos-blue);
+    border-color: color-mix(in srgb, var(--macos-blue) 38%, var(--macos-border));
+    box-shadow: var(--macos-shadow-md);
+  }
+
+  .el-icon {
+    font-size: 20px;
+  }
+}
+
+:deep(.mailbox-badge .el-badge__content) {
+  background: #e5484d;
+  border: 2px solid var(--macos-bg-primary);
+  font-weight: 700;
+}
+</style>
+
+<style lang="scss">
+.log-source-mailbox-popper {
+  padding: 0 !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16) !important;
+
+  .mailbox-panel {
+    background: var(--macos-bg-primary);
+  }
+
+  .panel-header {
+    height: 64px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--macos-border);
+  }
+
+  .panel-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--macos-text-primary);
+  }
+
+  .panel-subtitle {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--macos-text-tertiary);
+  }
+
+  .message-list {
+    padding: 8px;
+  }
+
+  .message-item {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 10px;
+    border-radius: 8px;
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: var(--macos-bg-secondary);
     }
   }
 
-  .notification-content {
-    .notification-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 12px;
+  .message-dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 7px;
+    border-radius: 50%;
+    background: #e5484d;
+  }
 
-      .warning-icon {
-        font-size: 20px;
-        color: var(--el-color-warning);
-      }
+  .message-content {
+    min-width: 0;
+  }
 
-      .title-text {
-        font-size: 16px;
-        font-weight: 600;
-        color: var(--macos-text-primary);
-      }
+  .message-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .message-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--macos-text-primary);
+  }
+
+  .message-count {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--macos-text-tertiary);
+  }
+
+  .source-line {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+
+    .label {
+      color: var(--macos-text-tertiary);
     }
 
-    .notification-body {
-      margin-bottom: 12px;
-
-      .source-info {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 6px;
-        font-size: 14px;
-
-        .label {
-          color: var(--macos-text-secondary);
-          min-width: 80px;
-        }
-
-        .value {
-          color: var(--macos-text-primary);
-          font-family: 'Monaco', 'Consolas', monospace;
-        }
-      }
-
-      .log-preview {
-        display: flex;
-        gap: 8px;
-        margin-top: 8px;
-        padding: 8px;
-        background: var(--macos-bg-secondary);
-        border-radius: 4px;
-        font-size: 12px;
-
-        .label {
-          color: var(--macos-text-secondary);
-          min-width: 80px;
-        }
-
-        .value {
-          color: var(--macos-text-primary);
-          font-family: 'Monaco', 'Consolas', monospace;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-      }
+    .value {
+      min-width: 0;
+      color: var(--macos-text-primary);
+      font-family: Monaco, Consolas, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+  }
 
-    .notification-actions {
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-    }
+  .log-preview {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--macos-bg-secondary);
+    color: var(--macos-text-secondary);
+    font-family: Monaco, Consolas, monospace;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .message-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
   }
 }
 </style>

@@ -105,6 +105,7 @@
 
     <!-- 全局快捷搜索 Cmd+K -->
     <CommandPalette />
+    <NewLogSourceNotification />
   </el-container>
 </template>
 
@@ -128,6 +129,7 @@ import {
 } from '@element-plus/icons-vue'
 import CommandPalette from '@/components/common/CommandPalette.vue'
 import Breadcrumb from '@/components/common/Breadcrumb.vue'
+import NewLogSourceNotification from '@/components/log-source/NewLogSourceNotification.vue'
 
 const route = useRoute()
 const isCollapsed = ref(false)

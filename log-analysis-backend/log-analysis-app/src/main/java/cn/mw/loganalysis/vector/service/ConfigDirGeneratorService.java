@@ -1,16 +1,23 @@
 package cn.mw.loganalysis.vector.service;
 
+import cn.mw.loganalysis.logsource.entity.TrustedLogSource;
+import cn.mw.loganalysis.logsource.repository.TrustedLogSourceRepository;
 import cn.mw.loganalysis.vector.entity.VisualConfig;
 import cn.mw.loganalysis.vector.mapper.MachineConfigMapper;
 import cn.mw.loganalysis.vector.mapper.VisualConfigMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Config-Dir 配置生成服务
@@ -33,6 +40,7 @@ public class ConfigDirGeneratorService {
 
     private final VisualConfigMapper visualConfigMapper;
     private final MachineConfigMapper machineConfigMapper;
+    private final TrustedLogSourceRepository trustedLogSourceRepository;
 
     @Value("${CLICKHOUSE_HOST:localhost}")
     private String clickhouseHost;
@@ -49,6 +57,9 @@ public class ConfigDirGeneratorService {
     @Value("${CLICKHOUSE_PASSWORD:12345678}")
     private String clickhousePassword;
 
+    @Value("${LOG_ANALYSIS_BACKEND_URL:http://localhost:8080}")
+    private String defaultBackendUrl;
+
     /**
      * 为指定机器生成完整的 config-dir 结构
      * 
@@ -56,6 +67,10 @@ public class ConfigDirGeneratorService {
      * @return Map<文件路径, 文件内容>
      */
     public Map<String, String> generateConfigDir(String machineId) {
+        return generateConfigDir(machineId, defaultBackendUrl);
+    }
+
+    public Map<String, String> generateConfigDir(String machineId, String notificationBaseUrl) {
         Map<String, String> configFiles = new LinkedHashMap<>();
         
         // 1. 获取该机器已部署的所有配置
@@ -82,7 +97,7 @@ public class ConfigDirGeneratorService {
         // 4. 为每个配置生成独立的组件文件
         for (VisualConfig config : deployedConfigs) {
             log.info("处理配置: {}, content:\n{}", config.getName(), config.getContent());
-            generatePipelineFiles(configFiles, config.getName(), config.getContent());
+            generatePipelineFiles(configFiles, config.getName(), config.getContent(), notificationBaseUrl);
         }
         
         log.info("为机器 {} 生成 {} 个配置文件: {}", machineId, configFiles.size(), configFiles.keySet());
@@ -112,7 +127,7 @@ public class ConfigDirGeneratorService {
         
         // 生成 pipeline 文件
         String pipelineName = getPipelineName(config);
-        generatePipelineFiles(configFiles, pipelineName, config.getContent());
+        generatePipelineFiles(configFiles, pipelineName, config.getContent(), defaultBackendUrl);
         
         return configFiles;
     }
@@ -151,7 +166,7 @@ public class ConfigDirGeneratorService {
         }
         
         // 生成 pipeline 文件
-        generatePipelineFiles(configFiles, pipelineName, yamlContent);
+        generatePipelineFiles(configFiles, pipelineName, yamlContent, defaultBackendUrl);
         
         log.info("从配置内容生成 config-dir: configId={}, pipelineName={}, files={}", 
                 configId, pipelineName, configFiles.size());
@@ -174,7 +189,7 @@ public class ConfigDirGeneratorService {
      * 每个 yaml 文件内容不包含顶层 key，直接是组件配置
      */
     @SuppressWarnings("unchecked")
-    private void generatePipelineFiles(Map<String, String> configFiles, String pipelineName, String yamlContent) {
+    private void generatePipelineFiles(Map<String, String> configFiles, String pipelineName, String yamlContent, String notificationBaseUrl) {
         if (yamlContent == null || yamlContent.trim().isEmpty()) {
             return;
         }
@@ -191,12 +206,15 @@ public class ConfigDirGeneratorService {
         if (parsed == null) {
             return;
         }
+
+        applyLogSourcePolicy(parsed, notificationBaseUrl);
+        normalizeSensitiveStringFields(parsed);
         
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         options.setPrettyFlow(true);
         options.setIndent(2);
-        Yaml dumper = new Yaml(options);
+        Yaml dumper = new Yaml(new PasswordQuotingRepresenter(options));
         
         // 遍历 sources, transforms, sinks
         for (String section : Arrays.asList("sources", "transforms", "sinks")) {
@@ -221,6 +239,236 @@ public class ConfigDirGeneratorService {
                         configFiles.put(path, yamlConfigContent);
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * 只对 syslog/socket source 注入日志源白名单策略。其他 source 不改输入，直接通行。
+     */
+    @SuppressWarnings("unchecked")
+    private void applyLogSourcePolicy(Map<String, Object> parsed, String notificationBaseUrl) {
+        Map<String, Object> sources = asObjectMap(parsed.get("sources"));
+        if (MapUtils.isEmpty(sources)) {
+            return;
+        }
+
+        List<String> managedSources = sources.entrySet().stream()
+                .filter(entry -> isManagedLogSource(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+        if (CollectionUtils.isEmpty(managedSources)) {
+            return;
+        }
+
+        Map<String, Object> transforms = getOrCreateSection(parsed, "transforms");
+        Map<String, Object> sinks = getOrCreateSection(parsed, "sinks");
+        Set<String> originalTransformNames = new LinkedHashSet<>(transforms.keySet());
+        Set<String> originalSinkNames = new LinkedHashSet<>(sinks.keySet());
+
+        List<String> trustedIps = getSourceIps(trustedLogSourceRepository.findTrustedSources());
+        List<String> suppressedIps = getSourceIps(Stream.concat(
+                        trustedLogSourceRepository.findPendingSources().stream(),
+                        trustedLogSourceRepository.findBlockedSources().stream())
+                .collect(Collectors.toList()));
+
+        for (String sourceName : managedSources) {
+            String normalizedName = sourceName + "_mw_log_source_normalize";
+            String allowedName = sourceName + "_mw_log_source_allowed";
+            String unknownName = sourceName + "_mw_log_source_unknown";
+            String notifyPayloadName = sourceName + "_mw_log_source_notify_payload";
+            String notifySinkName = sourceName + "_mw_log_source_notify";
+
+            rewriteOriginalInputs(transforms, originalTransformNames, sourceName, allowedName);
+            rewriteOriginalInputs(sinks, originalSinkNames, sourceName, allowedName);
+
+            transforms.put(normalizedName, remap(List.of(sourceName), generateNormalizeSource()));
+            transforms.put(allowedName, filter(List.of(normalizedName), generateAllowedCondition(trustedIps)));
+            transforms.put(unknownName, filter(List.of(normalizedName), generateUnknownCondition(trustedIps, suppressedIps)));
+            transforms.put(notifyPayloadName, remap(List.of(unknownName), generateNotifyPayloadSource()));
+            sinks.put(notifySinkName, httpNotifySink(List.of(notifyPayloadName), notificationBaseUrl));
+        }
+
+        log.info("已为 pipeline 注入日志源白名单策略: sources={}, trusted={}, suppressed={}",
+                managedSources, trustedIps.size(), suppressedIps.size());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> asObjectMap(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return new LinkedHashMap<>();
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() != null) {
+                result.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getOrCreateSection(Map<String, Object> parsed, String section) {
+        Object existing = parsed.get(section);
+        if (existing instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (entry.getKey() != null) {
+                    result.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+            }
+            parsed.put(section, result);
+            return result;
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        parsed.put(section, result);
+        return result;
+    }
+
+    private boolean isManagedLogSource(Object componentConfig) {
+        Map<String, Object> config = asObjectMap(componentConfig);
+        if (MapUtils.isEmpty(config)) {
+            return false;
+        }
+
+        String type = String.valueOf(config.get("type"));
+        return StringUtils.equals(type, "syslog") || StringUtils.equals(type, "socket");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void rewriteOriginalInputs(Map<String, Object> components, Set<String> originalNames,
+                                       String sourceName, String replacementName) {
+        for (String componentName : originalNames) {
+            Object componentConfig = components.get(componentName);
+            if (!(componentConfig instanceof Map<?, ?> map)) {
+                continue;
+            }
+
+            Object inputsObj = map.get("inputs");
+            if (!(inputsObj instanceof List<?> inputs)) {
+                continue;
+            }
+
+            List<Object> rewritten = inputs.stream()
+                    .map(input -> StringUtils.equals(String.valueOf(input), sourceName) ? replacementName : input)
+                    .collect(Collectors.toList());
+            ((Map<String, Object>) componentConfig).put("inputs", rewritten);
+        }
+    }
+
+    private Map<String, Object> remap(List<String> inputs, String source) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("type", "remap");
+        config.put("inputs", inputs);
+        config.put("source", source);
+        return config;
+    }
+
+    private Map<String, Object> filter(List<String> inputs, String condition) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("type", "filter");
+        config.put("inputs", inputs);
+        config.put("condition", condition);
+        return config;
+    }
+
+    private Map<String, Object> httpNotifySink(List<String> inputs, String notificationBaseUrl) {
+        Map<String, Object> sink = new LinkedHashMap<>();
+        sink.put("type", "http");
+        sink.put("inputs", inputs);
+        sink.put("uri", normalizeBaseUrl(notificationBaseUrl) + "/api/log-sources/notify-new-ip");
+        sink.put("method", "post");
+        sink.put("encoding", Map.of("codec", "json"));
+        sink.put("request", Map.of("headers", Map.of("Content-Type", "application/json")));
+        sink.put("batch", Map.of("max_events", 10, "timeout_secs", 30));
+        return sink;
+    }
+
+    private String normalizeBaseUrl(String notificationBaseUrl) {
+        String baseUrl = StringUtils.defaultIfBlank(notificationBaseUrl, defaultBackendUrl);
+        return StringUtils.removeEnd(baseUrl, "/");
+    }
+
+    private String generateNormalizeSource() {
+        return """
+                raw_source_ip = to_string(.source_ip) ?? to_string(.host) ?? "unknown"
+                .source_ip = replace(raw_source_ip, r':\\d+$', "")
+                if .source_ip == "" {
+                  .source_ip = "unknown"
+                }
+                """;
+    }
+
+    private String generateNotifyPayloadSource() {
+        return """
+                . = {
+                  "notificationType": "new_log_source",
+                  "sourceIp": to_string(.source_ip) ?? "unknown",
+                  "hostname": to_string(.hostname) ?? to_string(.host) ?? "unknown",
+                  "logCount": 1
+                }
+                """;
+    }
+
+    private String generateAllowedCondition(List<String> trustedIps) {
+        return ".source_ip != \"unknown\" && includes(" + toVrlArray(trustedIps) + ", to_string(.source_ip) ?? \"\")";
+    }
+
+    private String generateUnknownCondition(List<String> trustedIps, List<String> suppressedIps) {
+        return ".source_ip != \"unknown\""
+                + " && !includes(" + toVrlArray(trustedIps) + ", to_string(.source_ip) ?? \"\")"
+                + " && !includes(" + toVrlArray(suppressedIps) + ", to_string(.source_ip) ?? \"\")";
+    }
+
+    private List<String> getSourceIps(List<TrustedLogSource> sources) {
+        if (CollectionUtils.isEmpty(sources)) {
+            return List.of();
+        }
+
+        return sources.stream()
+                .map(TrustedLogSource::getSourceIp)
+                .map(StringUtils::trimToEmpty)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private String toVrlArray(List<String> values) {
+        if (CollectionUtils.isEmpty(values)) {
+            return "[]";
+        }
+
+        return values.stream()
+                .map(value -> "\"" + escapeVrlString(value) + "\"")
+                .collect(Collectors.joining(", ", "[", "]"));
+    }
+
+    private String escapeVrlString(String value) {
+        return StringUtils.defaultString(value)
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void normalizeSensitiveStringFields(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                Object key = entry.getKey();
+                Object item = entry.getValue();
+                if (key != null && StringUtils.equals("password", String.valueOf(key)) && item != null) {
+                    ((Map<Object, Object>) map).put(key, String.valueOf(item));
+                } else {
+                    normalizeSensitiveStringFields(item);
+                }
+            }
+            return;
+        }
+
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                normalizeSensitiveStringFields(item);
             }
         }
     }

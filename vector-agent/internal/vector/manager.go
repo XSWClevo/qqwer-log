@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -500,14 +501,9 @@ func (m *Manager) Rollback() error {
 
 // IsConfigValid 检查配置文件是否有效
 func (m *Manager) IsConfigValid() bool {
-	// 检查 pipelines 目录是否存在（config-dir 模式）
-	pipelinesDir := filepath.Join(config.ConfigDir, "pipelines")
-	if _, err := os.Stat(pipelinesDir); err == nil {
-		// config-dir 模式，检查是否有 pipeline 子目录
-		entries, err := os.ReadDir(pipelinesDir)
-		if err == nil && len(entries) > 0 {
-			return true
-		}
+	// config-dir 模式使用扁平目录结构：global.yaml、sources/*.yaml、transforms/*.yaml、sinks/*.yaml。
+	if hasConfigDirConfigFiles() {
+		return true
 	}
 
 	// 检查单文件模式
@@ -570,8 +566,7 @@ func (m *Manager) EnsureDataDir() error {
 // InitDefaultConfig 初始化默认配置（首次启动时）
 func (m *Manager) InitDefaultConfig() error {
 	// 检查 config-dir 模式的配置是否已存在
-	pipelinesDir := filepath.Join(config.ConfigDir, "pipelines")
-	if entries, err := os.ReadDir(pipelinesDir); err == nil && len(entries) > 0 {
+	if hasConfigDirConfigFiles() {
 		return nil // config-dir 模式配置已存在
 	}
 
@@ -603,6 +598,31 @@ api:
 
 	log.Println("默认配置初始化完成")
 	return nil
+}
+
+func hasConfigDirConfigFiles() bool {
+	found := false
+	err := filepath.WalkDir(config.ConfigDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if path == config.ConfigDir {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == "history" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		name := d.Name()
+		if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+			found = true
+		}
+		return nil
+	})
+	return err == nil && found
 }
 
 // ComponentMetrics 组件指标

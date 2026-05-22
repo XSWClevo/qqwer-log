@@ -94,7 +94,9 @@ public class VectorAgentController {
      */
     @GetMapping("/config")
     public Result<AgentConfigResponse> fetchConfig(
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestHeader(value = "Host", required = false) String host,
+            @RequestHeader(value = "X-Forwarded-Proto", required = false) String forwardedProto) {
         
         String token = extractToken(authHeader);
         
@@ -118,7 +120,10 @@ public class VectorAgentController {
         
         // 生成该机器所有已部署配置的合并 config-dir 结构
         // 这样部署新配置时不会覆盖已有的其他配置
-        Map<String, String> configFiles = deploymentService.getMergedConfigDir(machine.getId());
+        Map<String, String> configFiles = deploymentService.getMergedConfigDir(
+                machine.getId(),
+                buildServerUrl(host, forwardedProto)
+        );
         if (configFiles != null && !configFiles.isEmpty()) {
             response.setConfigFiles(configFiles);
             log.info("Agent 拉取配置 (config-dir): machine={}, version={}, files={}", 
@@ -131,6 +136,11 @@ public class VectorAgentController {
         }
         
         return Result.success(response);
+    }
+
+    private String buildServerUrl(String host, String forwardedProto) {
+        String protocol = (forwardedProto != null && !forwardedProto.isEmpty()) ? forwardedProto : "http";
+        return protocol + "://" + (host != null ? host : "localhost:" + serverPort);
     }
 
     /**

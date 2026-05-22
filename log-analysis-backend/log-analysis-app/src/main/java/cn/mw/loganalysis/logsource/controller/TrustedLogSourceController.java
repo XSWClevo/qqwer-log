@@ -4,11 +4,12 @@ import cn.mw.loganalysis.common.response.Result;
 import cn.mw.loganalysis.logsource.dto.LogSourceDTO;
 import cn.mw.loganalysis.logsource.dto.NewLogSourceNotification;
 import cn.mw.loganalysis.logsource.dto.TrustLogSourceRequest;
-import cn.mw.loganalysis.logsource.dto.VectorNewIpNotification;
 import cn.mw.loganalysis.logsource.service.TrustedLogSourceService;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -136,20 +137,77 @@ public class TrustedLogSourceController {
      * 这个接口由 Vector 的 HTTP sink 调用
      */
     @PostMapping("/notify-new-ip")
-    public Result<Void> notifyNewIp(@RequestBody VectorNewIpNotification notification) {
-        log.info("收到 Vector 新 IP 通知: {}", notification.getSourceIp());
-
-        boolean isTrusted = trustedLogSourceService.handleVectorNotification(
-                notification.getSourceIp(),
-                notification.getHostname(),
-                notification.getLogCount()
-        );
-
-        if (!isTrusted) {
-            log.warn("新日志源 {} 需要审核", notification.getSourceIp());
+    public Result<Void> notifyNewIp(@RequestBody JsonNode payload) {
+        if (payload == null || payload.isNull()) {
+            return Result.success();
         }
 
+        if (payload.isArray()) {
+            for (JsonNode item : payload) {
+                handleNotificationNode(item);
+            }
+            return Result.success();
+        }
+
+        handleNotificationNode(payload);
         return Result.success();
+    }
+
+    private void handleNotificationNode(JsonNode node) {
+        JsonNode notification = unwrapVectorEvent(node);
+        String sourceIp = firstText(notification, "sourceIp", "source_ip");
+        if (StringUtils.isBlank(sourceIp) || StringUtils.equals(sourceIp, "unknown")) {
+            log.warn("忽略无效日志源通知: {}", node);
+            return;
+        }
+
+        String hostname = firstText(notification, "hostname", "host");
+        Long logCount = firstLong(notification, "logCount", "log_count", "count");
+
+        log.info("收到 Vector 新 IP 通知: {}", sourceIp);
+
+        boolean isTrusted = trustedLogSourceService.handleVectorNotification(sourceIp, hostname, logCount);
+        if (!isTrusted) {
+            log.warn("新日志源 {} 需要审核", sourceIp);
+        }
+    }
+
+    private JsonNode unwrapVectorEvent(JsonNode node) {
+        if (node != null && node.has("log") && node.get("log").isObject()) {
+            return node.get("log");
+        }
+        return node;
+    }
+
+    private String firstText(JsonNode node, String... fieldNames) {
+        if (node == null) {
+            return null;
+        }
+
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.get(fieldName);
+            if (value != null && !value.isNull() && StringUtils.isNotBlank(value.asText())) {
+                return value.asText();
+            }
+        }
+        return null;
+    }
+
+    private Long firstLong(JsonNode node, String... fieldNames) {
+        if (node == null) {
+            return null;
+        }
+
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.get(fieldName);
+            if (value != null && value.isNumber()) {
+                return value.asLong();
+            }
+            if (value != null && value.isTextual() && StringUtils.isNumeric(value.asText())) {
+                return Long.parseLong(value.asText());
+            }
+        }
+        return 1L;
     }
 
     /**

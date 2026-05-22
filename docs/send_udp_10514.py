@@ -2,12 +2,12 @@
 import argparse
 import socket
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import cycle
 
 
 def build_message(template: str, index: int, fake_ip: str) -> str:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return (
         template.replace("{i}", str(index))
         .replace("{ts}", now)
@@ -18,7 +18,7 @@ def build_message(template: str, index: int, fake_ip: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=10514)
+    parser.add_argument("--port", type=int, default=514)
     parser.add_argument("--count", type=int, default=0, help="0 means send forever")
     parser.add_argument("--rate", type=float, default=2.0, help="messages per second")
     parser.add_argument(
@@ -33,8 +33,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--message",
-        # test log 7037 2026-02-06T15:41:52.501973 src_ip=10.1.1.2
-        default="<13>1 2020-12-22T15:22:31.111Z vector-user.biz su 2666 ID389 - Something went wrong.",
+        default="<13>1 {ts} vector-user.biz su 2666 ID389 - Something went wrong src_ip={ip} seq={i}.",
         help="message template, supports {i}, {ts}, {ip}",
     )
     args = parser.parse_args()

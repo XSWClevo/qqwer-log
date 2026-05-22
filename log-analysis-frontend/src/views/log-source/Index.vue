@@ -127,7 +127,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Search, Plus, Refresh, Select, Clock, CircleClose } from '@element-plus/icons-vue'
+import { Plus, Refresh, Select, Clock, CircleClose } from '@element-plus/icons-vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LogSourceTable from './components/LogSourceTable.vue'
 import {
@@ -140,8 +140,6 @@ import {
   type LogSourceDTO,
   type TrustLogSourceRequest
 } from '@/api/log-source'
-import request from '@/utils/request'
-import type { NewLogSourceNotification } from '@/api/log-source'
 
 // 状态
 const activeTab = ref('trusted')
