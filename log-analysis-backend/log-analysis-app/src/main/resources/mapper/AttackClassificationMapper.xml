@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.mw.loganalysis.attack.mapper.AttackClassificationMapper">
+
+    <select id="selectDatasetLogs" resultType="java.util.HashMap">
+        SELECT
+            ${timeExpression} AS log_timestamp,
+            toString(${messageExpression}) AS message,
+            toString(${rawExpression}) AS raw,
+            toString(${sourceIpExpression}) AS source_ip,
+            toString(${hostnameExpression}) AS hostname,
+            toString(${severityExpression}) AS severity
+        FROM ${tableExpression}
+        WHERE 1 = 1
+        <if test="startTime != null and startTime != ''">
+            AND ${timeExpression} &gt; #{startTime}
+        </if>
+        <if test="endTime != null and endTime != ''">
+            AND ${timeExpression} &lt;= #{endTime}
+        </if>
+        ORDER BY ${timeExpression} ASC
+        LIMIT #{limit}
+    </select>
+
+</mapper>
