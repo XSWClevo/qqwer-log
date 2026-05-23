@@ -105,7 +105,7 @@ mybatis-plus:
 # JWT配置
 jwt:
   secret: ${JWT_SECRET:your-256-bit-secret-key-for-jwt-token-generation-change-it-in-production}
-  expiration: 900000  # 15分钟 (毫秒)
+  expiration: ${JWT_EXPIRATION:1800000}  # 30分钟 (毫秒)
   refresh-expiration: 604800000  # 7天 (毫秒)
 
 # 会话活跃超时配置

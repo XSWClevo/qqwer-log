@@ -410,12 +410,12 @@ systemctl restart vector</pre>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Monitor, View, Edit, Delete, Key, CopyDocument, VideoPlay, VideoPause, RefreshRight, Refresh, ArrowDown, Upload, DataLine } from '@element-plus/icons-vue'
-import axios from 'axios'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import 'dayjs/locale/zh-cn'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import MachineDetailDrawer from './components/MachineDetailDrawer.vue'
+import request from '@/utils/request'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
@@ -594,7 +594,7 @@ const isHeartbeatStale = (time: string) => {
 const fetchMachines = async () => {
   loading.value = true
   try {
-    const { data } = await axios.get('/api/vector/machines/page', {
+    const data: any = await request.get('/api/vector/machines/page', {
       params: {
         pageNum: pagination.pageNum,
         pageSize: pagination.pageSize,
@@ -616,7 +616,7 @@ const fetchMachines = async () => {
 // 获取最新包版本
 const fetchLatestVersions = async () => {
   try {
-    const { data } = await axios.get('/api/vector/packages/list')
+    const data: any = await request.get('/api/vector/packages/list')
     if (data.code === 200 && data.data) {
       // 按类型和平台分组，取最新版本
       for (const pkg of data.data) {
@@ -644,13 +644,6 @@ const getLatestAgentVersion = (machine: VectorMachine) => {
   return latestAgentVersion.value[`${osType}-${arch}`] || '-'
 }
 
-// 获取机器对应的最新 Vector 版本
-const getLatestVectorVersion = (machine: VectorMachine) => {
-  const osType = machine.osType || 'linux'
-  const arch = 'amd64'  // 默认架构
-  return latestVectorVersion.value[`${osType}-${arch}`] || '-'
-}
-
 const resetFilters = () => {
   filters.keyword = ''
   filters.status = ''
@@ -661,7 +654,7 @@ const resetFilters = () => {
 const generateToken = async () => {
   generatingToken.value = true
   try {
-    const { data } = await axios.post('/api/vector/machines/generate-token')
+    const data: any = await request.post('/api/vector/machines/generate-token')
     if (data.code === 200 && data.data) {
       generatedToken.value = data.data.token || ''
       ElMessage.success('Token 生成成功')
@@ -746,7 +739,7 @@ const viewMachine = async (machine: VectorMachine) => {
   
   // 加载部署历史
   try {
-    const { data } = await axios.get(`/api/vector/deployments/machine/${machine.id}`)
+    const data: any = await request.get(`/api/vector/deployments/machine/${machine.id}`)
     if (data.code === 200) {
       deployments.value = data.data || []
     }
@@ -756,7 +749,7 @@ const viewMachine = async (machine: VectorMachine) => {
   
   // 加载命令历史
   try {
-    const { data } = await axios.get(`/api/vector/agents/commands/${machine.id}`)
+    const data: any = await request.get(`/api/vector/agents/commands/${machine.id}`)
     if (data.code === 200) {
       commands.value = data.data || []
     }
@@ -789,10 +782,10 @@ const submitMachine = async () => {
     submitting.value = true
     try {
       if (editingMachine.value) {
-        await axios.put(`/api/vector/machines/${editingMachine.value.id}`, machineForm)
+        await request.put(`/api/vector/machines/${editingMachine.value.id}`, machineForm)
         ElMessage.success('更新主机成功')
       } else {
-        await axios.post('/api/vector/machines', {
+        await request.post('/api/vector/machines', {
           ...machineForm,
           managementMethod: 'agent'
         })
@@ -820,7 +813,7 @@ const deleteMachine = (machine: VectorMachine) => {
     }
   ).then(async () => {
     try {
-      await axios.delete(`/api/vector/machines/${machine.id}`)
+      await request.delete(`/api/vector/machines/${machine.id}`)
       ElMessage.success('删除主机成功')
       fetchMachines()
     } catch (error: any) {
@@ -843,7 +836,7 @@ const sendCommand = async (machine: VectorMachine, commandType: string) => {
   }
   
   try {
-    const { data } = await axios.post('/api/vector/agents/send-command', {
+    const data: any = await request.post('/api/vector/agents/send-command', {
       machineId: machine.id,
       commandType
     })
@@ -866,7 +859,7 @@ const handleCommand = (machine: VectorMachine, command: string) => {
   }
 }
 
-const sendUpgradeCommand = async (machine: VectorMachine, commandType: string) => {
+const sendUpgradeCommand = async (machine: VectorMachine, _commandType: string) => {
   // Bundle 模式：升级 Agent 即升级整个 Bundle（包含 Vector）
   const packageType = 'vector-agent-bundle'
   
@@ -877,7 +870,7 @@ const sendUpgradeCommand = async (machine: VectorMachine, commandType: string) =
   
   try {
     // 先检查是否有可用的升级包
-    const { data: pkgData } = await axios.get('/api/vector/packages/latest', {
+    const pkgData: any = await request.get('/api/vector/packages/latest', {
       params: {
         packageType,
         osType: machine.osType || 'darwin',
@@ -904,7 +897,7 @@ const sendUpgradeCommand = async (machine: VectorMachine, commandType: string) =
     )
     
     // 发送升级命令
-    const { data } = await axios.post('/api/vector/packages/upgrade', {
+    const data: any = await request.post('/api/vector/packages/upgrade', {
       machineId: machine.id,
       packageType,
       targetVersion: pkg.version

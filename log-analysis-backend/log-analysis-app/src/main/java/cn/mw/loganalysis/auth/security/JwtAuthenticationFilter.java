@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -38,7 +39,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 从请求头获取JWT令牌
             String jwt = getJwtFromRequest(request);
 
-            if (jwt != null && jwtTokenProvider.validateToken(jwt)) {
+            if (StringUtils.isNotBlank(jwt) && jwtTokenProvider.validateToken(jwt)) {
                 // 从令牌中获取用户ID
                 Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
                 String role = jwtTokenProvider.getRoleFromToken(jwt);
@@ -69,8 +70,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private String getJwtFromRequest(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
-        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+        if (StringUtils.startsWith(bearerToken, "Bearer ")) {
             return bearerToken.substring(7);
+        }
+
+        // 浏览器 EventSource 不能设置 Authorization header，SSE 只允许通过查询参数携带用户 JWT。
+        if (StringUtils.startsWith(request.getRequestURI(), "/api/vector/logs/stream")) {
+            String queryToken = request.getParameter("access_token");
+            if (StringUtils.isNotBlank(queryToken)) {
+                return queryToken;
+            }
         }
         return null;
     }

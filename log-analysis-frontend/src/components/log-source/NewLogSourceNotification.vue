@@ -200,7 +200,7 @@ onUnmounted(() => {
 
 .log-source-mailbox {
   position: fixed;
-  top: 18px;
+  top: 76px;
   right: 24px;
   z-index: 2000;
 }

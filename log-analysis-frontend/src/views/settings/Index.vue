@@ -120,8 +120,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Timer, InfoFilled, CopyDocument, Setting, ArrowRight } from '@element-plus/icons-vue'
-import axios from 'axios'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import request from '@/utils/request'
 
 const router = useRouter()
 
@@ -153,7 +153,7 @@ const goToDatabaseConfig = () => {
 const fetchSystemInfo = async () => {
   try {
     // 获取最新的 Bundle 版本作为系统版本
-    const { data } = await axios.get('/api/vector/packages/list', {
+    const data: any = await request.get('/api/vector/packages/list', {
       params: { packageType: 'vector-agent-bundle' }
     })
     if (data.code === 200 && data.data?.length > 0) {

@@ -1,7 +1,63 @@
 import axios from 'axios'
 import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
-import { clearStoredAuthTokens, isLikelyJwtToken } from '@/utils/jwt'
+import { clearStoredAuthTokens, isLikelyJwtToken, readStoredJwtToken } from '@/utils/jwt'
+
+interface RetryableRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean
+}
+
+let refreshTokenPromise: Promise<string> | null = null
+
+export const resolveApiUrl = (path: string) => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  if (!baseUrl) {
+    return path
+  }
+  return `${String(baseUrl).replace(/\/$/, '')}${path}`
+}
+
+const isAuthEndpoint = (url?: string) => {
+  if (!url) {
+    return false
+  }
+  return url.includes('/api/auth/login') || url.includes('/api/auth/refresh')
+}
+
+const redirectToLogin = () => {
+  clearStoredAuthTokens()
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+}
+
+export const refreshAccessToken = async () => {
+  if (refreshTokenPromise) {
+    return refreshTokenPromise
+  }
+
+  const refreshToken = readStoredJwtToken('refreshToken')
+  if (!refreshToken) {
+    throw new Error('缺少刷新令牌')
+  }
+
+  refreshTokenPromise = axios.post(resolveApiUrl('/api/auth/refresh'), { refreshToken }, {
+    headers: { 'Content-Type': 'application/json' }
+  }).then((response) => {
+    const payload = response.data?.data
+    if (!isLikelyJwtToken(payload?.accessToken) || !isLikelyJwtToken(payload?.refreshToken)) {
+      throw new Error('刷新令牌响应无效')
+    }
+
+    localStorage.setItem('accessToken', payload.accessToken)
+    localStorage.setItem('refreshToken', payload.refreshToken)
+    return payload.accessToken as string
+  }).finally(() => {
+    refreshTokenPromise = null
+  })
+
+  return refreshTokenPromise
+}
 
 // 创建axios实例
 const service: AxiosInstance = axios.create({
@@ -39,12 +95,9 @@ service.interceptors.response.use(
     if (res.code && res.code !== 200) {
       ElMessage.error(res.message || '请求失败')
 
-      // 401: 未授权，需要重新登录
-      if (res.code === 401) {
-        // 清除token
-        clearStoredAuthTokens()
-        // 跳转到登录页
-        window.location.href = '/login'
+      // 401/440: 未授权或会话超时，需要重新登录
+      if (res.code === 401 || res.code === 440) {
+        redirectToLogin()
       }
 
       return Promise.reject(new Error(res.message || '请求失败'))
@@ -52,17 +105,31 @@ service.interceptors.response.use(
 
     return res
   },
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     console.error('响应错误:', error)
 
     if (error.response) {
       const status = error.response.status
+      const originalRequest = error.config as RetryableRequestConfig | undefined
 
       switch (status) {
         case 401:
+          if (originalRequest && !originalRequest._retry && !isAuthEndpoint(originalRequest.url)) {
+            originalRequest._retry = true
+            try {
+              const newAccessToken = await refreshAccessToken()
+              if (originalRequest.headers) {
+                originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+              }
+              return service(originalRequest)
+            } catch {
+              ElMessage.error('登录已过期，请重新登录')
+              redirectToLogin()
+              break
+            }
+          }
           ElMessage.error('未授权，请重新登录')
-          clearStoredAuthTokens()
-          window.location.href = '/login'
+          redirectToLogin()
           break
         case 403:
           ElMessage.error('拒绝访问')
@@ -72,8 +139,7 @@ service.interceptors.response.use(
           break
         case 440:
           ElMessage.warning('长时间未操作，会话已过期，请重新登录')
-          clearStoredAuthTokens()
-          window.location.href = '/login'
+          redirectToLogin()
           break
         case 500:
           ElMessage.error('服务器内部错误')

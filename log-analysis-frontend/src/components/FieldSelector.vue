@@ -71,6 +71,7 @@ import { ElMessage } from 'element-plus'
 import { Check, Select, InfoFilled, Rank, Close, Plus } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 import { getFieldConfig, saveFieldConfig } from '@/api/field-config'
+import request from '@/utils/request'
 
 interface FieldInfo {
   name: string
@@ -162,9 +163,7 @@ const resetFields = async () => {
   try {
     const configType = props.datasourceId ? `log_list_${props.datasourceId}` : 'log_list'
     const username = props.username || 'admin'
-    await fetch(`/api/field-config/${configType}?username=${username}`, {
-      method: 'DELETE'
-    })
+    await request.delete(`/api/field-config/${configType}`, { params: { username } })
     // 重新加载默认配置
     await loadConfig()
     ElMessage.success('已重置为默认配置')

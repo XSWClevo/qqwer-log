@@ -40,6 +40,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/attack-classification',
+    name: 'AttackClassification',
+    component: () => import('@/views/attack/Index.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/alert/rules',
     name: 'AlertRules',
     component: () => import('@/views/alert/rules/Index.vue'),

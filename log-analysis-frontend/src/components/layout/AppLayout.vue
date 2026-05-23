@@ -47,6 +47,7 @@
           </template>
           <el-menu-item index="/trend-analysis">趋势分析</el-menu-item>
           <el-menu-item index="/trace-analysis">链路分析</el-menu-item>
+          <el-menu-item index="/attack-classification">攻击识别</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/log-source">
           <el-icon><Connection /></el-icon>
@@ -141,7 +142,7 @@ const activeMenu = computed(() => route.path)
 onMounted(() => {
   nextTick(() => {
     const path = route.path
-    if (path.startsWith('/trend-analysis') || path.startsWith('/trace-analysis')) {
+    if (path.startsWith('/trend-analysis') || path.startsWith('/trace-analysis') || path.startsWith('/attack-classification')) {
       menuRef.value?.open('analysis')
     } else if (path.startsWith('/alert')) {
       menuRef.value?.open('alert')

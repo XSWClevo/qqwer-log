@@ -6,6 +6,7 @@ import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -251,9 +252,17 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
     }
 
     public SqlSessionFactory getSqlSessionFactory(DatasourceConnectionConfig config) {
+        return getSqlSessionFactory(config, ClickHouseQueryMapper.class);
+    }
+
+    public SqlSessionFactory getSqlSessionFactory(DatasourceConnectionConfig config, Class<?>... mapperTypes) {
         String cacheKey = getCacheKey(config);
-        return sqlSessionFactoryCache.computeIfAbsent(cacheKey,
-                key -> DynamicMyBatisUtils.buildSqlSessionFactory(getDataSource(config), ClickHouseQueryMapper.class));
+        String mapperCacheKey = cacheKey + "_" + Arrays.stream(ObjectUtils.defaultIfNull(mapperTypes, new Class<?>[]{ClickHouseQueryMapper.class}))
+                .map(Class::getName)
+                .collect(Collectors.joining(","));
+        return sqlSessionFactoryCache.computeIfAbsent(mapperCacheKey,
+                key -> DynamicMyBatisUtils.buildSqlSessionFactory(getDataSource(config),
+                        ObjectUtils.defaultIfNull(mapperTypes, new Class<?>[]{ClickHouseQueryMapper.class})));
     }
 
     private String buildJdbcUrl(DatasourceConnectionConfig config) {
@@ -264,8 +273,17 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
             return endpoint;
         }
 
-        StringBuilder url = new StringBuilder("jdbc:clickhouse://");
-        url.append(endpoint);
+        String normalizedEndpoint = StringUtils.trimWhitespace(endpoint);
+        if (normalizedEndpoint.startsWith("http://")) {
+            normalizedEndpoint = normalizedEndpoint.substring("http://".length());
+        } else if (normalizedEndpoint.startsWith("https://")) {
+            normalizedEndpoint = normalizedEndpoint.substring("https://".length());
+        }
+
+        StringBuilder url = new StringBuilder(Boolean.TRUE.equals(config.getTls())
+                ? "jdbc:clickhouses://"
+                : "jdbc:clickhouse://");
+        url.append(normalizedEndpoint);
         if (StringUtils.hasText(database)) {
             url.append("/").append(database);
         }
@@ -283,7 +301,9 @@ public class ClickHouseOperationStrategy implements DatasourceOperationStrategy 
     }
 
     private String getCacheKey(DatasourceConnectionConfig config) {
-        return config.getEndpoint() + "_" + (config.getDatabase() != null ? config.getDatabase() : "default");
+        return config.getEndpoint()
+                + "_" + (config.getDatabase() != null ? config.getDatabase() : "default")
+                + "_" + (config.getUsername() != null ? config.getUsername() : "");
     }
 
     private HikariDataSource getDataSource(DatasourceConnectionConfig config) {

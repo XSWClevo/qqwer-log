@@ -71,7 +71,7 @@
         <div class="control-buttons">
           <el-button-group>
             <el-button :type="isPaused ? 'warning' : 'success'" @click="togglePause">
-              <el-icon><component :is="isPaused ? 'VideoPlay' : 'VideoPause'" /></el-icon>
+              <el-icon><component :is="pauseToggleIcon" /></el-icon>
               {{ isPaused ? '继续' : '暂停' }}
             </el-button>
             <el-button @click="handleClear">
@@ -110,11 +110,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { Search, Refresh, VideoPlay, VideoPause, Delete, Top } from '@element-plus/icons-vue'
-import axios from 'axios'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import request, { resolveApiUrl } from '@/utils/request'
+import { readStoredJwtToken } from '@/utils/jwt'
 
 interface VectorLog {
   machineId: string
@@ -186,6 +186,8 @@ const connectionTagType = computed(() => {
   return 'info'
 })
 
+const pauseToggleIcon = computed(() => isPaused.value ? VideoPlay : VideoPause)
+
 const handleManualReconnect = () => {
   reconnectCount.value = 0
   disconnectSSE()
@@ -196,7 +198,7 @@ const handleManualReconnect = () => {
 // 加载主机列表
 const loadMachines = async () => {
   try {
-    const { data } = await axios.get('/api/vector/machines/page', {
+    const data: any = await request.get('/api/vector/machines/page', {
       params: { pageNum: 1, pageSize: 1000 }
     })
     if (data.code === 200 && data.data) {
@@ -210,7 +212,7 @@ const loadMachines = async () => {
 // 加载日志文件列表
 const loadFileNames = async () => {
   try {
-    const { data } = await axios.get('/api/vector/logs/files')
+    const data: any = await request.get('/api/vector/logs/files')
     if (data.code === 200 && data.data) {
       fileNames.value = data.data
     }
@@ -228,7 +230,7 @@ const handleLoadHistory = async () => {
     if (filters.fileName) params.fileName = filters.fileName
     if (filters.keyword) params.keyword = filters.keyword
 
-    const { data } = await axios.get('/api/vector/logs/query', { params })
+    const data: any = await request.get('/api/vector/logs/query', { params })
     if (data.code === 200 && data.data) {
       const records: VectorLog[] = data.data.logs || []
       // 后端按时间倒序返回（最新在前），反转为升序存储
@@ -257,7 +259,9 @@ const connectSSE = () => {
   const params = new URLSearchParams()
   if (filters.machineId) params.append('machineId', filters.machineId)
   if (filters.fileName) params.append('fileName', filters.fileName)
-  const url = params.toString() ? `/api/vector/logs/stream?${params}` : '/api/vector/logs/stream'
+  const token = readStoredJwtToken('accessToken')
+  if (token) params.append('access_token', token)
+  const url = resolveApiUrl(params.toString() ? `/api/vector/logs/stream?${params}` : '/api/vector/logs/stream')
 
   eventSource = new EventSource(url)
 
@@ -297,11 +301,16 @@ const disconnectSSE = () => {
   if (eventSource) { eventSource.close(); eventSource = null; isConnected.value = false }
   if (currentEmitterId) {
     // 通知后端关闭 polling task，使用 sendBeacon 确保页面关闭时也能发送
+    const params = new URLSearchParams()
+    const token = readStoredJwtToken('accessToken')
+    if (token) params.append('access_token', token)
+    const closePath = `/api/vector/logs/stream/${currentEmitterId}/close`
+    const closeUrl = resolveApiUrl(params.toString() ? `${closePath}?${params}` : closePath)
     try {
-      navigator.sendBeacon(`/api/vector/logs/stream/${currentEmitterId}/close`)
+      navigator.sendBeacon(closeUrl)
     } catch {
       // fallback: 直接发请求
-      axios.delete(`/api/vector/logs/stream/${currentEmitterId}`).catch(() => {})
+      request.delete(closePath).catch(() => {})
     }
     currentEmitterId = null
   }
@@ -325,13 +334,6 @@ const scrollToTop = () => {
 
 const handleScroll = () => {
   // 保留 scroll handler 以备将来扩展
-}
-
-const highlightKeyword = (text: string) => {
-  if (!filters.keyword || !text) return text
-  const keyword = filters.keyword.trim()
-  if (!keyword) return text
-  return text.replace(new RegExp(`(${keyword})`, 'gi'), '<span class="keyword-highlight">$1</span>')
 }
 
 const isHighlighted = (logItem: VectorLog) => {

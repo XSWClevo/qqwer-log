@@ -27,7 +27,7 @@
       <el-card shadow="never">
         <el-table :data="packages" v-loading="loading" stripe>
           <el-table-column prop="packageType" label="类型" width="120">
-            <template #default="{ row }">
+            <template #default>
               <el-tag type="warning">Bundle</el-tag>
             </template>
           </el-table-column>
@@ -124,9 +124,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type UploadInstance, type UploadFile } from 'element-plus'
 import { Upload, Download, Delete } from '@element-plus/icons-vue'
-import axios from 'axios'
 import dayjs from 'dayjs'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import request from '@/utils/request'
 
 interface VectorPackage {
   id: string
@@ -175,7 +175,7 @@ const formatFileSize = (bytes: number) => {
 const fetchPackages = async () => {
   loading.value = true
   try {
-    const { data } = await axios.get('/api/vector/packages/list', {
+    const data: any = await request.get('/api/vector/packages/list', {
       params: { packageType: filters.packageType || undefined }
     })
     if (data.code === 200) {
@@ -216,7 +216,7 @@ const submitUpload = async () => {
     formData.append('arch', uploadForm.arch)
     formData.append('changelog', uploadForm.changelog || '')
 
-    const { data } = await axios.post('/api/vector/packages/upload', formData, {
+    const data: any = await request.post('/api/vector/packages/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 
@@ -253,7 +253,7 @@ const deletePackage = (pkg: VectorPackage) => {
     { type: 'warning' }
   ).then(async () => {
     try {
-      const { data } = await axios.delete(`/api/vector/packages/${pkg.id}`)
+      const data: any = await request.delete(`/api/vector/packages/${pkg.id}`)
       if (data.code === 200) {
         ElMessage.success('删除成功')
         fetchPackages()

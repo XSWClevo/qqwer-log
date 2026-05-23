@@ -9,6 +9,9 @@ import cn.mw.loganalysis.common.constants.AuthConstants;
 import cn.mw.loganalysis.common.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,9 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final RedisTemplate<String, Object> redisTemplate;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    @Value("${session.activity-timeout-minutes:30}")
+    private long activityTimeoutMinutes;
 
     /**
      * 用户登录
@@ -86,6 +92,9 @@ public class AuthService {
 
         // 获取用户ID
         Long userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
+        String sessionKey = AuthConstants.SESSION_KEY_PREFIX + userId;
+
+        validateRefreshSession(sessionKey, refreshToken);
 
         // 查询用户
         User user = userMapper.selectById(userId);
@@ -151,9 +160,39 @@ public class AuthService {
         redisTemplate.opsForHash().put(sessionKey, "loginTime", now);
         redisTemplate.opsForHash().put(sessionKey, "lastActivity", now);
 
-        // 设置过期时间
-        redisTemplate.expire(sessionKey, AuthConstants.SESSION_TTL_DAYS, TimeUnit.DAYS);
+        // 按活跃时间滑动过期：30分钟内没有任何接口调用即失效
+        redisTemplate.expire(sessionKey, activityTimeoutMinutes, TimeUnit.MINUTES);
 
         log.info("Session stored for user {}", userId);
+    }
+
+    private void validateRefreshSession(String sessionKey, String refreshToken) {
+        Object storedRefreshToken = redisTemplate.opsForHash().get(sessionKey, "refreshToken");
+        Object lastActivityObj = redisTemplate.opsForHash().get(sessionKey, "lastActivity");
+
+        if (ObjectUtils.isEmpty(storedRefreshToken) || ObjectUtils.isEmpty(lastActivityObj)) {
+            redisTemplate.delete(sessionKey);
+            throw new UnauthorizedException("登录状态已过期，请重新登录");
+        }
+
+        if (!StringUtils.equals(refreshToken, storedRefreshToken.toString())) {
+            throw new UnauthorizedException("刷新令牌已失效，请重新登录");
+        }
+
+        long lastActivity = parseLastActivity(lastActivityObj);
+        long elapsedMinutes = (System.currentTimeMillis() - lastActivity) / (1000 * 60);
+        if (lastActivity <= 0 || elapsedMinutes >= activityTimeoutMinutes) {
+            redisTemplate.delete(sessionKey);
+            throw new UnauthorizedException("长时间未操作，会话已过期，请重新登录");
+        }
+    }
+
+    private long parseLastActivity(Object lastActivityObj) {
+        try {
+            return Long.parseLong(lastActivityObj.toString());
+        } catch (NumberFormatException e) {
+            log.warn("Invalid lastActivity value: {}", lastActivityObj);
+            return 0;
+        }
     }
 }

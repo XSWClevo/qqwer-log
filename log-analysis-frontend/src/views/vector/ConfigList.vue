@@ -205,11 +205,11 @@ import {
   Plus, Document, View, Edit, Delete, DocumentCopy,
   WarningFilled, Tools, SuccessFilled
 } from '@element-plus/icons-vue'
-import axios from 'axios'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import 'dayjs/locale/zh-cn'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import request from '@/utils/request'
 import * as yaml from 'js-yaml'
 
 // CodeMirror 导入
@@ -424,7 +424,7 @@ const getPreview = (content: string) => {
 const fetchConfigs = async () => {
   loading.value = true
   try {
-    const { data } = await axios.get('/api/vector/configs/page', {
+    const data: any = await request.get('/api/vector/configs/page', {
       params: {
         pageNum: pagination.pageNum,
         pageSize: pagination.pageSize,
@@ -474,10 +474,10 @@ const submitConfig = async () => {
     submitting.value = true
     try {
       if (editingConfig.value) {
-        await axios.put(`/api/vector/configs/${editingConfig.value.id}`, configForm)
+        await request.put(`/api/vector/configs/${editingConfig.value.id}`, configForm)
         ElMessage.success('更新配置成功')
       } else {
-        await axios.post('/api/vector/configs', configForm)
+        await request.post('/api/vector/configs', configForm)
         ElMessage.success('添加配置成功')
       }
       showAddDialog.value = false
@@ -493,7 +493,7 @@ const submitConfig = async () => {
 
 const copyConfig = async (config: VectorConfig) => {
   try {
-    await axios.post(`/api/vector/configs/${config.id}/copy`)
+    await request.post(`/api/vector/configs/${config.id}/copy`)
     ElMessage.success('复制配置成功')
     fetchConfigs()
   } catch (error: any) {
@@ -512,7 +512,7 @@ const deleteConfig = (config: VectorConfig) => {
     }
   ).then(async () => {
     try {
-      await axios.delete(`/api/vector/configs/${config.id}`)
+      await request.delete(`/api/vector/configs/${config.id}`)
       ElMessage.success('删除配置成功')
       fetchConfigs()
     } catch (error: any) {

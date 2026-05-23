@@ -1,4 +1,4 @@
-import request from '@/utils/request'
+import request, { refreshAccessToken, resolveApiUrl } from '@/utils/request'
 import type { FieldInfo } from '@/api/log'
 import { readStoredJwtToken, clearStoredAuthTokens } from '@/utils/jwt'
 
@@ -111,14 +111,6 @@ interface StreamChatHandlers {
   onEvent?: (event: AgentStreamEvent) => void
 }
 
-const resolveApiUrl = (path: string) => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
-  if (!baseUrl) {
-    return path
-  }
-  return `${String(baseUrl).replace(/\/$/, '')}${path}`
-}
-
 const extractErrorMessage = async (response: Response) => {
   const text = await response.text()
   if (!text) {
@@ -137,8 +129,7 @@ export function chatWithAgent(data: AgentChatRequest) {
 }
 
 export async function streamChatWithAgent(data: AgentChatRequest, handlers: StreamChatHandlers = {}) {
-  const token = readStoredJwtToken('accessToken')
-  const response = await fetch(resolveApiUrl('/api/agent/chat/stream'), {
+  const doFetch = (token: string) => fetch(resolveApiUrl('/api/agent/chat/stream'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -148,8 +139,18 @@ export async function streamChatWithAgent(data: AgentChatRequest, handlers: Stre
     body: JSON.stringify(data)
   })
 
+  let response = await doFetch(readStoredJwtToken('accessToken'))
+  if (response.status === 401) {
+    try {
+      const token = await refreshAccessToken()
+      response = await doFetch(token)
+    } catch {
+      clearStoredAuthTokens()
+    }
+  }
+
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 440) {
       clearStoredAuthTokens()
     }
     throw new Error(await extractErrorMessage(response))
