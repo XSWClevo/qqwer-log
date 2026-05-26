@@ -23,6 +23,18 @@ export interface ParsedField {
 }
 
 /**
+ * 组件库可视化回显所需的字段配置
+ */
+export interface VisualParsedField {
+  name: string
+  newName?: string
+  deleted?: boolean
+  type?: string
+  value?: any
+  comment?: string
+}
+
+/**
  * 类型建议
  */
 export interface TypeSuggestion {
@@ -86,6 +98,10 @@ export interface CreateTableRequest {
   tableName?: string
   vrlScript?: string
   parseMethod?: string
+  regexPattern?: string
+  grokPattern?: string
+  logSample?: string
+  parsedFields?: VisualParsedField[]
   autoCreateComponents?: boolean
 }
 

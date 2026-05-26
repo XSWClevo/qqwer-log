@@ -40,4 +40,12 @@ public class LogAnalysisAgentTools {
     public AgentToolPayload text2SqlQuery(@P("面向当前 ClickHouse 数据源的自然语言查询原文，例如 最近1天的数据有多少条、按 severity 统计最近24小时数量") String query) {
         return agentToolFacade.text2SqlQuery(query);
     }
+
+    @Tool(name = "preview_vector_components", value = "根据用户提供的一条日志样本预览生成 Vector Remap Transform 和 ClickHouse Sink 组件计划。只生成预览，不建表、不写组件；用户点击确认创建后才会落库。")
+    public AgentToolPayload previewVectorComponents(@P("一条原始日志样本，尽量只传日志本身，不要传解释文字") String logSample,
+                                                    @P("目标 ClickHouse 数据源 ID，可为空；为空时使用当前会话选择的 ClickHouse Sink 关联的数据源") String datasourceId,
+                                                    @P("希望创建的 ClickHouse 表名，可为空；为空时后端自动生成") String tableName,
+                                                    @P("命名捕获正则，建议使用 (?P<field>...) 捕获字段；为空时后端按日志样本启发式生成并校验") String regexPattern) {
+        return agentToolFacade.previewVectorComponents(logSample, datasourceId, tableName, regexPattern);
+    }
 }

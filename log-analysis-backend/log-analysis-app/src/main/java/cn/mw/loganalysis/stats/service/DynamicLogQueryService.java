@@ -10,10 +10,10 @@ import cn.mw.loganalysis.vector.entity.ConfigComponent;
 import cn.mw.loganalysis.vector.service.ConfigComponentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import org.yaml.snakeyaml.Yaml;
 
 import java.util.ArrayList;
@@ -101,7 +101,7 @@ public class DynamicLogQueryService {
      * 获取数据源配置
      */
     private DatasourceConnectionConfig getDatasourceConfig(String datasourceId) {
-        if (!StringUtils.hasText(datasourceId)) {
+        if (StringUtils.isBlank(datasourceId)) {
             throw new IllegalArgumentException("数据源ID不能为空");
         }
 
@@ -134,7 +134,7 @@ public class DynamicLogQueryService {
                 .type(vectorType)
                 .rawYaml(configYaml);
 
-        if (!StringUtils.hasText(configYaml)) {
+        if (StringUtils.isBlank(configYaml)) {
             log.warn("组件 {} 的 configYaml 为空", component.getId());
             return builder.build();
         }
@@ -363,11 +363,11 @@ public class DynamicLogQueryService {
             return defaultValue;
         }
         String resolved = resolveTemplateValue(value.toString());
-        return org.apache.commons.lang3.StringUtils.isNotBlank(resolved) ? resolved : defaultValue;
+        return StringUtils.isNotBlank(resolved) ? resolved : defaultValue;
     }
 
     private String resolveTemplateValue(String rawValue) {
-        if (org.apache.commons.lang3.StringUtils.isBlank(rawValue) || !rawValue.contains("${")) {
+        if (StringUtils.isBlank(rawValue) || !rawValue.contains("${")) {
             return rawValue;
         }
         Matcher matcher = SHELL_STYLE_PLACEHOLDER.matcher(rawValue);
@@ -384,18 +384,18 @@ public class DynamicLogQueryService {
 
     private String getConfiguredProperty(String key, String defaultValue) {
         String configuredValue = environment.getProperty(key);
-        return org.apache.commons.lang3.StringUtils.isNotBlank(configuredValue) ? configuredValue : defaultValue;
+        return StringUtils.isNotBlank(configuredValue) ? configuredValue : defaultValue;
     }
 
     private String firstNonBlank(String primaryValue, String fallbackValue) {
-        return org.apache.commons.lang3.StringUtils.isNotBlank(primaryValue) ? primaryValue : fallbackValue;
+        return StringUtils.isNotBlank(primaryValue) ? primaryValue : fallbackValue;
     }
 
     /**
      * 获取对应类型的查询策略
      */
     private LogQueryStrategy getStrategy(String type) {
-        if (!StringUtils.hasText(type)) {
+        if (StringUtils.isBlank(type)) {
             throw new IllegalArgumentException("数据源类型不能为空");
         }
 
@@ -439,22 +439,57 @@ public class DynamicLogQueryService {
      * @return 查询结果
      */
     public Object executeRawSQL(String datasourceId, String sql) {
-        if (StringUtils.hasText(datasourceId)) {
+        if (StringUtils.isNotBlank(datasourceId)) {
             DatasourceConnectionConfig config = getDatasourceConfig(datasourceId);
             LogQueryStrategy strategy = getStrategy(config.getType());
             return strategy.executeRawSQL(sql, config);
         } else {
-            // 使用默认的ClickHouse数据源
-            DatasourceConnectionConfig defaultConfig = DatasourceConnectionConfig.builder()
-                    .type("clickhouse")
-                    .endpoint("10.180.5.72:8123")
-                    .database("MWLOGDB_ANALYSIS")
-                    .table("syslog")
-                    .username("default")
-                    .password("mwclickhouse@2024")
-                    .build();
+            DatasourceConnectionConfig defaultConfig = buildDefaultClickHouseConfig();
             LogQueryStrategy strategy = getStrategy("clickhouse");
             return strategy.executeRawSQL(sql, defaultConfig);
         }
+    }
+
+    private DatasourceConnectionConfig buildDefaultClickHouseConfig() {
+        String jdbcUrl = getConfiguredProperty(
+                "spring.datasource.dynamic.datasource.clickhouse.url",
+                "jdbc:clickhouse://localhost:8123/default"
+        );
+        DefaultClickHouseEndpoint endpoint = parseDefaultClickHouseEndpoint(jdbcUrl);
+        return DatasourceConnectionConfig.builder()
+                .type("clickhouse")
+                .endpoint(endpoint.endpoint())
+                .database(endpoint.database())
+                .table("syslog")
+                .username(getConfiguredProperty("spring.datasource.dynamic.datasource.clickhouse.username", "default"))
+                .password(getConfiguredProperty("spring.datasource.dynamic.datasource.clickhouse.password", ""))
+                .tls(endpoint.secure())
+                .build();
+    }
+
+    private DefaultClickHouseEndpoint parseDefaultClickHouseEndpoint(String jdbcUrl) {
+        String rawUrl = StringUtils.defaultIfBlank(jdbcUrl, "jdbc:clickhouse://localhost:8123/default").trim();
+        boolean secure = rawUrl.startsWith("jdbc:clickhouses://") || rawUrl.startsWith("https://");
+        String remainder = rawUrl
+                .replaceFirst("^jdbc:clickhouses?://", "")
+                .replaceFirst("^https?://", "");
+
+        int queryIndex = remainder.indexOf('?');
+        if (queryIndex >= 0) {
+            remainder = remainder.substring(0, queryIndex);
+        }
+
+        String endpoint = remainder;
+        String database = "default";
+        int slashIndex = remainder.indexOf('/');
+        if (slashIndex >= 0) {
+            endpoint = remainder.substring(0, slashIndex);
+            database = StringUtils.defaultIfBlank(remainder.substring(slashIndex + 1), "default");
+        }
+
+        return new DefaultClickHouseEndpoint(StringUtils.defaultIfBlank(endpoint, "localhost:8123"), database, secure);
+    }
+
+    private record DefaultClickHouseEndpoint(String endpoint, String database, boolean secure) {
     }
 }

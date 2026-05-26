@@ -6,6 +6,9 @@ import cn.mw.loganalysis.alert.entity.AlertRule;
 import cn.mw.loganalysis.alert.mapper.AlertNotificationMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
@@ -15,186 +18,98 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 告警通知器
- * 发送告警通知到各个渠道
+ * 告警通知器。
+ * <p>
+ * 当前项目还没有邮件、Slack、Webhook 的具体连接配置，所以这里不会伪造发送成功。
+ * 页面展示渠道会记录为 SUCCESS，外部渠道会记录为 SKIPPED，后续接入真实客户端时在这里替换为 SUCCESS / FAILED。
+ * </p>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AlertNotifier {
 
-    private final AlertNotificationMapper alertNotificationMapper;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String PAGE_CHANNEL = "page";
 
-    /**
-     * 发送通知（异步）
-     */
+    private final AlertNotificationMapper alertNotificationMapper;
+
     @Async
-    public void sendNotifications(AlertRule rule, AlertEvent event, List<Map<String, Object>> results) {
-        log.info("Sending notifications for alert event: {}", event.getId());
-        
+    public void sendNotifications(AlertRule rule, AlertEvent event, List<Map<String, Object>> samples) {
         List<String> channels = rule.getNotificationChannels();
-        if (channels == null || channels.isEmpty()) {
-            log.warn("No notification channels configured for rule: {}", rule.getId());
+        if (CollectionUtils.isEmpty(channels)) {
+            log.info("Alert rule {} has no notification channels, event {} is recorded for page display",
+                    rule.getId(), event.getId());
+            recordNotificationSafely(event.getId(), PAGE_CHANNEL, "SUCCESS", "已记录在告警历史页面");
             return;
         }
-        
-        String message = renderMessage(rule, event, results);
-        
+
+        String message = renderMessage(rule, event, samples);
+        boolean recorded = false;
         for (String channel : channels) {
-            try {
-                boolean success = sendToChannel(channel, message, rule, event);
-                recordNotification(event.getId(), channel, success, success ? null : "发送失败");
-            } catch (Exception e) {
-                log.error("Failed to send notification to channel: {}", channel, e);
-                recordNotification(event.getId(), channel, false, e.getMessage());
+            if (StringUtils.isBlank(channel)) {
+                continue;
             }
+            if (StringUtils.equalsIgnoreCase(PAGE_CHANNEL, channel)) {
+                log.info("Alert event {} is recorded for page display. Message: {}", event.getId(), message);
+                recordNotificationSafely(event.getId(), PAGE_CHANNEL, "SUCCESS", "已记录在告警历史页面");
+                recorded = true;
+                continue;
+            }
+            log.info("Notification channel {} is not wired yet, record skipped notification for event {}. Message: {}",
+                    channel, event.getId(), message);
+            recordNotificationSafely(event.getId(), channel, "SKIPPED", "通知渠道尚未配置真实发送客户端");
+            recorded = true;
+        }
+
+        if (!recorded) {
+            log.info("Alert rule {} has no valid notification channels, event {} is recorded for page display",
+                    rule.getId(), event.getId());
+            recordNotificationSafely(event.getId(), PAGE_CHANNEL, "SUCCESS", "已记录在告警历史页面");
         }
     }
 
-    /**
-     * 发送到指定渠道
-     */
-    private boolean sendToChannel(String channel, String message, AlertRule rule, AlertEvent event) {
-        log.info("Sending notification to channel: {}", channel);
-        
-        return switch (channel.toLowerCase()) {
-            case "slack" -> sendToSlack(message, rule);
-            case "email" -> sendToEmail(message, rule);
-            case "webhook" -> sendToWebhook(message, rule);
-            default -> {
-                log.warn("Unsupported notification channel: {}", channel);
-                yield false;
-            }
-        };
-    }
-
-    /**
-     * 发送到 Slack
-     */
-    private boolean sendToSlack(String message, AlertRule rule) {
-        log.info("Sending to Slack: {}", message);
-        
-        // TODO: 实现实际的 Slack 通知
-        // 使用 Slack Webhook API 或 Slack SDK
-        // String webhookUrl = getSlackWebhookUrl();
-        // RestTemplate restTemplate = new RestTemplate();
-        // Map<String, Object> payload = Map.of("text", message);
-        // restTemplate.postForEntity(webhookUrl, payload, String.class);
-        
-        // 模拟发送成功
-        return true;
-    }
-
-    /**
-     * 发送到 Email
-     */
-    private boolean sendToEmail(String message, AlertRule rule) {
-        log.info("Sending to Email: {}", message);
-        
-        // TODO: 实现实际的邮件通知
-        // 使用 Spring Mail 或其他邮件服务
-        // JavaMailSender mailSender;
-        // SimpleMailMessage mailMessage = new SimpleMailMessage();
-        // mailMessage.setTo("admin@example.com");
-        // mailMessage.setSubject("告警: " + rule.getName());
-        // mailMessage.setText(message);
-        // mailSender.send(mailMessage);
-        
-        // 模拟发送成功
-        return true;
-    }
-
-    /**
-     * 发送到 Webhook
-     */
-    private boolean sendToWebhook(String message, AlertRule rule) {
-        log.info("Sending to Webhook: {}", message);
-        
-        // TODO: 实现实际的 Webhook 通知
-        // String webhookUrl = getWebhookUrl();
-        // RestTemplate restTemplate = new RestTemplate();
-        // Map<String, Object> payload = Map.of(
-        //     "rule_name", rule.getName(),
-        //     "severity", rule.getSeverity(),
-        //     "message", message
-        // );
-        // restTemplate.postForEntity(webhookUrl, payload, String.class);
-        
-        // 模拟发送成功
-        return true;
-    }
-
-    /**
-     * 渲染消息模板
-     */
-    private String renderMessage(AlertRule rule, AlertEvent event, List<Map<String, Object>> results) {
-        Map<String, Object> condition = rule.getCondition();
-        Map<String, Object> firstResult = results.isEmpty() ? Map.of() : results.get(0);
-        
-        Object valueObj = firstResult.get("value");
-        double actualValue = valueObj != null ? convertToDouble(valueObj) : 0;
-        
-        Object thresholdObj = condition.get("value");
-        double threshold = thresholdObj != null ? convertToDouble(thresholdObj) : 0;
-        
-        String groupBy = (String) condition.get("groupBy");
-        String groupValue = groupBy != null ? (String) firstResult.get(groupBy) : "N/A";
-        
+    private String renderMessage(AlertRule rule, AlertEvent event, List<Map<String, Object>> samples) {
+        Map<String, Object> logData = event.getLogData();
         StringBuilder message = new StringBuilder();
-        message.append("🚨 告警通知\n\n");
+        message.append("告警通知\n\n");
         message.append("规则名称: ").append(rule.getName()).append("\n");
-        message.append("严重程度: ").append(getSeverityEmoji(rule.getSeverity())).append(" ").append(rule.getSeverity()).append("\n");
+        message.append("严重程度: ").append(event.getSeverity()).append("\n");
+        message.append("状态: ").append(event.getState()).append("\n");
         message.append("触发时间: ").append(LocalDateTime.now().format(FORMATTER)).append("\n");
-        message.append("实际值: ").append(String.format("%.2f", actualValue)).append("\n");
-        message.append("阈值: ").append(String.format("%.2f", threshold)).append("\n");
-        
-        if (groupBy != null) {
-            message.append("分组: ").append(groupBy).append(" = ").append(groupValue).append("\n");
+        message.append("摘要: ").append(StringUtils.defaultIfBlank(event.getMessage(), "无")).append("\n");
+
+        if (MapUtils.isNotEmpty(logData)) {
+            Object actualValue = logData.get("actualValue");
+            Object threshold = logData.get("threshold");
+            if (actualValue != null) {
+                message.append("实际值: ").append(actualValue).append("\n");
+            }
+            if (threshold != null) {
+                message.append("阈值: ").append(threshold).append("\n");
+            }
         }
-        
-        message.append("\n描述: ").append(rule.getDescription() != null ? rule.getDescription() : "无");
-        
+        if (CollectionUtils.isNotEmpty(samples)) {
+            message.append("样本数: ").append(samples.size()).append("\n");
+        }
         return message.toString();
     }
 
-    /**
-     * 记录通知结果
-     */
-    private void recordNotification(Long eventId, String channel, boolean success, String errorMessage) {
+    private void recordNotificationSafely(Long eventId, String channel, String status, String errorMessage) {
+        try {
+            recordNotification(eventId, channel, status, errorMessage);
+        } catch (Exception e) {
+            log.error("Record alert notification failed, eventId={}, channel={}, status={}", eventId, channel, status, e);
+        }
+    }
+
+    private void recordNotification(Long eventId, String channel, String status, String errorMessage) {
         AlertNotification notification = new AlertNotification();
         notification.setEventId(eventId);
         notification.setChannel(channel);
-        notification.setStatus(success ? "SUCCESS" : "FAILED");
+        notification.setStatus(status);
         notification.setErrorMessage(errorMessage);
-        
+        notification.setSentAt(LocalDateTime.now());
         alertNotificationMapper.insert(notification);
-    }
-
-    /**
-     * 获取严重程度表情
-     */
-    private String getSeverityEmoji(String severity) {
-        return switch (severity.toUpperCase()) {
-            case "CRITICAL" -> "🔴";
-            case "ERROR" -> "🟠";
-            case "WARNING" -> "🟡";
-            case "INFO" -> "🔵";
-            default -> "⚪";
-        };
-    }
-
-    /**
-     * 转换为 double
-     */
-    private double convertToDouble(Object obj) {
-        if (obj instanceof Number) {
-            return ((Number) obj).doubleValue();
-        }
-        try {
-            return Double.parseDouble(obj.toString());
-        } catch (NumberFormatException e) {
-            return 0.0;
-        }
     }
 }

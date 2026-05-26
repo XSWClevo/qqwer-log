@@ -14,6 +14,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -65,7 +66,7 @@ public class TableManagementService {
             // 4. 创建 Remap Transform 组件
             String remapComponentId = null;
             if (StringUtils.isNotBlank(request.getVrlScript())) {
-                remapComponentId = createRemapComponent(tableName, request.getVrlScript(), request.getParseMethod());
+                remapComponentId = createRemapComponent(tableName, request);
             }
 
             // 5. 创建 ClickHouse Sink 组件
@@ -242,7 +243,10 @@ public class TableManagementService {
     /**
      * 创建 Remap Transform 组件
      */
-    private String createRemapComponent(String tableName, String vrlScript, String parseMethod) {
+    private String createRemapComponent(String tableName, CreateTableRequest sourceRequest) {
+        String vrlScript = StringUtils.defaultString(sourceRequest.getVrlScript());
+        String parseMethod = normalizeParseMethod(sourceRequest.getParseMethod());
+
         ConfigComponentRequest request = new ConfigComponentRequest();
         request.setName(tableName + "_remap");
         request.setComponentType("transform");
@@ -266,21 +270,56 @@ public class TableManagementService {
 
         // 保存可视化数据（字段名与前端 visualConfig 完全一致）
         Map<String, Object> visualData = new LinkedHashMap<>();
-        visualData.put("parse_method", StringUtils.defaultString(parseMethod, "custom"));
-        visualData.put("regex_pattern", "");
-        visualData.put("grok_pattern", "");
-        visualData.put("vrl_source", StringUtils.defaultString(vrlScript, ""));
+        visualData.put("parse_method", parseMethod);
+        visualData.put("regex_pattern", StringUtils.defaultString(sourceRequest.getRegexPattern()));
+        visualData.put("grok_pattern", StringUtils.defaultString(sourceRequest.getGrokPattern()));
+        visualData.put("vrl_source", vrlScript);
         visualData.put("generate_uuid", false);
         visualData.put("keep_raw", false);
         visualData.put("extract_source_ip", false);
         visualData.put("convert_procid", false);
         visualData.put("add_fields", Collections.emptyList());
         visualData.put("remove_fields", Collections.emptyList());
-        visualData.put("log_sample", "");
-        visualData.put("parsed_fields", Collections.emptyList());
+        visualData.put("log_sample", StringUtils.defaultString(sourceRequest.getLogSample()));
+        visualData.put("parsed_fields", buildParsedFieldsVisualData(sourceRequest.getParsedFields()));
         request.setVisualData(toJson(visualData));
 
         return componentService.create(request, "wizard").getId();
+    }
+
+    private String normalizeParseMethod(String parseMethod) {
+        String method = StringUtils.defaultIfBlank(parseMethod, "custom");
+        if (StringUtils.equals(method, "parse_kv")) {
+            return "parse_key_value";
+        }
+        if (StringUtils.equals(method, "auto")) {
+            return "custom";
+        }
+        return method;
+    }
+
+    private List<Map<String, Object>> buildParsedFieldsVisualData(List<CreateTableRequest.VisualParsedField> fields) {
+        if (CollectionUtils.isEmpty(fields)) {
+            return Collections.emptyList();
+        }
+
+        List<Map<String, Object>> parsedFields = new ArrayList<>();
+        for (CreateTableRequest.VisualParsedField field : fields) {
+            if (ObjectUtils.isEmpty(field) || StringUtils.isBlank(field.getName())) {
+                continue;
+            }
+
+            Map<String, Object> visualField = new LinkedHashMap<>();
+            String name = field.getName();
+            visualField.put("name", name);
+            visualField.put("newName", StringUtils.defaultIfBlank(field.getNewName(), name));
+            visualField.put("deleted", Boolean.TRUE.equals(field.getDeleted()));
+            visualField.put("type", StringUtils.defaultString(field.getType(), "string"));
+            visualField.put("value", field.getValue());
+            visualField.put("comment", StringUtils.defaultString(field.getComment()));
+            parsedFields.add(visualField);
+        }
+        return parsedFields;
     }
 
     /**

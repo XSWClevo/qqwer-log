@@ -437,9 +437,13 @@ public class ComponentYamlGeneratorService {
                 lines.add(". = parse_json!(.message)");
                 break;
             case PARSE_SYSLOG:
+                lines.add("network_source_ip = to_string(.source_ip) ?? to_string(.host) ?? \"\"");
                 lines.add("result, err = parse_syslog(.message)");
                 lines.add("if is_null(err) {");
                 lines.add("  . = merge(., result)");
+                lines.add("}");
+                lines.add("if network_source_ip != \"\" {");
+                lines.add("  .source_ip = replace(network_source_ip, r':\\d+$', \"\")");
                 lines.add("}");
                 break;
             case PARSE_REGEX:
@@ -474,7 +478,10 @@ public class ComponentYamlGeneratorService {
             lines.add(".raw = .message");
         }
         if (visual.path(FIELD_EXTRACT_SOURCE_IP).asBoolean(false)) {
-            lines.add(".source_ip = del(.host)");
+            lines.add("raw_source_ip = to_string(.source_ip) ?? to_string(.host) ?? \"\"");
+            lines.add("if raw_source_ip != \"\" {");
+            lines.add("  .source_ip = replace(raw_source_ip, r':\\d+$', \"\")");
+            lines.add("}");
         }
         if (visual.path(FIELD_CONVERT_PROCID).asBoolean(false)) {
             lines.add("if exists(.procid) {");

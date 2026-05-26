@@ -34,7 +34,17 @@ public class AlertRuleDTO {
 
     private List<String> tableNames;
 
-    private Map<String, Object> condition;
+    private AlertConditionDTO condition;
+
+    private AlertThresholdsDTO thresholds;
+
+    private AlertMonitorOptionsDTO monitorOptions;
+
+    private AlertMonitorStateDTO currentState;
+
+    private AlertEvaluationRunDTO lastEvaluation;
+
+    private AlertDowntimeStatusDTO downtimeStatus;
 
     private String evalEvery;
 
@@ -43,8 +53,6 @@ public class AlertRuleDTO {
     private String severity;
 
     private List<String> notificationChannels;
-
-    private List<String> dedupKeyFields;
 
     private String messageTemplate;
 

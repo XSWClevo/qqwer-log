@@ -3,6 +3,8 @@ package cn.mw.loganalysis.wizard.dto;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 创建表请求
  */
@@ -37,7 +39,37 @@ public class CreateTableRequest {
     private String parseMethod;
 
     /**
+     * 正则表达式（parse_regex 时用于组件库可视化回显）
+     */
+    private String regexPattern;
+
+    /**
+     * Grok 模式（parse_grok 时用于组件库可视化回显）
+     */
+    private String grokPattern;
+
+    /**
+     * 日志样本（用于组件库再次测试解析）
+     */
+    private String logSample;
+
+    /**
+     * 已识别字段（用于组件库解析预览回显）
+     */
+    private List<VisualParsedField> parsedFields;
+
+    /**
      * 是否自动创建组件
      */
     private Boolean autoCreateComponents = true;
+
+    @Data
+    public static class VisualParsedField {
+        private String name;
+        private String newName;
+        private Boolean deleted;
+        private String type;
+        private Object value;
+        private String comment;
+    }
 }

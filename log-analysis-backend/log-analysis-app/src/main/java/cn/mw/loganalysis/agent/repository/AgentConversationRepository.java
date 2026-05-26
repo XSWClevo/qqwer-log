@@ -57,35 +57,47 @@ public class AgentConversationRepository {
         );
     }
 
-    public void createIfAbsent(AgentConversation conversation) {
+    public AgentConversation findById(String sessionId) {
+        if (StringUtils.isBlank(sessionId)) {
+            return null;
+        }
+        return conversationMapper.selectById(StringUtils.trim(sessionId));
+    }
+
+    public boolean createIfAbsent(AgentConversation conversation, Long userId) {
         if (conversation == null || StringUtils.isBlank(conversation.getId())) {
-            return;
+            return false;
         }
 
-        if (conversationMapper.selectById(conversation.getId()) != null) {
-            return;
+        AgentConversation existing = conversationMapper.selectById(conversation.getId());
+        if (existing != null) {
+            return !ObjectUtils.notEqual(existing.getUserId(), userId);
         }
 
         try {
             conversationMapper.insert(conversation);
+            return true;
         } catch (DuplicateKeyException ignored) {
             // 并发首条消息写入时，以数据库唯一键兜底，已有记录即可视为成功。
+            AgentConversation inserted = conversationMapper.selectById(conversation.getId());
+            return inserted != null && !ObjectUtils.notEqual(inserted.getUserId(), userId);
         }
     }
 
-    public void updateAfterTurn(String sessionId,
+    public void updateAfterTurn(Long userId,
+                                String sessionId,
                                 String title,
                                 String preview,
                                 String datasourceId,
                                 String datasourceName,
                                 String datasourceType,
                                 int messageCount) {
-        if (StringUtils.isBlank(sessionId)) {
+        if (ObjectUtils.isEmpty(userId) || StringUtils.isBlank(sessionId)) {
             return;
         }
 
         AgentConversation existing = conversationMapper.selectById(StringUtils.trim(sessionId));
-        if (existing == null) {
+        if (existing == null || ObjectUtils.notEqual(existing.getUserId(), userId)) {
             return;
         }
 
@@ -94,6 +106,7 @@ public class AgentConversationRepository {
                 null,
                 Wrappers.<AgentConversation>lambdaUpdate()
                         .eq(AgentConversation::getId, existing.getId())
+                        .eq(AgentConversation::getUserId, userId)
                         .set(shouldRefreshTitle(existing), AgentConversation::getTitle, title)
                         .set(AgentConversation::getPreview, preview)
                         .set(StringUtils.isNotBlank(datasourceId), AgentConversation::getDatasourceId, datasourceId)

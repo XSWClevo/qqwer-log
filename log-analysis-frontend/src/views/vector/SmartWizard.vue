@@ -505,6 +505,27 @@ const buildSuggestedTableName = () => {
   return sanitizeTableName(formatPrefixMap[detectedFormat.value] || 'app_logs')
 }
 
+const normalizeComponentParseMethod = (parseMethod: ParseLogRequest['parseMethod']) => {
+  if (parseMethod === 'parse_kv') {
+    return 'parse_key_value'
+  }
+  if (parseMethod === 'auto') {
+    return 'custom'
+  }
+  return parseMethod
+}
+
+const buildVisualParsedFields = () => {
+  return parsedFields.value.map((field) => ({
+    name: field.name,
+    newName: field.name,
+    deleted: false,
+    type: field.type,
+    value: field.value,
+    comment: field.comment || ''
+  }))
+}
+
 const ensureDefaultTimestampField = (fields: WizardField[]) => {
   const hasTimestamp = fields.some((field) => field.name.trim().toLowerCase() === 'timestamp')
   if (hasTimestamp) {
@@ -702,7 +723,10 @@ const handleCreateTable = async () => {
       ddl: generatedDDL.value,
       tableName: step3Form.value.tableName,
       vrlScript: generatedVrlScript.value,
-      parseMethod: step1Form.value.parseMethod,
+      parseMethod: normalizeComponentParseMethod(step1Form.value.parseMethod),
+      regexPattern: step1Form.value.regexPattern,
+      logSample: step1Form.value.logSample,
+      parsedFields: buildVisualParsedFields(),
       autoCreateComponents: true
     }) as ApiResult<CreateTableResponse>)
 

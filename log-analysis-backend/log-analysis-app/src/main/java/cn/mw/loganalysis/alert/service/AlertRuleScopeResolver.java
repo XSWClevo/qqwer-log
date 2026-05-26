@@ -35,8 +35,16 @@ public class AlertRuleScopeResolver {
             case "category" -> resolveByCategories(rule.getCategoryCodes());
             case "datasource" -> resolveByDatasources(rule.getDatasourceIds());
             case "table" -> resolveByTables(rule.getDatasourceIds(), rule.getTableNames());
-            default -> List.of(defaultTarget());
+            default -> resolveAll();
         };
+    }
+
+    private List<AlertDatasetTarget> resolveAll() {
+        List<LogCategoryRegistry> registries = logCategoryRegistryService.listEnabled();
+        if (CollectionUtils.isNotEmpty(registries)) {
+            return registries.stream().map(this::fromRegistry).toList();
+        }
+        return List.of(defaultTarget());
     }
 
     private List<AlertDatasetTarget> resolveByCategories(List<String> categoryCodes) {
@@ -147,7 +155,7 @@ public class AlertRuleScopeResolver {
     private AlertDatasetTarget defaultTarget() {
         return AlertDatasetTarget.builder()
                 .datasourceType("clickhouse")
-                .tableName("syslog")
+                .tableName("syslog_logs")
                 .timeField("timestamp")
                 .messageField("message")
                 .rawField("raw")

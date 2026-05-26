@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 告警规则调度器
@@ -26,6 +28,7 @@ public class AlertRuleScheduler {
 
     private final AlertRuleMapper alertRuleMapper;
     private final AlertRuleExecutor alertRuleExecutor;
+    private final Set<Long> runningRuleIds = ConcurrentHashMap.newKeySet();
     
     // 线程池用于并行执行规则
     private final ExecutorService executorService = Executors.newFixedThreadPool(10);
@@ -47,11 +50,18 @@ public class AlertRuleScheduler {
                 if (!shouldEvaluateNow(rule)) {
                     continue;
                 }
+                Long ruleId = rule.getId();
+                if (ruleId == null || !runningRuleIds.add(ruleId)) {
+                    log.info("Alert rule {} is still running, skip this schedule tick", ruleId);
+                    continue;
+                }
                 executorService.submit(() -> {
                     try {
                         alertRuleExecutor.executeRule(rule);
                     } catch (Exception e) {
                         log.error("Failed to execute rule: {} (ID: {})", rule.getName(), rule.getId(), e);
+                    } finally {
+                        runningRuleIds.remove(ruleId);
                     }
                 });
             }

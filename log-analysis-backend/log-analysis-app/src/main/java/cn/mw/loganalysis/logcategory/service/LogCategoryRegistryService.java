@@ -18,6 +18,10 @@ public class LogCategoryRegistryService {
 
     private final LogCategoryRegistryMapper logCategoryRegistryMapper;
 
+    public List<LogCategoryRegistry> listEnabled() {
+        return logCategoryRegistryMapper.selectEnabled();
+    }
+
     public List<LogCategoryRegistry> listEnabledByCategoryCodes(List<String> categoryCodes) {
         if (CollectionUtils.isEmpty(categoryCodes)) {
             return Collections.emptyList();

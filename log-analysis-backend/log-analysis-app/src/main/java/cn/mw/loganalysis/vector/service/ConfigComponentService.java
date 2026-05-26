@@ -5,6 +5,8 @@ import cn.mw.loganalysis.vector.entity.ConfigComponent;
 import cn.mw.loganalysis.vector.mapper.ConfigComponentMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.BooleanUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +26,24 @@ public class ConfigComponentService {
 
     public ConfigComponent getById(String id) {
         return componentMapper.selectById(id);
+    }
+
+    /**
+     * 智能助手和日志查询入口只能使用显式标记为可查询的 Sink 组件。
+     */
+    public ConfigComponent getQueryableDataSourceById(String id) {
+        if (StringUtils.isBlank(id)) {
+            return null;
+        }
+        ConfigComponent component = componentMapper.selectById(StringUtils.trim(id));
+        if (component == null) {
+            return null;
+        }
+        if (!StringUtils.equalsIgnoreCase(component.getComponentType(), "sink")
+                || !BooleanUtils.isTrue(component.getQueryable())) {
+            return null;
+        }
+        return component;
     }
 
     @Transactional(rollbackFor = Exception.class)

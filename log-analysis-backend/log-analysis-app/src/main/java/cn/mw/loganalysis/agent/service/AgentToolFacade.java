@@ -17,6 +17,7 @@ public class AgentToolFacade {
     private final LogQueryToolHandler logQueryToolHandler;
     private final TimeSeriesToolHandler timeSeriesToolHandler;
     private final Text2SqlToolHandler text2SqlToolHandler;
+    private final VectorComponentPlanToolHandler vectorComponentPlanToolHandler;
 
     public AgentToolPayload getSchema() {
         return schemaToolHandler.handle(AgentExecutionContextHolder.require());
@@ -32,5 +33,18 @@ public class AgentToolFacade {
 
     public AgentToolPayload text2SqlQuery(String query) {
         return text2SqlToolHandler.handle(AgentExecutionContextHolder.require(), query);
+    }
+
+    public AgentToolPayload previewVectorComponents(String logSample,
+                                                    String datasourceId,
+                                                    String tableName,
+                                                    String regexPattern) {
+        return vectorComponentPlanToolHandler.preview(
+                AgentExecutionContextHolder.require(),
+                logSample,
+                datasourceId,
+                tableName,
+                regexPattern
+        );
     }
 }

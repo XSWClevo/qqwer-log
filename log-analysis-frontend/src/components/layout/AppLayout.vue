@@ -1,14 +1,14 @@
 <template>
   <el-container class="app-layout">
     <!-- 左侧菜单 -->
-    <el-aside :width="isCollapsed ? '64px' : '220px'" class="app-aside">
+    <el-aside :width="isCollapsed ? '64px' : '220px'" class="app-aside" :class="{ 'is-collapsed': isCollapsed }">
       <div class="logo-section">
         <img src="@/assets/vue.svg" alt="Logo" class="logo-icon" />
         <span v-show="!isCollapsed" class="logo-text">qqwer</span>
       </div>
       <el-menu
-        ref="menuRef"
         :default-active="activeMenu"
+        :default-openeds="defaultOpeneds"
         :collapse="isCollapsed"
         :collapse-transition="false"
         class="side-menu"
@@ -111,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDark, useToggle } from '@vueuse/core'
 import {
@@ -134,22 +134,20 @@ import NewLogSourceNotification from '@/components/log-source/NewLogSourceNotifi
 
 const route = useRoute()
 const isCollapsed = ref(false)
-const menuRef = ref<any>(null)
 
 const activeMenu = computed(() => route.path)
-
-// 首次加载时展开当前路由对应的子菜单
-onMounted(() => {
-  nextTick(() => {
-    const path = route.path
-    if (path.startsWith('/trend-analysis') || path.startsWith('/trace-analysis') || path.startsWith('/attack-classification')) {
-      menuRef.value?.open('analysis')
-    } else if (path.startsWith('/alert')) {
-      menuRef.value?.open('alert')
-    } else if (path.startsWith('/vector')) {
-      menuRef.value?.open('vector')
-    }
-  })
+const defaultOpeneds = computed(() => {
+  const path = route.path
+  if (path.startsWith('/trend-analysis') || path.startsWith('/trace-analysis') || path.startsWith('/attack-classification')) {
+    return ['analysis']
+  }
+  if (path.startsWith('/alert')) {
+    return ['alert']
+  }
+  if (path.startsWith('/vector')) {
+    return ['vector']
+  }
+  return []
 })
 
 // Dark mode
@@ -178,8 +176,28 @@ const toggleDark = useToggle(isDark)
   border-right: 1px solid var(--macos-border);
   display: flex;
   flex-direction: column;
-  transition: width 0.25s var(--macos-transition);
+  transition: none;
   overflow: hidden;
+
+  &.is-collapsed {
+    transition: width 0.2s var(--macos-transition);
+
+    .side-menu {
+      padding: 0 6px;
+
+      :deep(.el-menu-item),
+      :deep(.el-sub-menu__title) {
+        justify-content: center;
+        gap: 0;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+      }
+
+      :deep(.el-sub-menu__icon-arrow) {
+        display: none;
+      }
+    }
+  }
 }
 
 .logo-section {
@@ -214,6 +232,11 @@ const toggleDark = useToggle(isDark)
   overflow-y: auto;
   @include macos.macos-scrollbar;
 
+  :deep(.el-menu),
+  :deep(.el-menu--inline) {
+    transition: none !important;
+  }
+
   // 分组标签
   :deep(.menu-group-label) {
     list-style: none;
@@ -228,27 +251,61 @@ const toggleDark = useToggle(isDark)
 
   :deep(.el-menu-item),
   :deep(.el-sub-menu__title) {
+    box-sizing: border-box;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     color: var(--macos-text-secondary);
     height: 44px;
-    line-height: 44px;
+    line-height: 1;
     border-radius: var(--macos-radius-sm);
-    transition: var(--macos-transition-fast);
+    font-weight: 500;
+    transform: translateZ(0);
+    transition:
+      background-color 0.12s ease,
+      color 0.12s ease;
     
     &:hover {
       color: var(--macos-text-primary);
       background: var(--macos-blue-light);
     }
     
-    .el-icon {
+    .el-icon:not(.el-sub-menu__icon-arrow) {
+      flex: 0 0 auto;
       color: inherit;
       font-size: 18px;
+    }
+
+    span {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  :deep(.el-sub-menu__title) {
+    position: relative;
+    padding-right: 38px !important;
+
+    .el-sub-menu__icon-arrow {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      margin-top: -6px;
+      width: 14px;
+      height: 14px;
+      flex: 0 0 14px;
+      font-size: 14px;
+      pointer-events: none;
     }
   }
   
   :deep(.el-menu-item.is-active) {
     color: white;
     background: var(--macos-blue);
-    font-weight: 500;
     
     &:hover {
       background: var(--macos-blue-hover);
@@ -266,6 +323,8 @@ const toggleDark = useToggle(isDark)
   }
   
   :deep(.el-sub-menu .el-menu-item) {
+    box-sizing: border-box;
+    width: 100%;
     padding-left: 48px !important;
     height: 40px;
     line-height: 40px;

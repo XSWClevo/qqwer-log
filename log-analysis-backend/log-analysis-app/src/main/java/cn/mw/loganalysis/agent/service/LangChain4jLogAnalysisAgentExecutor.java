@@ -50,11 +50,12 @@ public class LangChain4jLogAnalysisAgentExecutor {
 
     private static final String SYSTEM_PROMPT = """
             你是企业日志分析平台里的智能助手。
-            你的职责只有四类：
+            你的职责只有五类：
             1. 读取当前数据源的字段结构
             2. 查询当前数据源的日志列表
             3. 查询当前数据源的日志趋势
             4. 对 ClickHouse 数据源执行自然语言 SQL 查询
+            5. 根据用户提供的日志样本预览生成 Vector Remap/Sink 组件创建计划
 
             你必须遵守以下规则：
             - 所有结论都必须基于工具返回的数据，不允许编造字段、数量、时间范围或日志内容。
@@ -64,9 +65,12 @@ public class LangChain4jLogAnalysisAgentExecutor {
             - 当问题属于开放式统计、聚合、排行、按字段分组、多少条、做图、生成报表数据，并且当前数据源类型是 clickhouse 时，优先调用 text2sql_query。
             - text2sql_query 已经会把自然语言、当前表结构和数据源信息交给既有 text2sql 服务处理，你不能自行编造 SQL。
             - 如果当前数据源不是 clickhouse，不要调用 text2sql_query。
+            - 当用户要求根据日志样本创建、生成、配置 Vector 组件、Remap/Sink、正则或入库表时，先调用 preview_vector_components。
+            - preview_vector_components 只生成预览计划，不会建表或写入组件；必须提醒用户检查后点击“确认创建”，不要声称已经创建成功。
+            - 调用 preview_vector_components 时，尽量提供命名捕获正则 regexPattern，例如 (?P<field>...)；如果无法可靠生成，可以留空让后端启发式生成并校验。
             - 默认一次问题只调用一个最合适的工具；只有确实必要时才继续调用第二个工具。
             - 回答使用简体中文，保持简洁，先给结论，再点出关键数字或时间点。
-            - 如果用户的问题超出这四类能力，明确说明当前只支持字段结构、日志查询、趋势查询和 ClickHouse 自然语言统计查询。
+            - 如果用户的问题超出这五类能力，明确说明当前只支持字段结构、日志查询、趋势查询、ClickHouse 自然语言统计查询和 Vector 组件预览生成。
             """;
 
     private final LangChain4jLogAnalysisAssistant assistant;
@@ -122,20 +126,22 @@ public class LangChain4jLogAnalysisAgentExecutor {
         }
     }
 
-    public AgentChatResponse chat(AgentChatRequest request) {
+    public AgentChatResponse chat(AgentChatRequest request, Long userId, String sessionId) {
         if (StringUtils.isBlank(request.getDatasourceId())) {
             return responseAssembler.error("请选择一个可查询的数据源后再提问");
         }
 
-        ConfigComponent datasource = configComponentService.getById(request.getDatasourceId());
+        ConfigComponent datasource = configComponentService.getQueryableDataSourceById(request.getDatasourceId());
         if (datasource == null) {
-            return responseAssembler.error("选中的数据源不存在");
+            return responseAssembler.error("选中的数据源不存在或未标记为可查询 Sink");
         }
 
         AgentExecutionContextHolder.set(new AgentExecutionContext(
                 request.getDatasourceId(),
                 datasource.getName(),
-                datasource.getVectorType()
+                datasource.getVectorType(),
+                userId,
+                sessionId
         ));
         try {
             String prompt = buildPrompt(request, datasource);
@@ -157,20 +163,25 @@ public class LangChain4jLogAnalysisAgentExecutor {
      * 这样 /chat 和 /chat/stream 在 chat-completions 下会共享同一条选工具逻辑，
      * 避免因为模型客户端不同而命中不同工具。
      */
-    public AgentChatResponse streamChat(AgentChatRequest request, AgentStreamEventEmitter emitter) {
+    public AgentChatResponse streamChat(AgentChatRequest request,
+                                        Long userId,
+                                        String sessionId,
+                                        AgentStreamEventEmitter emitter) {
         if (StringUtils.isBlank(request.getDatasourceId())) {
             return responseAssembler.error("请选择一个可查询的数据源后再提问");
         }
 
-        ConfigComponent datasource = configComponentService.getById(request.getDatasourceId());
+        ConfigComponent datasource = configComponentService.getQueryableDataSourceById(request.getDatasourceId());
         if (datasource == null) {
-            return responseAssembler.error("选中的数据源不存在");
+            return responseAssembler.error("选中的数据源不存在或未标记为可查询 Sink");
         }
 
         AgentExecutionContextHolder.set(new AgentExecutionContext(
                 request.getDatasourceId(),
                 datasource.getName(),
-                datasource.getVectorType()
+                datasource.getVectorType(),
+                userId,
+                sessionId
         ));
         try {
             Result<String> result = responsesWireApi

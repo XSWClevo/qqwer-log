@@ -30,7 +30,7 @@ public class AgentSessionService {
 
     public AgentConversationMemoryService.PreparedAgentChatRequest prepare(AgentChatRequest request, Long userId) {
         AgentChatRequest hydratedRequest = conversationHistoryService.hydrateRequestHistory(request, userId);
-        return conversationMemoryService.prepare(hydratedRequest);
+        return conversationMemoryService.prepare(hydratedRequest, userId);
     }
 
     public AgentChatResponse finalizeResponse(Long userId, String sessionId, String userMessage, AgentChatResponse response) {
@@ -39,14 +39,6 @@ public class AgentSessionService {
         }
 
         response.setSessionId(sessionId);
-        conversationMemoryService.remember(
-                sessionId,
-                response.getDatasourceId(),
-                response.getDatasourceName(),
-                null,
-                userMessage,
-                Boolean.TRUE.equals(response.getSuccess()) ? response.getAnswer() : response.getError()
-        );
         conversationHistoryService.saveTurn(
                 userId,
                 sessionId,
@@ -55,6 +47,15 @@ public class AgentSessionService {
                 inferDatasourceType(response.getDatasourceId()),
                 userMessage,
                 response
+        );
+        conversationMemoryService.remember(
+                sessionId,
+                userId,
+                response.getDatasourceId(),
+                response.getDatasourceName(),
+                null,
+                userMessage,
+                Boolean.TRUE.equals(response.getSuccess()) ? response.getAnswer() : response.getError()
         );
         return response;
     }
@@ -69,14 +70,14 @@ public class AgentSessionService {
 
     public void deleteConversation(Long userId, String sessionId) {
         conversationHistoryService.deleteConversation(userId, sessionId);
-        conversationMemoryService.forget(sessionId);
+        conversationMemoryService.forget(sessionId, userId);
     }
 
     private String inferDatasourceType(String datasourceId) {
         if (StringUtils.isBlank(datasourceId)) {
             return null;
         }
-        ConfigComponent datasource = configComponentService.getById(datasourceId);
+        ConfigComponent datasource = configComponentService.getQueryableDataSourceById(datasourceId);
         return datasource != null ? datasource.getVectorType() : null;
     }
 }

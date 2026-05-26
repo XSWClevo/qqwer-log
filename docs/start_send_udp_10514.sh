@@ -117,6 +117,7 @@ transforms:
     inputs:
       - {source_name}
     source: |-
+      network_source_ip = to_string(.source_ip) ?? to_string(.host) ?? ""
       .raw = to_string(.message) ?? ""
       syslog_result = parse_syslog(.raw) ?? null
       if syslog_result != null {{
@@ -132,6 +133,9 @@ transforms:
       .procid = to_int(.procid) ?? 0
       .severity = to_string(.severity) ?? ""
       .version = to_int(.version) ?? 0
+      if network_source_ip != "" {{
+        .source_ip = replace(network_source_ip, r':\\d+$', "")
+      }}
 sinks:
   {sink_name}:
     type: clickhouse

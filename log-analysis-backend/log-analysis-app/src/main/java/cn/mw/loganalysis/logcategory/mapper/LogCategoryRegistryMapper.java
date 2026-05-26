@@ -17,6 +17,14 @@ import java.util.List;
 @DS("postgres")
 public interface LogCategoryRegistryMapper extends BaseMapper<LogCategoryRegistry> {
 
+    default List<LogCategoryRegistry> selectEnabled() {
+        LambdaQueryWrapper<LogCategoryRegistry> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(LogCategoryRegistry::getEnabled, true)
+                .orderByAsc(LogCategoryRegistry::getPriority)
+                .orderByAsc(LogCategoryRegistry::getId);
+        return selectList(wrapper);
+    }
+
     default List<LogCategoryRegistry> selectEnabledByCategoryCodes(List<String> categoryCodes) {
         LambdaQueryWrapper<LogCategoryRegistry> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(LogCategoryRegistry::getEnabled, true);

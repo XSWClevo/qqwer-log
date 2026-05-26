@@ -20,7 +20,7 @@ public class AlertRuleQueryRequest {
     /** 类型过滤: log_query, metric_threshold, anomaly */
     private String type;
     
-    /** 通知渠道过滤: slack, email, webhook */
+    /** 通知渠道过滤: page, slack, email, webhook */
     private String channel;
     
     /** 页码 */

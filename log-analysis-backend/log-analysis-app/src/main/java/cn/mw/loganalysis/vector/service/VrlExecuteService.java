@@ -160,11 +160,17 @@ public class VrlExecuteService {
                     throw new IllegalArgumentException("正则表达式不能为空");
                 }
                 String pattern = escapeSingleQuotedLiteral(request.getRegexPattern());
-                script.append(String.format("parsed = parse_regex(target_message, r'%s') ?? null\n", pattern));
+                script.append(String.format("parsed = parse_regex(raw_message, r'%s') ?? null\n", pattern));
                 script.append("if parsed != null {\n");
-                script.append("  . = merge!(., parsed)\n");
+                script.append("  . = parsed\n");
+                script.append("  .raw = raw_message\n");
                 script.append("} else {\n");
-                script.append("  .parse_error = \"正则解析失败\"\n");
+                script.append(String.format("  parsed = parse_regex(target_message, r'%s') ?? null\n", pattern));
+                script.append("  if parsed != null {\n");
+                script.append("    . = merge!(., parsed)\n");
+                script.append("  } else {\n");
+                script.append("    .parse_error = \"正则解析失败\"\n");
+                script.append("  }\n");
                 script.append("}\n");
                 break;
                 

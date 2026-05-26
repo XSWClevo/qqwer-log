@@ -1,1029 +1,1031 @@
 <template>
   <AppLayout>
-    <div class="trend-analysis-container">
-      <!-- Page Header -->
+    <div class="trend-page">
       <div class="page-header">
-        <div class="header-left">
-          <h1 class="page-title">Trend Analysis</h1>
-          <p class="page-subtitle">Explore system metrics, identify long-term trends, and detect anomalies.</p>
+        <div>
+          <h1 class="page-title">趋势分析</h1>
+          <p class="page-subtitle">按时间、风险、来源和主机观察日志量与攻击识别结果的变化</p>
         </div>
         <div class="header-actions">
-          <el-button @click="handleSaveToDashboard">
-            <el-icon><Star /></el-icon>
-            Save to Dashboard
-          </el-button>
-          <el-button @click="handleShare">
-            <el-icon><Share /></el-icon>
-            Share View
-          </el-button>
+          <el-button :icon="Refresh" :loading="loading" @click="loadTrendData">刷新</el-button>
         </div>
       </div>
 
-      <!-- Query Builder & Controls -->
-      <el-card class="query-builder-card" shadow="never">
-        <div class="query-controls">
-          <!-- Time Range Selector -->
-          <div class="time-range-section">
-            <span class="section-label">Time Range</span>
-            <el-select v-model="timeRange" class="time-select" @change="handleTimeRangeChange">
-              <el-option label="Last 1 Hour" value="1h" />
-              <el-option label="Last 6 Hours" value="6h" />
-              <el-option label="Last 24 Hours" value="24h" />
-              <el-option label="Last 7 Days" value="7d" />
-              <el-option label="Last 30 Days" value="30d" />
-              <el-option label="Custom" value="custom" />
-            </el-select>
-            <el-date-picker
-              v-if="timeRange === 'custom'"
-              v-model="customTimeRange"
-              type="datetimerange"
-              range-separator="to"
-              start-placeholder="Start"
-              end-placeholder="End"
-              value-format="YYYY-MM-DD HH:mm:ss"
-              class="custom-picker"
-            />
-          </div>
+      <div class="toolbar">
+        <el-select v-model="selectedDatasource" placeholder="默认日志库" clearable class="datasource-select" @change="handleDatasourceChange">
+          <el-option label="默认日志库" value="" />
+          <el-option
+            v-for="item in datasourceOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          >
+            <span>{{ item.label }}</span>
+            <span class="option-meta">{{ item.type }}</span>
+          </el-option>
+        </el-select>
 
-          <!-- Query A Card -->
-          <div class="query-card">
-            <div class="query-card-header">
-              <span class="query-badge">A</span>
-              <span class="query-title">Primary Query</span>
-            </div>
-            <div class="query-card-body">
-              <div class="query-field-group">
-                <label class="field-label">Metric</label>
-                <el-select v-model="queryA.metric" placeholder="Select Metric" filterable class="metric-select">
-                  <el-option-group label="System Metrics">
-                    <el-option label="system.cpu.usage" value="system.cpu.usage" />
-                    <el-option label="system.memory.usage" value="system.memory.usage" />
-                    <el-option label="system.disk.usage" value="system.disk.usage" />
-                    <el-option label="system.network.in" value="system.network.in" />
-                    <el-option label="system.network.out" value="system.network.out" />
-                  </el-option-group>
-                  <el-option-group label="Application Metrics">
-                    <el-option label="http.server.requests" value="http.server.requests" />
-                    <el-option label="http.server.latency" value="http.server.latency" />
-                    <el-option label="http.server.errors" value="http.server.errors" />
-                    <el-option label="log.count" value="log.count" />
-                    <el-option label="log.error.count" value="log.error.count" />
-                  </el-option-group>
-                </el-select>
-              </div>
-              <div class="query-field-group">
-                <label class="field-label">Aggregation</label>
-                <el-select v-model="queryA.aggregation" placeholder="Aggregation" class="agg-select">
-                  <el-option label="Average" value="avg" />
-                  <el-option label="Max" value="max" />
-                  <el-option label="Min" value="min" />
-                  <el-option label="Sum" value="sum" />
-                  <el-option label="P95" value="p95" />
-                  <el-option label="P99" value="p99" />
-                </el-select>
-              </div>
-              <div class="query-field-group">
-                <label class="field-label">Group By</label>
-                <el-select v-model="queryA.groupBy" placeholder="Group By" clearable class="group-select">
-                  <el-option label="hostname" value="hostname" />
-                  <el-option label="appname" value="appname" />
-                  <el-option label="severity" value="severity" />
-                  <el-option label="source_type" value="source_type" />
-                </el-select>
-              </div>
-              <div class="query-field-group filter-group">
-                <label class="field-label">Filters</label>
-                <div class="filter-tags-container">
-                  <el-tag
-                    v-for="(filter, index) in queryA.filters"
-                    :key="index"
-                    closable
-                    type="info"
-                    class="filter-tag"
-                    @close="removeFilter('A', index)"
-                  >
-                    {{ filter }}
-                  </el-tag>
-                  <el-input
-                    v-model="queryA.filterInput"
-                    placeholder="e.g. env=production"
-                    class="filter-input-inline"
-                    size="small"
-                    @keyup.enter="addFilter('A')"
-                  >
-                    <template #suffix>
-                      <el-icon class="add-filter-icon" @click="addFilter('A')"><Plus /></el-icon>
-                    </template>
-                  </el-input>
-                </div>
-              </div>
-            </div>
-          </div>
+        <el-select v-model="timeRange" class="time-select" @change="handleTimeRangeChange">
+          <el-option label="最近 1 小时" value="1h" />
+          <el-option label="最近 6 小时" value="6h" />
+          <el-option label="最近 24 小时" value="24h" />
+          <el-option label="最近 7 天" value="7d" />
+          <el-option label="最近 30 天" value="30d" />
+          <el-option label="自定义" value="custom" />
+        </el-select>
 
-          <!-- Query B Card (Optional) -->
-          <div v-if="showQueryB" class="query-card query-card-secondary">
-            <div class="query-card-header">
-              <span class="query-badge secondary">B</span>
-              <span class="query-title">Compare Query</span>
-              <el-button type="danger" text size="small" class="remove-query-btn" @click="removeQueryB">
-                <el-icon><Close /></el-icon>
-              </el-button>
-            </div>
-            <div class="query-card-body">
-              <div class="query-field-group">
-                <label class="field-label">Metric</label>
-                <el-select v-model="queryB.metric" placeholder="Select Metric" filterable class="metric-select">
-                  <el-option-group label="System Metrics">
-                    <el-option label="system.cpu.usage" value="system.cpu.usage" />
-                    <el-option label="system.memory.usage" value="system.memory.usage" />
-                    <el-option label="system.disk.usage" value="system.disk.usage" />
-                  </el-option-group>
-                  <el-option-group label="Application Metrics">
-                    <el-option label="http.server.requests" value="http.server.requests" />
-                    <el-option label="http.server.latency" value="http.server.latency" />
-                    <el-option label="log.count" value="log.count" />
-                  </el-option-group>
-                </el-select>
-              </div>
-              <div class="query-field-group">
-                <label class="field-label">Aggregation</label>
-                <el-select v-model="queryB.aggregation" placeholder="Aggregation" class="agg-select">
-                  <el-option label="Average" value="avg" />
-                  <el-option label="Max" value="max" />
-                  <el-option label="Sum" value="sum" />
-                </el-select>
-              </div>
-              <div class="query-field-group">
-                <label class="field-label">Group By</label>
-                <el-select v-model="queryB.groupBy" placeholder="Group By" clearable class="group-select">
-                  <el-option label="hostname" value="hostname" />
-                  <el-option label="appname" value="appname" />
-                </el-select>
-              </div>
-              <div class="query-field-group filter-group">
-                <label class="field-label">Filters</label>
-                <div class="filter-tags-container">
-                  <el-tag
-                    v-for="(filter, index) in queryB.filters"
-                    :key="index"
-                    closable
-                    type="info"
-                    class="filter-tag"
-                    @close="removeFilter('B', index)"
-                  >
-                    {{ filter }}
-                  </el-tag>
-                  <el-input
-                    v-model="queryB.filterInput"
-                    placeholder="e.g. env=staging"
-                    class="filter-input-inline"
-                    size="small"
-                    @keyup.enter="addFilter('B')"
-                  >
-                    <template #suffix>
-                      <el-icon class="add-filter-icon" @click="addFilter('B')"><Plus /></el-icon>
-                    </template>
-                  </el-input>
-                </div>
-              </div>
-            </div>
-          </div>
+        <el-date-picker
+          v-if="timeRange === 'custom'"
+          v-model="customTimeRange"
+          type="datetimerange"
+          start-placeholder="开始时间"
+          end-placeholder="结束时间"
+          range-separator="至"
+          value-format="YYYY-MM-DD HH:mm:ss"
+          class="custom-time"
+          @change="loadTrendData"
+        />
 
-          <div class="query-actions">
-            <el-button v-if="!showQueryB" class="add-query-btn" @click="showQueryB = true">
-              <el-icon><Plus /></el-icon>
-              Add Query
-            </el-button>
-            <el-button type="primary" @click="executeQuery" :loading="loading">
-              <el-icon><Search /></el-icon>
-              Run Query
-            </el-button>
-          </div>
+        <el-select v-model="granularity" class="granularity-select" @change="loadTrendData">
+          <el-option label="自动粒度" value="auto" />
+          <el-option label="1 分钟" value="1m" />
+          <el-option label="5 分钟" value="5m" />
+          <el-option label="1 小时" value="1h" />
+          <el-option label="1 天" value="1d" />
+        </el-select>
+
+        <el-select v-model="chartMode" class="mode-select" @change="renderTrendChart">
+          <el-option label="日志与攻击" value="combined" />
+          <el-option label="仅日志量" value="logs" />
+          <el-option label="仅攻击识别" value="attacks" />
+        </el-select>
+
+        <el-input
+          v-model="keyword"
+          :prefix-icon="Search"
+          placeholder="攻击日志关键词"
+          clearable
+          class="keyword-input"
+          @keyup.enter="loadTrendData"
+          @clear="loadTrendData"
+        />
+      </div>
+
+      <div class="metric-grid">
+        <div v-for="metric in metrics" :key="metric.label" class="metric-tile">
+          <span class="metric-label">{{ metric.label }}</span>
+          <span class="metric-value">{{ metric.value }}</span>
+          <span class="metric-sub" :class="metric.trendClass">{{ metric.sub }}</span>
         </div>
-      </el-card>
+      </div>
 
-      <!-- Main Content Area -->
-      <div class="main-content">
-        <!-- Chart Area -->
-        <el-card class="chart-card" shadow="never">
-          <template #header>
-            <div class="chart-header">
-              <div class="chart-type-switcher">
-                <el-tooltip content="Line Chart" placement="top">
-                  <button 
-                    class="chart-type-btn" 
-                    :class="{ active: chartType === 'line' }"
-                    @click="chartType = 'line'"
-                  >
-                    <el-icon><TrendCharts /></el-icon>
-                  </button>
-                </el-tooltip>
-                <el-tooltip content="Area Chart" placement="top">
-                  <button 
-                    class="chart-type-btn" 
-                    :class="{ active: chartType === 'area' }"
-                    @click="chartType = 'area'"
-                  >
-                    <el-icon><DataLine /></el-icon>
-                  </button>
-                </el-tooltip>
-                <el-tooltip content="Bar Chart" placement="top">
-                  <button 
-                    class="chart-type-btn" 
-                    :class="{ active: chartType === 'bar' }"
-                    @click="chartType = 'bar'"
-                  >
-                    <el-icon><Histogram /></el-icon>
-                  </button>
-                </el-tooltip>
+      <div class="content-grid">
+        <section class="panel trend-panel">
+          <div class="panel-header">
+            <div>
+              <h2>综合趋势</h2>
+              <p>{{ rangeLabel }}，粒度 {{ activeGranularityLabel }}</p>
+            </div>
+            <div class="chart-switch">
+              <el-tooltip content="折线图" placement="top">
+                <button :class="{ active: chartType === 'line' }" @click="setChartType('line')">
+                  <el-icon><TrendCharts /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip content="柱状图" placement="top">
+                <button :class="{ active: chartType === 'bar' }" @click="setChartType('bar')">
+                  <el-icon><Histogram /></el-icon>
+                </button>
+              </el-tooltip>
+            </div>
+          </div>
+          <div ref="trendChartRef" v-loading="loading" class="trend-chart"></div>
+        </section>
+
+        <section class="panel insight-panel">
+          <div class="panel-header compact">
+            <h2>趋势判断</h2>
+          </div>
+          <div v-if="insights.length" class="insight-list">
+            <div v-for="item in insights" :key="item.title" class="insight-item" :class="item.level">
+              <div class="insight-main">
+                <el-icon v-if="item.direction === 'up'"><Top /></el-icon>
+                <el-icon v-else-if="item.direction === 'down'"><Bottom /></el-icon>
+                <el-icon v-else><WarningFilled /></el-icon>
+                <span>{{ item.title }}</span>
               </div>
-            </div>
-          </template>
-          <div ref="chartRef" class="main-chart" v-loading="loading"></div>
-          <!-- Legend -->
-          <div class="chart-legend">
-            <div
-              v-for="series in chartSeries"
-              :key="series.name"
-              class="legend-item"
-              :class="{ disabled: !series.visible, highlighted: highlightedSeries === series.name }"
-              @click="toggleSeries(series.name)"
-              @mouseenter="highlightSeries(series.name)"
-              @mouseleave="highlightSeries(null)"
-            >
-              <span class="legend-color" :style="{ backgroundColor: series.color }"></span>
-              <span class="legend-name">{{ series.name }}</span>
-              <span class="legend-value">{{ series.currentValue }}</span>
+              <p>{{ item.description }}</p>
             </div>
           </div>
-        </el-card>
+          <el-empty v-else description="暂无明显波动" :image-size="64" />
+        </section>
+      </div>
 
-        <!-- Insights Panel -->
-        <el-card class="insights-card" shadow="never">
-          <template #header>
-            <span class="section-title">Insights & Summary</span>
-          </template>
-          
-          <!-- Statistics Table -->
-          <div class="stats-section">
-            <h4>Statistics</h4>
-            <el-table :data="statsData" size="small" class="stats-table">
-              <el-table-column prop="metric" label="Metric" />
-              <el-table-column prop="min" label="Min" />
-              <el-table-column prop="max" label="Max" />
-              <el-table-column prop="avg" label="Average" />
-              <el-table-column prop="current" label="Current" />
-            </el-table>
+      <div class="bottom-grid">
+        <section class="panel">
+          <div class="panel-header compact">
+            <h2>风险等级分布</h2>
           </div>
+          <div ref="severityChartRef" class="small-chart"></div>
+        </section>
 
-          <!-- Detected Shifts -->
-          <div class="shifts-section">
-            <h4>Detected Shifts</h4>
-            <div v-if="detectedShifts.length > 0" class="shifts-list">
-              <div v-for="(shift, index) in detectedShifts" :key="index" class="shift-item" :class="shift.type">
-                <div class="shift-indicator"></div>
-                <div class="shift-content">
-                  <el-icon v-if="shift.type === 'increase'" class="shift-icon"><Top /></el-icon>
-                  <el-icon v-else class="shift-icon"><Bottom /></el-icon>
-                  <span class="shift-message">{{ shift.message }}</span>
-                </div>
-              </div>
-            </div>
-            <el-empty v-else description="No significant shifts detected" :image-size="60" />
+        <section class="panel">
+          <div class="panel-header compact">
+            <h2>攻击类型 Top</h2>
           </div>
+          <div ref="attackTypeChartRef" class="small-chart"></div>
+        </section>
 
-          <!-- Anomalies -->
-          <div class="anomalies-section">
-            <h4>Anomalies</h4>
-            <div v-if="anomalies.length > 0" class="anomalies-list">
-              <div v-for="(anomaly, index) in anomalies" :key="index" class="anomaly-item">
-                <div class="anomaly-indicator"></div>
-                <div class="anomaly-content">
-                  <span class="anomaly-time">{{ anomaly.time }}</span>
-                  <span class="anomaly-desc">{{ anomaly.description }}</span>
-                </div>
-              </div>
-            </div>
-            <el-empty v-else description="No anomalies detected" :image-size="60" />
+        <section class="panel">
+          <div class="panel-header compact">
+            <h2>日志字段 Top</h2>
+            <el-select v-model="selectedDimension" class="dimension-select" size="small" @change="renderDimensionChart">
+              <el-option
+                v-for="item in dimensionOptions"
+                :key="item"
+                :label="fieldLabel(item)"
+                :value="item"
+              />
+            </el-select>
           </div>
-        </el-card>
+          <div ref="dimensionChartRef" class="small-chart"></div>
+        </section>
       </div>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
-import { Star, Share, Plus, Close, Search, TrendCharts, WarningFilled, Top, Bottom, DataLine, Histogram } from '@element-plus/icons-vue'
-import echarts from '@/utils/echarts'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { Bottom, Histogram, Refresh, Search, Top, TrendCharts, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import AppLayout from '@/components/layout/AppLayout.vue'
+import echarts from '@/utils/echarts'
+import { getDatasourceSchema, queryFieldStats, queryTimeSeries, type FieldInfo } from '@/api/log'
+import { queryAttackClassifications, type AttackClassificationRecord } from '@/api/attack'
+import { configComponentApi, type ConfigComponent } from '@/api/vector'
 
-// State
-const loading = ref(false)
-const timeRange = ref('7d')
-const customTimeRange = ref<[string, string]>()
-const showQueryB = ref(false)
-const chartType = ref<'line' | 'area' | 'bar'>('line')
-const chartRef = ref<HTMLElement>()
-const highlightedSeries = ref<string | null>(null)
-let chartInstance: echarts.ECharts | null = null
+type ChartType = 'line' | 'bar'
+type ChartMode = 'combined' | 'logs' | 'attacks'
 
-// Query configurations
-const queryA = reactive({
-  metric: 'log.count',
-  aggregation: 'avg',
-  groupBy: 'hostname',
-  filters: [] as string[],
-  filterInput: ''
-})
-
-const queryB = reactive({
-  metric: '',
-  aggregation: 'avg',
-  groupBy: '',
-  filters: [] as string[],
-  filterInput: ''
-})
-
-// Chart data
-interface ChartSeriesItem {
-  name: string
-  color: string
-  visible: boolean
-  currentValue: string
+interface SeriesPoint {
+  timestamp: string
+  count: number
 }
 
-const chartSeries = ref<ChartSeriesItem[]>([])
+interface MetricTile {
+  label: string
+  value: string
+  sub: string
+  trendClass?: string
+}
 
-// Statistics
-const statsData = ref([
-  { metric: 'log.count', min: '1,234', max: '8,567', avg: '4,521', current: '5,123' }
-])
+interface Insight {
+  title: string
+  description: string
+  level: 'info' | 'warning' | 'danger' | 'success'
+  direction?: 'up' | 'down'
+}
 
-// Detected shifts
-const detectedShifts = ref([
-  { type: 'increase', message: 'Log volume increased by 23% compared to last week' },
-  { type: 'decrease', message: 'Error rate decreased by 8% in the last 24 hours' }
-])
+const loading = ref(false)
+const selectedDatasource = ref('')
+const datasourceOptions = ref<Array<{ value: string; label: string; type: string }>>([])
+const schemaFields = ref<FieldInfo[]>([])
+const timeRange = ref('24h')
+const customTimeRange = ref<[string, string]>()
+const granularity = ref('auto')
+const activeGranularity = ref('1h')
+const chartMode = ref<ChartMode>('combined')
+const chartType = ref<ChartType>('line')
+const keyword = ref('')
+const selectedDimension = ref('severity')
 
-// Anomalies
-const anomalies = ref([
-  { time: '2025-12-18 14:30', description: 'Unusual spike in error logs detected' },
-  { time: '2025-12-17 03:15', description: 'Log volume dropped below baseline' }
-])
+const logSeries = ref<SeriesPoint[]>([])
+const attackRecords = ref<AttackClassificationRecord[]>([])
+const fieldStats = ref<Record<string, Array<{ value: string; count: number }>>>({})
+const insights = ref<Insight[]>([])
 
-// Methods
+const trendChartRef = ref<HTMLElement>()
+const severityChartRef = ref<HTMLElement>()
+const attackTypeChartRef = ref<HTMLElement>()
+const dimensionChartRef = ref<HTMLElement>()
+let trendChart: any = null
+let severityChart: any = null
+let attackTypeChart: any = null
+let dimensionChart: any = null
+
+const dimensionOptions = computed(() => {
+  const fromSchema = schemaFields.value
+    .filter(item => item.isStatsDimension && !item.isContentField)
+    .map(item => item.name)
+    .filter(item => !['id', 'message', 'raw', 'timestamp'].includes(item))
+  const defaults = ['severity', 'source_type', 'hostname', 'source_ip', 'appname']
+  return Array.from(new Set(fromSchema.length ? fromSchema.slice(0, 8) : defaults))
+})
+
+const rangeLabel = computed(() => {
+  const [startTime, endTime] = getTimeRange()
+  return `${startTime} 至 ${endTime}`
+})
+
+const activeGranularityLabel = computed(() => {
+  const map: Record<string, string> = {
+    '1m': '1 分钟',
+    '5m': '5 分钟',
+    '1h': '1 小时',
+    '1d': '1 天'
+  }
+  return map[activeGranularity.value] || activeGranularity.value
+})
+
+const attackBuckets = computed(() => bucketAttackRecords(attackRecords.value))
+
+const metrics = computed<MetricTile[]>(() => {
+  const totalLogs = sumSeries(logSeries.value)
+  const totalAttacks = attackRecords.value.length
+  const highRisk = attackRecords.value.filter(item => ['critical', 'high'].includes(item.severity)).length
+  const sourceIps = new Set(attackRecords.value.map(item => item.sourceIp).filter(Boolean))
+  const hostAgg = aggregateBy(attackRecords.value, item => item.hostname || '未知主机')
+  const topHost = hostAgg[0]
+
+  return [
+    {
+      label: '日志总量',
+      value: formatNumber(totalLogs),
+      sub: buildChangeText(logSeries.value),
+      trendClass: compareHalves(logSeries.value) > 0 ? 'danger' : 'success'
+    },
+    {
+      label: '攻击识别',
+      value: formatNumber(totalAttacks),
+      sub: totalAttacks ? `${highRisk} 条高危及以上` : '当前范围未命中'
+    },
+    {
+      label: '来源 IP',
+      value: formatNumber(sourceIps.size),
+      sub: sourceIps.size ? '参与攻击链路聚合' : '无来源 IP'
+    },
+    {
+      label: '最活跃主机',
+      value: topHost?.name || '-',
+      sub: topHost ? `${topHost.count} 条命中` : '暂无数据'
+    }
+  ]
+})
+
+const loadDatasourceOptions = async () => {
+  try {
+    const response: any = await configComponentApi.getQueryableDataSources()
+    const list = normalizeResponseList<ConfigComponent>(response)
+    datasourceOptions.value = list
+      .filter(item => item.vectorType)
+      .map(item => ({
+        value: item.id,
+        label: item.displayName || item.name,
+        type: item.vectorType
+      }))
+  } catch (error) {
+    console.warn('加载可查询数据源失败:', error)
+  }
+}
+
+const handleDatasourceChange = async () => {
+  await loadSchema()
+  await loadTrendData()
+}
+
 const handleTimeRangeChange = () => {
   if (timeRange.value !== 'custom') {
-    executeQuery()
+    loadTrendData()
   }
 }
 
-const addFilter = (query: 'A' | 'B') => {
-  const q = query === 'A' ? queryA : queryB
-  if (q.filterInput.trim()) {
-    q.filters.push(q.filterInput.trim())
-    q.filterInput = ''
-  }
-}
-
-const removeFilter = (query: 'A' | 'B', index: number) => {
-  const q = query === 'A' ? queryA : queryB
-  q.filters.splice(index, 1)
-}
-
-const removeQueryB = () => {
-  showQueryB.value = false
-  queryB.metric = ''
-  queryB.aggregation = 'avg'
-  queryB.groupBy = ''
-  queryB.filters = []
-  queryB.filterInput = ''
-}
-
-const highlightSeries = (name: string | null) => {
-  highlightedSeries.value = name
-  if (chartInstance) {
-    if (name) {
-      chartInstance.dispatchAction({
-        type: 'highlight',
-        seriesName: name
-      })
-    } else {
-      chartInstance.dispatchAction({
-        type: 'downplay'
-      })
-    }
-  }
-}
-
-const executeQuery = async () => {
-  if (!queryA.metric) {
-    ElMessage.warning('Please select a metric')
+const loadSchema = async () => {
+  if (!selectedDatasource.value) {
+    schemaFields.value = []
+    selectedDimension.value = 'severity'
     return
   }
-  
-  loading.value = true
   try {
-    // Simulate API call - replace with actual API
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    generateMockData()
-    renderChart()
+    const response: any = await getDatasourceSchema(selectedDatasource.value)
+    schemaFields.value = normalizeResponseList<FieldInfo>(response)
+    if (!dimensionOptions.value.includes(selectedDimension.value)) {
+      selectedDimension.value = dimensionOptions.value[0] || 'severity'
+    }
   } catch (error) {
-    ElMessage.error('Failed to execute query')
+    schemaFields.value = []
+  }
+}
+
+const loadTrendData = async () => {
+  const [startTime, endTime] = getTimeRange()
+  const queryGranularity = resolveGranularity(startTime, endTime)
+  activeGranularity.value = queryGranularity
+  loading.value = true
+
+  try {
+    const [timeResult, statsResult, attackResult] = await Promise.allSettled([
+      queryTimeSeries({
+        datasourceId: selectedDatasource.value || undefined,
+        startTime,
+        endTime,
+        granularity: queryGranularity,
+        useMcp: false
+      }),
+      queryFieldStats({
+        datasourceId: selectedDatasource.value || undefined,
+        startTime,
+        endTime,
+        dimensions: dimensionOptions.value.slice(0, 6),
+        metrics: ['count'],
+        useMcp: false
+      }),
+      queryAttackClassifications({
+        startTime,
+        endTime,
+        datasourceId: selectedDatasource.value || undefined,
+        keyword: keyword.value || undefined,
+        pageNum: 1,
+        pageSize: 1000
+      })
+    ])
+
+    if (timeResult.status === 'fulfilled') {
+      logSeries.value = normalizeSeries(timeResult.value?.data?.series || [])
+    } else {
+      logSeries.value = []
+      console.warn('加载日志趋势失败:', timeResult.reason)
+    }
+
+    if (statsResult.status === 'fulfilled') {
+      fieldStats.value = statsResult.value?.data?.data || {}
+    } else {
+      fieldStats.value = {}
+      console.warn('加载字段统计失败:', statsResult.reason)
+    }
+
+    if (attackResult.status === 'fulfilled') {
+      attackRecords.value = attackResult.value?.data?.records || []
+    } else {
+      attackRecords.value = []
+      console.warn('加载攻击趋势失败:', attackResult.reason)
+    }
+
+    insights.value = buildInsights()
+    await nextTick()
+    renderAllCharts()
+  } catch (error) {
+    ElMessage.error('趋势分析加载失败')
   } finally {
     loading.value = false
   }
 }
 
-const generateMockData = () => {
-  const colors = ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#909399']
-  const hosts = ['host-01', 'host-02', 'host-03']
-  
-  chartSeries.value = hosts.map((host, index) => ({
-    name: host,
-    color: colors[index % colors.length],
-    visible: true,
-    currentValue: Math.floor(Math.random() * 5000 + 1000).toLocaleString()
-  }))
+const renderAllCharts = () => {
+  renderTrendChart()
+  renderSeverityChart()
+  renderAttackTypeChart()
+  renderDimensionChart()
 }
 
-const toggleSeries = (name: string) => {
-  const series = chartSeries.value.find(s => s.name === name)
-  if (series) {
-    series.visible = !series.visible
-    renderChart()
-  }
-}
+const renderTrendChart = () => {
+  if (!trendChartRef.value) return
+  if (!trendChart) trendChart = echarts.init(trendChartRef.value)
 
-const renderChart = () => {
-  if (!chartRef.value) return
-  
-  if (!chartInstance) {
-    chartInstance = echarts.init(chartRef.value)
-  }
-  
-  // Generate time points
-  const now = new Date()
-  const timePoints: string[] = []
-  const dataPoints = 24
-  
-  for (let i = dataPoints - 1; i >= 0; i--) {
-    const time = new Date(now.getTime() - i * 60 * 60 * 1000)
-    timePoints.push(time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
-  }
-  
-  // Generate series data
-  const series = chartSeries.value
-    .filter(s => s.visible)
-    .map(s => {
-      const data = timePoints.map(() => Math.floor(Math.random() * 5000 + 1000))
-      return {
-        name: s.name,
-        type: chartType.value === 'area' ? 'line' : chartType.value,
-        smooth: true,
-        areaStyle: chartType.value === 'area' ? { opacity: 0.3 } : undefined,
-        data,
-        itemStyle: { color: s.color },
-        markArea: {
-          silent: true,
-          data: [
-            [
-              { xAxis: timePoints[8], itemStyle: { color: 'rgba(255, 77, 79, 0.1)' } },
-              { xAxis: timePoints[10] }
-            ]
-          ]
-        }
-      }
+  const bucketKeys = buildBucketKeys()
+  const logMap = new Map(logSeries.value.map(item => [normalizeBucket(item.timestamp), item.count]))
+  const attackMap = attackBuckets.value
+  const criticalMap = bucketAttackRecords(attackRecords.value.filter(item => ['critical', 'high'].includes(item.severity)))
+
+  const series: any[] = []
+  if (chartMode.value !== 'attacks') {
+    series.push({
+      name: '日志量',
+      type: chartType.value,
+      smooth: chartType.value === 'line',
+      data: bucketKeys.map(key => logMap.get(key) || 0),
+      itemStyle: { color: '#2563EB' },
+      areaStyle: chartType.value === 'line' ? { opacity: 0.08 } : undefined
     })
-  
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: '#E4E7ED',
-      borderWidth: 1,
-      textStyle: { color: '#303133' },
-      formatter: (params: any) => {
-        let html = `<div style="font-weight:600;margin-bottom:8px;">${params[0]?.axisValue}</div>`
-        params.forEach((p: any) => {
-          html += `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-            <span style="width:10px;height:10px;border-radius:50%;background:${p.color};"></span>
-            <span>${p.seriesName}:</span>
-            <strong>${p.value.toLocaleString()}</strong>
-          </div>`
-        })
-        return html
-      }
-    },
-    grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+  }
+  if (chartMode.value !== 'logs') {
+    series.push({
+      name: '攻击识别',
+      type: 'line',
+      smooth: true,
+      data: bucketKeys.map(key => attackMap.get(key) || 0),
+      itemStyle: { color: '#DC2626' },
+      areaStyle: { opacity: 0.06 }
+    })
+    series.push({
+      name: '高危及以上',
+      type: 'bar',
+      data: bucketKeys.map(key => criticalMap.get(key) || 0),
+      itemStyle: { color: '#F59E0B' },
+      barMaxWidth: 18
+    })
+  }
+
+  trendChart.setOption({
+    color: ['#2563EB', '#DC2626', '#F59E0B'],
+    tooltip: { trigger: 'axis' },
+    legend: { top: 4, right: 16 },
+    grid: { left: 44, right: 24, top: 44, bottom: 42 },
     xAxis: {
       type: 'category',
-      data: timePoints,
-      axisLine: { lineStyle: { color: '#E4E7ED' } },
-      axisLabel: { color: '#909399' }
+      data: bucketKeys.map(formatAxisLabel),
+      axisLabel: { color: '#6B7280' },
+      axisLine: { lineStyle: { color: '#E5E7EB' } }
     },
     yAxis: {
       type: 'value',
-      axisLine: { show: false },
-      splitLine: { lineStyle: { color: '#F2F6FC' } },
-      axisLabel: { color: '#909399' }
+      minInterval: 1,
+      splitLine: { lineStyle: { color: '#EEF2F7' } },
+      axisLabel: { color: '#6B7280' }
     },
+    dataZoom: bucketKeys.length > 36 ? [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 8 }] : undefined,
     series
+  }, true)
+}
+
+const renderSeverityChart = () => {
+  if (!severityChartRef.value) return
+  if (!severityChart) severityChart = echarts.init(severityChartRef.value)
+  const data = aggregateBy(attackRecords.value, item => severityLabel(item.severity)).map(item => ({
+    name: item.name,
+    value: item.count
+  }))
+  severityChart.setOption({
+    color: ['#B91C1C', '#EF4444', '#F59E0B', '#64748B'],
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, left: 'center' },
+    series: [{
+      type: 'pie',
+      radius: ['46%', '72%'],
+      center: ['50%', '44%'],
+      avoidLabelOverlap: true,
+      label: { formatter: '{b}: {c}' },
+      data
+    }]
+  }, true)
+}
+
+const renderAttackTypeChart = () => {
+  if (!attackTypeChartRef.value) return
+  if (!attackTypeChart) attackTypeChart = echarts.init(attackTypeChartRef.value)
+  const data = aggregateBy(attackRecords.value, item => attackTypeLabel(item.attackType)).slice(0, 8).reverse()
+  attackTypeChart.setOption({
+    color: ['#0F766E'],
+    tooltip: { trigger: 'axis' },
+    grid: { left: 86, right: 20, top: 12, bottom: 24 },
+    xAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#EEF2F7' } } },
+    yAxis: {
+      type: 'category',
+      data: data.map(item => item.name),
+      axisLabel: { color: '#4B5563' }
+    },
+    series: [{ type: 'bar', data: data.map(item => item.count), barMaxWidth: 16 }]
+  }, true)
+}
+
+const renderDimensionChart = () => {
+  if (!dimensionChartRef.value) return
+  if (!dimensionChart) dimensionChart = echarts.init(dimensionChartRef.value)
+  const data = (fieldStats.value[selectedDimension.value] || []).slice(0, 8).reverse()
+  dimensionChart.setOption({
+    color: ['#7C3AED'],
+    tooltip: { trigger: 'axis' },
+    grid: { left: 92, right: 20, top: 12, bottom: 24 },
+    xAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#EEF2F7' } } },
+    yAxis: {
+      type: 'category',
+      data: data.map(item => String(item.value || '空值')),
+      axisLabel: { color: '#4B5563', overflow: 'truncate', width: 82 }
+    },
+    series: [{ type: 'bar', data: data.map(item => Number(item.count) || 0), barMaxWidth: 16 }]
+  }, true)
+}
+
+const setChartType = (type: ChartType) => {
+  chartType.value = type
+  renderTrendChart()
+}
+
+const buildInsights = (): Insight[] => {
+  const results: Insight[] = []
+  const logChange = compareHalves(logSeries.value)
+  if (Math.abs(logChange) >= 20) {
+    results.push({
+      title: logChange > 0 ? '日志量明显上升' : '日志量明显下降',
+      description: `后半段相比前半段${logChange > 0 ? '增加' : '减少'} ${Math.abs(logChange).toFixed(1)}%，建议结合来源 IP 和主机 Top 排查变化来源。`,
+      level: logChange > 0 ? 'warning' : 'success',
+      direction: logChange > 0 ? 'up' : 'down'
+    })
   }
-  
-  chartInstance.setOption(option, true)
+
+  const attackPoints = Array.from(attackBuckets.value.entries()).map(([timestamp, count]) => ({ timestamp, count }))
+  const attackChange = compareHalves(attackPoints)
+  if (Math.abs(attackChange) >= 20 && attackRecords.value.length > 0) {
+    results.push({
+      title: attackChange > 0 ? '攻击识别升高' : '攻击识别回落',
+      description: `攻击命中在后半段${attackChange > 0 ? '升高' : '回落'} ${Math.abs(attackChange).toFixed(1)}%，优先查看链路分析中的源 IP 与命中规则。`,
+      level: attackChange > 0 ? 'danger' : 'info',
+      direction: attackChange > 0 ? 'up' : 'down'
+    })
+  }
+
+  const spikes = detectSpikes(logSeries.value)
+  if (spikes.length) {
+    const firstSpike = spikes[0]!
+    results.push({
+      title: '发现日志峰值',
+      description: `${formatAxisLabel(firstSpike.timestamp)} 的日志量达到 ${firstSpike.count}，高于当前范围平均水平。`,
+      level: 'warning'
+    })
+  }
+
+  const critical = attackRecords.value.filter(item => item.severity === 'critical').length
+  if (critical > 0) {
+    results.push({
+      title: '存在严重风险事件',
+      description: `当前时间范围内有 ${critical} 条严重风险识别结果，应优先进入链路分析确认影响面。`,
+      level: 'danger'
+    })
+  }
+
+  return results
 }
 
-const handleSaveToDashboard = () => {
-  ElMessage.success('View saved to dashboard')
+const detectSpikes = (series: SeriesPoint[]) => {
+  if (series.length < 4) return []
+  const avg = sumSeries(series) / series.length
+  return series.filter(item => item.count > avg * 2 && item.count > 10)
 }
 
-const handleShare = () => {
-  navigator.clipboard.writeText(window.location.href)
-  ElMessage.success('Link copied to clipboard')
+const buildBucketKeys = () => {
+  const keys = new Set<string>()
+  logSeries.value.forEach(item => keys.add(normalizeBucket(item.timestamp)))
+  attackBuckets.value.forEach((_count, timestamp) => keys.add(timestamp))
+  if (!keys.size) {
+    const [startTime, endTime] = getTimeRange()
+    return generateBuckets(startTime, endTime)
+  }
+  return Array.from(keys).sort()
 }
 
-// Lifecycle
-onMounted(() => {
-  executeQuery()
-  window.addEventListener('resize', () => chartInstance?.resize())
+const bucketAttackRecords = (records: AttackClassificationRecord[]) => {
+  const buckets = new Map<string, number>()
+  records.forEach(record => {
+    const timestamp = record.classifiedAt || record.logTimestamp
+    if (!timestamp) return
+    const key = normalizeBucket(timestamp)
+    buckets.set(key, (buckets.get(key) || 0) + 1)
+  })
+  return buckets
+}
+
+const normalizeSeries = (rows: any[]): SeriesPoint[] => {
+  return rows.map(row => ({
+    timestamp: String(row.timestamp || row.time_bucket || ''),
+    count: Number(row.count || 0)
+  })).filter(item => item.timestamp)
+}
+
+const getTimeRange = (): [string, string] => {
+  if (timeRange.value === 'custom' && customTimeRange.value?.length === 2) {
+    return customTimeRange.value
+  }
+
+  const end = new Date()
+  const start = new Date(end)
+  if (timeRange.value === '1h') start.setHours(start.getHours() - 1)
+  else if (timeRange.value === '6h') start.setHours(start.getHours() - 6)
+  else if (timeRange.value === '7d') start.setDate(start.getDate() - 7)
+  else if (timeRange.value === '30d') start.setDate(start.getDate() - 30)
+  else start.setHours(start.getHours() - 24)
+  return [formatDateTime(start), formatDateTime(end)]
+}
+
+const resolveGranularity = (startTime: string, endTime: string) => {
+  if (granularity.value !== 'auto') return granularity.value
+  const hours = (parseDateTime(endTime).getTime() - parseDateTime(startTime).getTime()) / 3600000
+  if (hours <= 2) return '1m'
+  if (hours <= 12) return '5m'
+  if (hours <= 72) return '1h'
+  return '1d'
+}
+
+const generateBuckets = (startTime: string, endTime: string) => {
+  const result: string[] = []
+  const current = parseDateTime(startTime)
+  const end = parseDateTime(endTime)
+  while (current <= end && result.length < 720) {
+    result.push(formatDateTime(floorDate(current)))
+    advanceDate(current)
+  }
+  return result
+}
+
+const normalizeBucket = (timestamp: string) => formatDateTime(floorDate(parseDateTime(timestamp)))
+
+const floorDate = (date: Date) => {
+  const value = new Date(date)
+  value.setSeconds(0, 0)
+  if (activeGranularity.value === '5m') value.setMinutes(Math.floor(value.getMinutes() / 5) * 5)
+  if (activeGranularity.value === '1h') value.setMinutes(0, 0, 0)
+  if (activeGranularity.value === '1d') value.setHours(0, 0, 0, 0)
+  return value
+}
+
+const advanceDate = (date: Date) => {
+  if (activeGranularity.value === '1m') date.setMinutes(date.getMinutes() + 1)
+  else if (activeGranularity.value === '5m') date.setMinutes(date.getMinutes() + 5)
+  else if (activeGranularity.value === '1d') date.setDate(date.getDate() + 1)
+  else date.setHours(date.getHours() + 1)
+}
+
+const parseDateTime = (value: string) => new Date(String(value).replace(' ', 'T'))
+
+const formatDateTime = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+const formatAxisLabel = (timestamp: string) => {
+  if (!timestamp) return ''
+  if (activeGranularity.value === '1d') return timestamp.slice(5, 10)
+  return timestamp.slice(5, 16)
+}
+
+const aggregateBy = <T,>(rows: T[], getter: (row: T) => string) => {
+  const map = new Map<string, number>()
+  rows.forEach(row => {
+    const key = getter(row) || '未知'
+    map.set(key, (map.get(key) || 0) + 1)
+  })
+  return Array.from(map.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+const sumSeries = (series: SeriesPoint[]) => series.reduce((sum, item) => sum + item.count, 0)
+
+const compareHalves = (series: SeriesPoint[]) => {
+  if (series.length < 2) return 0
+  const mid = Math.floor(series.length / 2)
+  const first = sumSeries(series.slice(0, mid))
+  const second = sumSeries(series.slice(mid))
+  if (first === 0) return second > 0 ? 100 : 0
+  return ((second - first) / first) * 100
+}
+
+const buildChangeText = (series: SeriesPoint[]) => {
+  const change = compareHalves(series)
+  if (!Number.isFinite(change) || change === 0) return '与前半段持平'
+  return `较前半段${change > 0 ? '上升' : '下降'} ${Math.abs(change).toFixed(1)}%`
+}
+
+const formatNumber = (value: number) => value.toLocaleString()
+
+const fieldLabel = (field: string) => {
+  const map: Record<string, string> = {
+    severity: '日志等级',
+    source_type: '来源类型',
+    hostname: '主机',
+    source_ip: '来源 IP',
+    appname: '应用'
+  }
+  return map[field] || field
+}
+
+const severityLabel = (severity?: string) => {
+  const map: Record<string, string> = {
+    critical: '严重',
+    high: '高危',
+    medium: '中危',
+    low: '低危'
+  }
+  return map[severity || ''] || severity || '未知'
+}
+
+const attackTypeLabel = (type?: string) => {
+  const map: Record<string, string> = {
+    authentication_attack: '认证攻击',
+    web_attack: 'Web 攻击',
+    command_execution: '命令执行',
+    scan_probe: '扫描探测',
+    privilege_abuse: '权限异常'
+  }
+  return map[type || ''] || type || '未知'
+}
+
+const normalizeResponseList = <T,>(response: any): T[] => {
+  const data = response?.data || response
+  return Array.isArray(data) ? data : []
+}
+
+const handleResize = () => {
+  trendChart?.resize()
+  severityChart?.resize()
+  attackTypeChart?.resize()
+  dimensionChart?.resize()
+}
+
+onMounted(async () => {
+  await loadDatasourceOptions()
+  await loadTrendData()
+  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
-  chartInstance?.dispose()
-  window.removeEventListener('resize', () => chartInstance?.resize())
-})
-
-watch(chartType, () => {
-  renderChart()
+  window.removeEventListener('resize', handleResize)
+  trendChart?.dispose()
+  severityChart?.dispose()
+  attackTypeChart?.dispose()
+  dimensionChart?.dispose()
 })
 </script>
 
-
 <style scoped lang="scss">
-.trend-analysis-container {
-  padding: 24px;
-  background: var(--macos-fill-tertiary);
+.trend-page {
+  height: 100%;
   min-height: 100vh;
+  padding: 20px 24px 28px;
+  background: var(--macos-fill-tertiary);
+  color: var(--macos-text-primary);
 }
 
 .page-header {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 24px;
-
-  .header-left {
-    .page-title {
-      font-size: 24px;
-      font-weight: 600;
-      color: var(--macos-text-primary);
-      margin: 0 0 4px 0;
-    }
-
-    .page-subtitle {
-      font-size: 14px;
-      color: #6E6E73;
-      margin: 0;
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 12px;
-  }
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.query-builder-card {
-  margin-bottom: 24px;
-
-  :deep(.el-card__body) {
-    padding: 20px;
-  }
+.page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
 }
 
-.query-controls {
-  .time-range-section {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--macos-border);
-
-    .section-label {
-      font-weight: 600;
-      color: var(--macos-text-primary);
-      min-width: 80px;
-    }
-
-    .time-select {
-      width: 160px;
-    }
-
-    .custom-picker {
-      width: 360px;
-    }
-  }
-
-  .query-card {
-    background: #F8FAFC;
-    border: 1px solid #E4E7ED;
-    border-radius: 8px;
-    margin-bottom: 16px;
-    overflow: hidden;
-
-    &.query-card-secondary {
-      background: #FAFBFF;
-      border-color: #D4E5FF;
-    }
-
-    .query-card-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
-      background: var(--macos-card-bg);
-      border-bottom: 1px solid #E4E7ED;
-
-      .query-badge {
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        background: linear-gradient(135deg, #409EFF 0%, #66B1FF 100%);
-        color: #FFFFFF;
-        font-size: 13px;
-        font-weight: 700;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-
-        &.secondary {
-          background: linear-gradient(135deg, #67C23A 0%, #85CE61 100%);
-        }
-      }
-
-      .query-title {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--macos-text-primary);
-      }
-
-      .remove-query-btn {
-        margin-left: auto;
-      }
-    }
-
-    .query-card-body {
-      padding: 16px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-
-      .query-field-group {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-
-        .field-label {
-          font-size: 12px;
-          color: var(--macos-text-tertiary);
-          font-weight: 500;
-        }
-
-        .metric-select {
-          width: 200px;
-        }
-
-        .agg-select {
-          width: 120px;
-        }
-
-        .group-select {
-          width: 140px;
-        }
-
-        &.filter-group {
-          flex: 1;
-          min-width: 280px;
-        }
-      }
-    }
-  }
-
-  .filter-tags-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    padding: 8px 12px;
-    background: var(--macos-card-bg);
-    border: 1px solid var(--macos-border);
-    border-radius: 6px;
-    min-height: 40px;
-
-    .filter-tag {
-      border-radius: 4px;
-      font-size: 12px;
-    }
-
-    .filter-input-inline {
-      flex: 1;
-      min-width: 140px;
-
-      :deep(.el-input__wrapper) {
-        box-shadow: none !important;
-        background: transparent;
-        padding: 0;
-      }
-
-      .add-filter-icon {
-        cursor: pointer;
-        color: var(--macos-text-tertiary);
-        transition: color 0.2s;
-
-        &:hover {
-          color: var(--macos-blue);
-        }
-      }
-    }
-  }
-
-  .query-actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 8px;
-    padding-top: 16px;
-    border-top: 1px solid #F0F0F0;
-
-    .add-query-btn {
-      color: #409EFF !important;
-      border-color: #409EFF !important;
-      background: transparent !important;
-
-      &:hover {
-        color: #66b1ff !important;
-        border-color: #66b1ff !important;
-        background: rgba(64, 158, 255, 0.1) !important;
-      }
-    }
-  }
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--macos-text-secondary);
+  font-size: 13px;
 }
 
-.main-content {
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--macos-card-bg);
+  border: 1px solid var(--macos-border);
+  border-radius: 8px;
+}
+
+.datasource-select {
+  width: 220px;
+}
+
+.time-select,
+.granularity-select,
+.mode-select {
+  width: 132px;
+}
+
+.custom-time {
+  width: 360px;
+}
+
+.keyword-input {
+  width: 240px;
+}
+
+.option-meta {
+  float: right;
+  margin-left: 16px;
+  color: var(--macos-text-tertiary);
+  font-size: 12px;
+}
+
+.metric-grid {
   display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 24px;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-.chart-card {
-  :deep(.el-card__header) {
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--macos-border);
-    background: var(--macos-fill-tertiary);
+.metric-tile {
+  min-height: 92px;
+  padding: 14px 16px;
+  background: var(--macos-card-bg);
+  border: 1px solid var(--macos-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: var(--macos-text-secondary);
+}
+
+.metric-value {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.metric-sub {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--macos-text-tertiary);
+
+  &.danger {
+    color: var(--macos-danger);
   }
 
-  .chart-header {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-  }
-
-  .chart-type-switcher {
-    display: flex;
-    gap: 4px;
-    background: var(--macos-bg-secondary);
-    padding: 4px;
-    border-radius: 8px;
-
-    .chart-type-btn {
-      width: 36px;
-      height: 32px;
-      border: none;
-      background: transparent;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--macos-text-tertiary);
-      transition: all 0.2s;
-
-      &:hover {
-        color: var(--macos-text-secondary);
-        background: rgba(255, 255, 255, 0.5);
-      }
-
-      &.active {
-        background: var(--macos-card-bg);
-        color: var(--macos-blue);
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      }
-
-      .el-icon {
-        font-size: 18px;
-      }
-    }
-  }
-
-  .main-chart {
-    height: 400px;
-  }
-
-  .chart-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    padding: 16px 0;
-    border-top: 1px solid #F0F0F0;
-    margin-top: 16px;
-
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      padding: 6px 12px;
-      border-radius: 6px;
-      transition: all 0.2s;
-      border: 1px solid transparent;
-
-      &:hover {
-        background: var(--macos-fill-secondary);
-        border-color: #E4E7ED;
-      }
-
-      &.highlighted {
-        background: var(--macos-info-bg);
-        border-color: #B3D8FF;
-      }
-
-      &.disabled {
-        opacity: 0.4;
-
-        .legend-color {
-          background: #C0C4CC !important;
-        }
-      }
-
-      .legend-color {
-        width: 12px;
-        height: 12px;
-        border-radius: 3px;
-      }
-
-      .legend-name {
-        font-size: 13px;
-        color: var(--macos-text-secondary);
-      }
-
-      .legend-value {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--macos-text-primary);
-        font-family: 'SF Mono', monospace;
-      }
-    }
+  &.success {
+    color: var(--macos-success);
   }
 }
 
-.insights-card {
-  :deep(.el-card__header) {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--macos-border);
-    background: var(--macos-fill-tertiary);
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.panel {
+  background: var(--macos-card-bg);
+  border: 1px solid var(--macos-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.panel-header {
+  min-height: 56px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--macos-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  &.compact {
+    min-height: 48px;
   }
 
-  .section-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--macos-text-primary);
+  h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
   }
 
-  h4 {
-    font-size: 13px;
-    font-weight: 600;
+  p {
+    margin: 4px 0 0;
+    font-size: 12px;
     color: var(--macos-text-secondary);
-    margin: 0 0 12px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
   }
+}
 
-  .stats-section {
-    margin-bottom: 24px;
+.chart-switch {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--macos-fill-secondary);
+  border-radius: 8px;
 
-    .stats-table {
-      :deep(.el-table__cell) {
-        padding: 14px 12px;
-      }
+  button {
+    width: 32px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--macos-text-secondary);
+    cursor: pointer;
 
-      :deep(.el-table__header-wrapper th) {
-        background: var(--macos-fill-tertiary);
-        font-weight: 600;
-        color: var(--macos-text-secondary);
-      }
+    &.active {
+      color: var(--macos-blue);
+      background: var(--macos-card-bg);
+      box-shadow: var(--macos-shadow-sm);
     }
   }
+}
 
-  .shifts-section {
-    margin-bottom: 24px;
+.trend-chart {
+  height: 396px;
+}
 
-    .shifts-list {
-      .shift-item {
-        display: flex;
-        align-items: stretch;
-        background: var(--macos-card-bg);
-        border: 1px solid #E4E7ED;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        overflow: hidden;
+.small-chart {
+  height: 286px;
+}
 
-        .shift-indicator {
-          width: 4px;
-          flex-shrink: 0;
-        }
+.dimension-select {
+  width: 132px;
+}
 
-        .shift-content {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 12px 16px;
-          flex: 1;
+.insight-panel {
+  min-height: 454px;
+}
 
-          .shift-icon {
-            font-size: 16px;
-            flex-shrink: 0;
-          }
+.insight-list {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
-          .shift-message {
-            font-size: 13px;
-            color: var(--macos-text-primary);
-            line-height: 1.5;
-          }
-        }
+.insight-item {
+  padding: 12px;
+  border: 1px solid var(--macos-border);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--macos-fill-tertiary);
 
-        &.increase {
-          .shift-indicator {
-            background: #F56C6C;
-          }
-
-          .shift-icon {
-            color: var(--macos-danger);
-          }
-        }
-
-        &.decrease {
-          .shift-indicator {
-            background: #67C23A;
-          }
-
-          .shift-icon {
-            color: var(--macos-success);
-          }
-        }
-      }
-    }
+  &.danger {
+    border-left-color: var(--macos-danger);
   }
 
-  .anomalies-section {
-    .anomalies-list {
-      .anomaly-item {
-        display: flex;
-        align-items: stretch;
-        background: var(--macos-card-bg);
-        border: 1px solid #E4E7ED;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        overflow: hidden;
+  &.warning {
+    border-left-color: var(--macos-warning);
+  }
 
-        .anomaly-indicator {
-          width: 4px;
-          background: #E6A23C;
-          flex-shrink: 0;
-        }
+  &.success {
+    border-left-color: var(--macos-success);
+  }
 
-        .anomaly-content {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          padding: 12px 16px;
+  &.info {
+    border-left-color: var(--macos-blue);
+  }
 
-          .anomaly-time {
-            font-size: 11px;
-            color: var(--macos-text-tertiary);
-            font-family: 'SF Mono', monospace;
-          }
+  p {
+    margin: 8px 0 0;
+    color: var(--macos-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
 
-          .anomaly-desc {
-            font-size: 13px;
-            color: var(--macos-text-primary);
-            line-height: 1.5;
-          }
-        }
-      }
-    }
+.insight-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 13px;
+}
+
+@media (max-width: 1280px) {
+  .metric-grid,
+  .bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .trend-page {
+    padding: 14px;
+  }
+
+  .page-header,
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .datasource-select,
+  .time-select,
+  .granularity-select,
+  .mode-select,
+  .keyword-input,
+  .custom-time {
+    width: 100%;
+  }
+
+  .metric-grid,
+  .bottom-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

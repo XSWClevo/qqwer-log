@@ -4,6 +4,7 @@ import cn.mw.loganalysis.auth.security.JwtAuthenticationFilter;
 import cn.mw.loganalysis.auth.security.SessionActivityFilter;
 import cn.mw.loganalysis.common.response.Result;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -73,6 +74,7 @@ public class SecurityConfig {
 
                 // 配置授权规则：只放行登录、刷新令牌、Agent 自身调用和安装包下载，其余接口默认需要登录
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error", "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh").permitAll()
@@ -96,6 +98,9 @@ public class SecurityConfig {
                                 "/api/vector/packages/download/*",
                                 "/api/vector/packages/download-bundle"
                         ).permitAll()
+
+                        // Vector HTTP sink 上报新日志源，不携带用户 JWT。
+                        .requestMatchers(HttpMethod.POST, "/api/log-sources/notify-new-ip").permitAll()
 
                         .anyRequest().authenticated()
                 )

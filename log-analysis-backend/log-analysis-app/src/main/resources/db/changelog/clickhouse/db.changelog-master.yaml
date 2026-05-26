@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/clickhouse/changes/20260521-vector-logs.sql
   - include:
       file: db/changelog/clickhouse/changes/20260522-attack-classifications.sql
+  - include:
+      file: db/changelog/clickhouse/changes/20260525-vector-observability.sql

@@ -25,10 +25,18 @@ public class AlertEventDTO {
     private String ruleName;
     
     private String severity;
+
+    private String state;
+
+    private String previousState;
+
+    private String thresholdLevel;
     
     private String message;
     
     private Map<String, Object> logData;
+
+    private Long evaluationRunId;
     
     private LocalDateTime triggeredAt;
     

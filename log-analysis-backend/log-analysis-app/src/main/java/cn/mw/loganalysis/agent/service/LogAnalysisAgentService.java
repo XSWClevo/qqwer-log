@@ -60,13 +60,16 @@ public class LogAnalysisAgentService {
     @Value("${agent.llm.fallback-on-error:true}")
     private boolean fallbackOnError;
 
+    @Value("${agent.llm.prefer-deterministic-tools:true}")
+    private boolean preferDeterministicTools;
+
     public AgentChatResponse chat(AgentChatRequest request, Long userId) {
         AgentConversationMemoryService.PreparedAgentChatRequest preparedRequest = agentSessionService.prepare(request, userId);
         AgentChatRequest effectiveRequest = preparedRequest.request();
         String sessionId = preparedRequest.sessionId();
         AgentChatResponse response;
         try {
-            response = executePreparedChat(effectiveRequest, false, null);
+            response = executePreparedChat(effectiveRequest, userId, sessionId, false, null);
         } catch (IOException ex) {
             log.error("同步智能助手请求意外触发流式写出异常, datasourceId={}, message={}",
                     effectiveRequest.getDatasourceId(), effectiveRequest.getMessage(), ex);
@@ -81,7 +84,7 @@ public class LogAnalysisAgentService {
         String sessionId = preparedRequest.sessionId();
 
         emitter.emit(AgentStreamEvent.started(sessionId));
-        AgentChatResponse response = executePreparedChat(effectiveRequest, true, emitter);
+        AgentChatResponse response = executePreparedChat(effectiveRequest, userId, sessionId, true, emitter);
         AgentChatResponse finalizedResponse = agentSessionService.finalizeResponse(userId, sessionId, effectiveRequest.getMessage(), response);
         emitter.emit(AgentStreamEvent.done(finalizedResponse));
     }
@@ -99,29 +102,40 @@ public class LogAnalysisAgentService {
     }
 
     private AgentChatResponse executePreparedChat(AgentChatRequest effectiveRequest,
+                                                  Long userId,
+                                                  String sessionId,
                                                   boolean streamMode,
                                                   AgentStreamEventEmitter emitter) throws IOException {
+        if (preferDeterministicTools && fallbackAgentExecutor.shouldHandleWithoutLlm(effectiveRequest, userId)) {
+            log.info("智能助手请求命中确定性工具链，跳过 LLM, datasourceId={}, message={}",
+                    effectiveRequest.getDatasourceId(), effectiveRequest.getMessage());
+            return fallbackAgentExecutor.execute(effectiveRequest, userId, sessionId, emitter);
+        }
+
         if (llmEnabled) {
             LangChain4jLogAnalysisAgentExecutor llmExecutor = llmExecutorProvider.getIfAvailable();
             if (llmExecutor != null) {
                 try {
                     return streamMode
-                            ? llmExecutor.streamChat(effectiveRequest, emitter)
-                            : llmExecutor.chat(effectiveRequest);
+                            ? llmExecutor.streamChat(effectiveRequest, userId, sessionId, emitter)
+                            : llmExecutor.chat(effectiveRequest, userId, sessionId);
                 } catch (Exception ex) {
                     String llmFailureMessage = describeLlmFailure(ex);
-                    log.error("LangChain4j 智能助手处理失败, datasourceId={}, message={}",
-                            effectiveRequest.getDatasourceId(), effectiveRequest.getMessage(), ex);
-                    log.warn("LangChain4j 智能助手已回退到规则版: {}", llmFailureMessage);
                     if (!fallbackOnError) {
+                        log.error("LangChain4j 智能助手处理失败且未启用回退, datasourceId={}, message={}",
+                                effectiveRequest.getDatasourceId(), effectiveRequest.getMessage(), ex);
                         return responseAssembler.error("智能助手处理失败: " + llmFailureMessage);
                     }
+                    log.warn("LangChain4j 智能助手处理失败，已回退到规则版: datasourceId={}, reason={}",
+                            effectiveRequest.getDatasourceId(), llmFailureMessage);
+                    log.debug("LangChain4j 智能助手失败堆栈, datasourceId={}, message={}",
+                            effectiveRequest.getDatasourceId(), effectiveRequest.getMessage(), ex);
                 }
             } else {
                 logLlmUnavailableOnce();
             }
         }
-        return fallbackAgentExecutor.execute(effectiveRequest, emitter);
+        return fallbackAgentExecutor.execute(effectiveRequest, userId, sessionId, emitter);
     }
 
     private void logLlmUnavailableOnce() {

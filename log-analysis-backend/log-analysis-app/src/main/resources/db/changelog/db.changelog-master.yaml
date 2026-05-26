@@ -7,3 +7,17 @@ databaseChangeLog:
       file: db/changelog/changes/20260402-todo-items.sql
   - include:
       file: db/changelog/changes/20260522-attack-classification.sql
+  - include:
+      file: db/changelog/changes/20260525-rebuild-alert-monitor.sql
+  - include:
+      file: db/changelog/changes/20260525-drop-todo-items.sql
+  - include:
+      file: db/changelog/changes/20260525-vector-component-templates.sql
+  - include:
+      file: db/changelog/changes/20260526-alert-default-log-datasets.sql
+  - include:
+      file: db/changelog/changes/20260526-alert-page-notification-channel.sql
+  - include:
+      file: db/changelog/changes/20260526-alert-monitor-state-datasource-key.sql
+  - include:
+      file: db/changelog/changes/20260526-trusted-log-sources-demo-ips.sql

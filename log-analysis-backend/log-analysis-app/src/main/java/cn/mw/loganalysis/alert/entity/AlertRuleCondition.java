@@ -1,4 +1,4 @@
-package cn.mw.loganalysis.todo.entity;
+package cn.mw.loganalysis.alert.entity;
 
 import cn.mw.loganalysis.common.handler.PostgresJsonbTypeHandler;
 import com.baomidou.mybatisplus.annotation.FieldFill;
@@ -11,35 +11,33 @@ import lombok.Data;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 待办事项实体
+ * 告警规则查询与聚合条件。
  */
 @Data
-@TableName(value = "todo_items", autoResultMap = true)
-public class TodoItem implements Serializable {
+@TableName(value = "alert_rule_conditions", autoResultMap = true)
+public class AlertRuleCondition implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String title;
+    private Long ruleId;
 
-    private String description;
-
-    private String status;
-
-    private String priority;
-
-    private LocalDateTime dueAt;
-
-    private LocalDateTime completedAt;
+    private String query;
 
     @TableField(typeHandler = PostgresJsonbTypeHandler.class)
-    private List<String> tags;
+    private Map<String, Object> filters;
 
-    private Long createdBy;
+    private String aggregateFunction;
 
-    private Long updatedBy;
+    private String aggregateField;
+
+    @TableField(typeHandler = PostgresJsonbTypeHandler.class)
+    private List<String> groupBy;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

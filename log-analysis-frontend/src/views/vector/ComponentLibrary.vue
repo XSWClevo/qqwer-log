@@ -643,7 +643,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import DatasourceManageDialog from './components/DatasourceManageDialog.vue'
 import SmartWizard from './SmartWizard.vue'
 import { configComponentApi, vrlApi, type ConfigComponent, type ParsedField } from '@/api/vector'
-import { listActiveDatasources, listDatasourcesByType, type Datasource } from '@/api/datasource'
+import { listActiveDatasources, type Datasource } from '@/api/datasource'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { yaml as yamlLang } from '@codemirror/lang-yaml'
@@ -891,7 +891,7 @@ const fetchGeneratedYaml = async (): Promise<string> => {
       form.vectorType,
       JSON.stringify(visualConfig)
     )
-    return res.data?.yaml || ''
+    return res?.yaml || ''
   } catch (e: any) {
     console.error('生成 YAML 失败:', e)
     ElMessage.error('生成配置失败: ' + (e.message || '未知错误'))
@@ -995,6 +995,160 @@ const resetVisualConfig = () => {
   resetParsePreview()
 }
 
+const normalizeParseMethodForVisual = (value?: string) => {
+  const method = value || ''
+  if (method === 'parse_kv') return 'parse_key_value'
+  if (method === 'auto') return 'custom'
+  if (['parse_json', 'parse_syslog', 'parse_regex', 'parse_key_value', 'parse_grok', 'custom'].includes(method)) {
+    return method
+  }
+  return ''
+}
+
+const normalizeVisualData = (rawVisual: Record<string, any>) => {
+  const normalized: Record<string, any> = { ...rawVisual }
+
+  const aliasMap: Record<string, string> = {
+    parseMethod: 'parse_method',
+    regexPattern: 'regex_pattern',
+    grokPattern: 'grok_pattern',
+    customVrl: 'vrl_source',
+    vrlScript: 'vrl_source',
+    logSample: 'log_sample',
+    parsedFields: 'parsed_fields'
+  }
+
+  Object.entries(aliasMap).forEach(([oldKey, newKey]) => {
+    if (normalized[oldKey] !== undefined && normalized[newKey] === undefined) {
+      normalized[newKey] = normalized[oldKey]
+    }
+  })
+
+  const normalizedMethod = normalizeParseMethodForVisual(normalized.parse_method)
+  if (normalizedMethod) {
+    normalized.parse_method = normalizedMethod
+  } else {
+    delete normalized.parse_method
+  }
+
+  if (Array.isArray(normalized.parsed_fields)) {
+    normalized.parsed_fields = normalized.parsed_fields.map((field: any) => ({
+      ...field,
+      newName: field.newName || field.new_name || field.name,
+      deleted: Boolean(field.deleted)
+    }))
+  }
+
+  return normalized
+}
+
+const extractRemapSourceFromYaml = (configYaml?: string) => {
+  if (!configYaml) return ''
+
+  try {
+    const parsed = yaml.load(configYaml) as Record<string, any>
+    if (typeof parsed?.source === 'string') {
+      return parsed.source
+    }
+  } catch {
+    // 下方使用文本兜底解析，避免一个历史 YAML 格式问题导致无法回显。
+  }
+
+  const sourceMatch = configYaml.match(/(?:^|\n)source:\s*\|\s*\n([\s\S]*)$/)
+  if (!sourceMatch) return ''
+
+  const sourceBody = sourceMatch[1] || ''
+  return sourceBody
+    .split('\n')
+    .map(line => line.replace(/^ {2}/, ''))
+    .join('\n')
+    .trimEnd()
+}
+
+const inferVisualDataFromYaml = (comp: ConfigComponent) => {
+  if (comp.componentType !== 'transform' || comp.vectorType !== 'remap') {
+    return {}
+  }
+
+  const source = extractRemapSourceFromYaml(comp.configYaml)
+  if (!source.trim()) return {}
+
+  const inferred: Record<string, any> = {
+    vrl_source: source
+  }
+
+  const regexMatch = source.match(/parse_regex!?\([\s\S]*?,\s*r'([^']*)'/)
+  if (regexMatch?.[1]) {
+    inferred.parse_method = 'parse_regex'
+    inferred.regex_pattern = regexMatch[1]
+    return inferred
+  }
+
+  const grokMatch = source.match(/parse_grok!?\([\s\S]*?,\s*"([^"]*)"/)
+  if (grokMatch?.[1]) {
+    inferred.parse_method = 'parse_grok'
+    inferred.grok_pattern = grokMatch[1].replace(/^%\{/, '').replace(/\}$/, '')
+    return inferred
+  }
+
+  const hasJson = source.includes('parse_json')
+  const hasKeyValue = source.includes('parse_key_value')
+  const hasSyslog = source.includes('parse_syslog')
+  const methodCount = [hasJson, hasKeyValue, hasSyslog].filter(Boolean).length
+
+  if (methodCount > 1) {
+    inferred.parse_method = 'custom'
+  } else if (hasJson) {
+    inferred.parse_method = 'parse_json'
+  } else if (hasKeyValue) {
+    inferred.parse_method = 'parse_key_value'
+  } else if (hasSyslog) {
+    inferred.parse_method = 'parse_syslog'
+  } else {
+    inferred.parse_method = 'custom'
+  }
+
+  return inferred
+}
+
+const mergeVisualData = (savedVisual: Record<string, any>, inferredVisual: Record<string, any>) => {
+  const saved = normalizeVisualData(savedVisual)
+  const inferred = normalizeVisualData(inferredVisual)
+  const merged = { ...inferred, ...saved }
+
+  const inferredMethod = inferred.parse_method
+  const savedMethod = saved.parse_method
+  if ((!savedMethod || (savedMethod === 'parse_json' && inferredMethod && inferredMethod !== 'parse_json')) && inferredMethod) {
+    merged.parse_method = inferredMethod
+  }
+
+  if (!merged.regex_pattern && inferred.regex_pattern) {
+    merged.regex_pattern = inferred.regex_pattern
+  }
+  if (!merged.grok_pattern && inferred.grok_pattern) {
+    merged.grok_pattern = inferred.grok_pattern
+  }
+  if (!merged.vrl_source && inferred.vrl_source) {
+    merged.vrl_source = inferred.vrl_source
+  }
+
+  return merged
+}
+
+const restoreParsePreview = (restoredVisual: Record<string, any>) => {
+  if (restoredVisual.log_sample) {
+    parsePreview.logSample = restoredVisual.log_sample
+  }
+  if (Array.isArray(restoredVisual.parsed_fields) && restoredVisual.parsed_fields.length > 0) {
+    parsePreview.fields = restoredVisual.parsed_fields.map((field: any) => ({
+      ...field,
+      newName: field.newName || field.new_name || field.name,
+      deleted: Boolean(field.deleted),
+      editing: false
+    }))
+  }
+}
+
 watch(showDialog, async (val) => {
   if (val && configMode.value === 'yaml') {
     await nextTick()
@@ -1085,12 +1239,6 @@ const getDatasourceTypeColor = (type: string) => {
   return colors[type] || ''
 }
 
-const resetFilters = () => {
-  filters.keyword = ''
-  filters.componentTypes = []
-  fetchList()
-}
-
 /**
  * 打开智能向导
  */
@@ -1112,25 +1260,18 @@ const openDialog = (comp?: ConfigComponent) => {
       description: comp.description || '', configYaml: comp.configYaml, visualData: comp.visualData || '',
       datasourceId: comp.datasourceId || '' // 恢复数据源ID
     })
-    // 从 visualData 恢复可视化配置
+    // 从 visualData 恢复可视化配置；历史数据不完整时，再从 YAML 兜底推断。
+    let savedVisual: Record<string, any> = {}
     if (comp.visualData) {
       try {
-        const savedVisual = JSON.parse(comp.visualData)
-        Object.assign(visualConfig, savedVisual)
-        // 恢复解析预览数据
-        if (savedVisual.log_sample) {
-          parsePreview.logSample = savedVisual.log_sample
-        }
-        if (savedVisual.parsed_fields?.length > 0) {
-          parsePreview.fields = savedVisual.parsed_fields.map((f: any) => ({
-            ...f,
-            editing: false
-          }))
-        }
+        savedVisual = JSON.parse(comp.visualData)
       } catch (e) {
         console.warn('解析 visualData 失败:', e)
       }
     }
+    const restoredVisual = mergeVisualData(savedVisual, inferVisualDataFromYaml(comp))
+    Object.assign(visualConfig, restoredVisual)
+    restoreParsePreview(restoredVisual)
     configMode.value = 'visual'
   } else {
     editingId.value = null
@@ -1257,7 +1398,7 @@ const testParsing = async () => {
       customVrl: visualConfig.vrl_source
     })
     
-    const data = res.data
+    const data = res
     if (data.success && data.fields) {
       parsePreview.fields = data.fields.map((f: ParsedField) => ({
         ...f,
@@ -1324,7 +1465,6 @@ const applyParsedFields = () => {
   
   // 2. 处理字段映射（重命名和删除）
   const activeFields = parsePreview.fields.filter(f => !f.deleted)
-  const renamedFields = activeFields.filter(f => f.newName !== f.name)
   const deletedFields = parsePreview.fields.filter(f => f.deleted)
   
   // 3. 生成字段赋值语句

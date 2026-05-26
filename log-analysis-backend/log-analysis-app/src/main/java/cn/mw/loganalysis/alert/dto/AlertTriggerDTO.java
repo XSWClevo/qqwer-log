@@ -14,5 +14,9 @@ public class AlertTriggerDTO {
 
     private BigDecimal threshold;
 
+    private BigDecimal warningThreshold;
+
+    private BigDecimal recoveryThreshold;
+
     private String timeWindow;
 }

@@ -93,6 +93,7 @@ public class LogQueryToolHandler {
             values.add("error");
         }
         if (AgentToolSupport.containsAny(normalized, "warn", "告警", "警告")) {
+            values.add("warning");
             values.add("warn");
         }
         if (AgentToolSupport.containsAny(normalized, "info", "信息")) {
@@ -107,7 +108,7 @@ public class LogQueryToolHandler {
         }
 
         LogQueryRequest.FieldFilter filter = new LogQueryRequest.FieldFilter();
-        filter.setField("levels");
+        filter.setField("severity");
         filter.setType("include");
         filter.setValues(values.stream().distinct().toList());
         return List.of(filter);

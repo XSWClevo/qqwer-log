@@ -133,6 +133,7 @@ agent:
     enabled: ${AGENT_LLM_ENABLED:true}
     manual-chat-model: ${AGENT_LLM_MANUAL_CHAT_MODEL:false}
     fallback-on-error: ${AGENT_LLM_FALLBACK_ON_ERROR:true}
+    prefer-deterministic-tools: ${AGENT_LLM_PREFER_DETERMINISTIC_TOOLS:true}
     memory:
       max-tokens: ${AGENT_LLM_MEMORY_MAX_TOKENS:2048}
   mcp:
@@ -171,6 +172,9 @@ agent:
 
 # Spring Actuator配置
 management:
+  health:
+    mail:
+      enabled: ${MAIL_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:

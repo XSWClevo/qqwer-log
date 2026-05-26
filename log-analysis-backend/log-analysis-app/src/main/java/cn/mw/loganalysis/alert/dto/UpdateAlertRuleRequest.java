@@ -3,7 +3,6 @@ package cn.mw.loganalysis.alert.dto;
 import lombok.Data;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 更新告警规则请求 DTO
@@ -25,7 +24,11 @@ public class UpdateAlertRuleRequest {
 
     private List<String> tableNames;
 
-    private Map<String, Object> condition;
+    private AlertConditionDTO condition;
+
+    private AlertThresholdsDTO thresholds;
+
+    private AlertMonitorOptionsDTO monitorOptions;
 
     private String evalEvery;
 
@@ -34,8 +37,6 @@ public class UpdateAlertRuleRequest {
     private String severity;
 
     private List<String> notificationChannels;
-
-    private List<String> dedupKeyFields;
 
     private String messageTemplate;
 

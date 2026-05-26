@@ -26,6 +26,12 @@ public class AlertEvent implements Serializable {
 
     private String severity;
 
+    private String state;
+
+    private String previousState;
+
+    private String thresholdLevel;
+
     private String message;
 
     /**
@@ -33,6 +39,8 @@ public class AlertEvent implements Serializable {
      */
     @TableField(typeHandler = PostgresJsonbTypeHandler.class)
     private Map<String, Object> logData;
+
+    private Long evaluationRunId;
 
     private LocalDateTime triggeredAt;
 

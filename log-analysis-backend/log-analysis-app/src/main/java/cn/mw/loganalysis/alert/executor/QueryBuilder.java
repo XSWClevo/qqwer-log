@@ -3,17 +3,19 @@ package cn.mw.loganalysis.alert.executor;
 import cn.mw.loganalysis.alert.dto.AlertAggregateDTO;
 import cn.mw.loganalysis.alert.dto.AlertConditionDTO;
 import cn.mw.loganalysis.alert.dto.AlertDatasetTarget;
-import cn.mw.loganalysis.alert.dto.AlertFilterDTO;
-import cn.mw.loganalysis.stats.dto.LogQueryRequest;
+import cn.mw.loganalysis.alert.dto.AlertMonitorOptionsDTO;
+import cn.mw.loganalysis.alert.dto.AlertThresholdDTO;
+import cn.mw.loganalysis.alert.dto.AlertThresholdsDTO;
 import cn.mw.loganalysis.stats.service.query.support.StatsQueryMapperUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -27,24 +29,24 @@ import java.util.Map;
 @Component
 public class QueryBuilder {
 
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     /**
      * 构建查询 SQL
      */
     public String buildQuery(AlertDatasetTarget target, AlertConditionDTO condition) {
-        return buildAggregationSql(target, condition);
+        return buildAggregationSql(target, condition, null);
+    }
+
+    public String buildQuery(AlertDatasetTarget target, AlertConditionDTO condition, AlertThresholdsDTO thresholds) {
+        return buildAggregationSql(target, condition, thresholds);
     }
 
     /**
      * 构建聚合查询 SQL
      */
-    private String buildAggregationSql(AlertDatasetTarget target, AlertConditionDTO condition) {
-        String timeWindow = condition.getTrigger() != null
-                ? StringUtils.defaultIfBlank(condition.getTrigger().getTimeWindow(), "5m")
-                : "5m";
-        LocalDateTime endTime = LocalDateTime.now();
-        LocalDateTime startTime = calculateStartTime(endTime, timeWindow);
+    private String buildAggregationSql(AlertDatasetTarget target, AlertConditionDTO condition, AlertThresholdsDTO thresholds) {
+        String timeWindow = resolveTimeWindow(condition, thresholds);
+        String windowEndExpression = buildWindowEndExpression(condition);
+        String windowStartExpression = buildWindowStartExpression(condition, timeWindow);
 
         List<String> groupByFields = buildGroupByFields(target, condition.getGroupBy());
         AlertAggregateDTO aggregate = condition.getAggregate() != null ? condition.getAggregate() : new AlertAggregateDTO();
@@ -59,10 +61,10 @@ public class QueryBuilder {
         sql.append("FROM ").append(buildTableExpression(target)).append(" ");
         sql.append("WHERE ")
                 .append(quoteIdentifier(target.getTimeField()))
-                .append(" >= '").append(startTime.format(FORMATTER)).append("' ");
+                .append(" >= ").append(windowStartExpression).append(" ");
         sql.append("AND ")
                 .append(quoteIdentifier(target.getTimeField()))
-                .append(" <= '").append(endTime.format(FORMATTER)).append("' ");
+                .append(" <= ").append(windowEndExpression).append(" ");
 
         appendStructuredFilters(sql, target, condition.getFilters());
         if (StringUtils.isNotBlank(condition.getQuery())) {
@@ -76,6 +78,12 @@ public class QueryBuilder {
 
         log.debug("Built SQL: {}", sql);
         return sql.toString();
+    }
+
+    public EvaluationWindow resolveEvaluationWindow(AlertConditionDTO condition, AlertThresholdsDTO thresholds) {
+        LocalDateTime endTime = resolveEvaluationEndTime(condition);
+        LocalDateTime startTime = calculateStartTime(endTime, resolveTimeWindow(condition, thresholds));
+        return new EvaluationWindow(startTime, endTime);
     }
 
     /**
@@ -115,24 +123,31 @@ public class QueryBuilder {
         return whereClause;
     }
 
-    private void appendStructuredFilters(StringBuilder sql, AlertDatasetTarget target, AlertFilterDTO filters) {
-        if (filters == null) {
+    private void appendStructuredFilters(StringBuilder sql, AlertDatasetTarget target, Map<String, Object> filters) {
+        if (MapUtils.isEmpty(filters)) {
             return;
         }
 
-        if (CollectionUtils.isNotEmpty(filters.getFieldFilters())) {
-            for (LogQueryRequest.FieldFilter filter : filters.getFieldFilters()) {
-                if (filter == null || StringUtils.isBlank(filter.getField()) || CollectionUtils.isEmpty(filter.getValues())) {
+        Object fieldFiltersObj = filters.get("fieldFilters");
+        if (fieldFiltersObj instanceof List<?> fieldFilters) {
+            for (Object item : fieldFilters) {
+                if (!(item instanceof Map<?, ?> filter)) {
+                    continue;
+                }
+                String field = String.valueOf(ObjectUtils.defaultIfNull(filter.get("field"), ""));
+                Object valuesObj = filter.get("values");
+                if (StringUtils.isBlank(field) || !(valuesObj instanceof List<?> values) || CollectionUtils.isEmpty(values)) {
                     continue;
                 }
 
-                String fieldExpression = quoteIdentifier(resolveField(target, filter.getField()));
-                String valueList = filter.getValues().stream()
+                String fieldExpression = quoteIdentifier(resolveField(target, field));
+                String valueList = values.stream()
+                        .map(String::valueOf)
                         .map(this::quoteValue)
                         .reduce((left, right) -> left + "," + right)
                         .orElse("");
 
-                if ("exclude".equalsIgnoreCase(filter.getType())) {
+                if ("exclude".equalsIgnoreCase(String.valueOf(filter.get("type")))) {
                     sql.append("AND ").append(fieldExpression).append(" NOT IN (").append(valueList).append(") ");
                 } else {
                     sql.append("AND ").append(fieldExpression).append(" IN (").append(valueList).append(") ");
@@ -140,23 +155,27 @@ public class QueryBuilder {
             }
         }
 
-        appendMessageConditions(sql, target.getMessageField(), filters.getMessageConditions());
-        appendMessageConditions(sql, target.getRawField(), filters.getRawConditions());
+        appendMessageConditions(sql, target.getMessageField(), filters.get("messageConditions"));
+        appendMessageConditions(sql, target.getRawField(), filters.get("rawConditions"));
     }
 
-    private void appendMessageConditions(StringBuilder sql, String fieldName, List<LogQueryRequest.MessageCondition> conditions) {
-        if (CollectionUtils.isEmpty(conditions) || StringUtils.isBlank(fieldName)) {
+    private void appendMessageConditions(StringBuilder sql, String fieldName, Object conditionsObj) {
+        if (!(conditionsObj instanceof List<?> conditions) || CollectionUtils.isEmpty(conditions) || StringUtils.isBlank(fieldName)) {
             return;
         }
 
         String fieldExpression = quoteIdentifier(fieldName);
-        for (LogQueryRequest.MessageCondition condition : conditions) {
-            if (condition == null || StringUtils.isBlank(condition.getValue())) {
+        for (Object item : conditions) {
+            if (!(item instanceof Map<?, ?> condition)) {
+                continue;
+            }
+            String conditionValue = String.valueOf(ObjectUtils.defaultIfNull(condition.get("value"), ""));
+            if (StringUtils.isBlank(conditionValue)) {
                 continue;
             }
 
-            String value = condition.getValue().replace("'", "''");
-            String operator = StringUtils.lowerCase(condition.getOperator());
+            String value = conditionValue.replace("'", "''");
+            String operator = StringUtils.lowerCase(String.valueOf(condition.get("operator")));
             switch (operator) {
                 case "notcontains" -> sql.append("AND ").append(fieldExpression)
                         .append(" NOT LIKE '%").append(value).append("%' ");
@@ -209,24 +228,81 @@ public class QueryBuilder {
         return "'" + StringUtils.replace(StringUtils.defaultString(value), "'", "''") + "'";
     }
 
+    private int resolveEvaluationDelaySeconds(AlertConditionDTO condition) {
+        AlertMonitorOptionsDTO options = condition.getOptions();
+        if (options == null) {
+            return 0;
+        }
+        Integer delaySeconds = ObjectUtils.defaultIfNull(options.getEvaluationDelaySeconds(), 0);
+        return Math.max(0, delaySeconds);
+    }
+
+    private LocalDateTime resolveEvaluationEndTime(AlertConditionDTO condition) {
+        return LocalDateTime.now(ZoneOffset.UTC).minusSeconds(resolveEvaluationDelaySeconds(condition));
+    }
+
+    private String resolveTimeWindow(AlertConditionDTO condition, AlertThresholdsDTO thresholds) {
+        AlertThresholdDTO critical = thresholds != null ? thresholds.getCritical() : null;
+        if (critical != null && StringUtils.isNotBlank(critical.getTimeWindow())) {
+            return critical.getTimeWindow();
+        }
+        return condition.getTrigger() != null
+                ? StringUtils.defaultIfBlank(condition.getTrigger().getTimeWindow(), "5m")
+                : "5m";
+    }
+
     /**
      * 计算开始时间
      */
     private LocalDateTime calculateStartTime(LocalDateTime endTime, String timeWindow) {
-        if (timeWindow == null || timeWindow.isEmpty()) {
+        if (StringUtils.isBlank(timeWindow)) {
             return endTime.minusMinutes(5);
         }
-        
-        // 解析时间窗口 (例如: "5m", "1h", "1d")
-        int value = Integer.parseInt(timeWindow.replaceAll("[^0-9]", ""));
-        String unit = timeWindow.replaceAll("[0-9]", "");
-        
-        return switch (unit) {
-            case "s" -> endTime.minusSeconds(value);
-            case "m" -> endTime.minusMinutes(value);
-            case "h" -> endTime.minusHours(value);
-            case "d" -> endTime.minusDays(value);
-            default -> endTime.minusMinutes(value);
+
+        TimeWindowInterval interval = parseTimeWindow(timeWindow);
+        return switch (interval.unit()) {
+            case "SECOND" -> endTime.minusSeconds(interval.value());
+            case "MINUTE" -> endTime.minusMinutes(interval.value());
+            case "HOUR" -> endTime.minusHours(interval.value());
+            case "DAY" -> endTime.minusDays(interval.value());
+            default -> endTime.minusMinutes(interval.value());
         };
+    }
+
+    private String buildWindowEndExpression(AlertConditionDTO condition) {
+        int delaySeconds = resolveEvaluationDelaySeconds(condition);
+        if (delaySeconds <= 0) {
+            return "now()";
+        }
+        return "now() - INTERVAL " + delaySeconds + " SECOND";
+    }
+
+    private String buildWindowStartExpression(AlertConditionDTO condition, String timeWindow) {
+        TimeWindowInterval interval = parseTimeWindow(timeWindow);
+        return buildWindowEndExpression(condition)
+                + " - INTERVAL " + interval.value() + " " + interval.unit();
+    }
+
+    private TimeWindowInterval parseTimeWindow(String timeWindow) {
+        if (StringUtils.isBlank(timeWindow)) {
+            return new TimeWindowInterval(5, "MINUTE");
+        }
+
+        String numberPart = timeWindow.replaceAll("[^0-9]", "");
+        String unitPart = timeWindow.replaceAll("[0-9]", "");
+        int value = StringUtils.isNotBlank(numberPart) ? Integer.parseInt(numberPart) : 5;
+        String unit = switch (StringUtils.lowerCase(unitPart)) {
+            case "s" -> "SECOND";
+            case "h" -> "HOUR";
+            case "d" -> "DAY";
+            default -> "MINUTE";
+        };
+        return new TimeWindowInterval(Math.max(1, value), unit);
+    }
+
+    public record EvaluationWindow(LocalDateTime startTime, LocalDateTime endTime) {
+    }
+
+    private record TimeWindowInterval(int value, String unit) {
     }
 }

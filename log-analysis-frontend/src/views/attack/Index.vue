@@ -653,10 +653,14 @@ onMounted(async () => {
 
 <style scoped lang="scss">
 .attack-page {
-  height: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 20px 24px 28px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  background: var(--macos-fill-tertiary);
+  color: var(--macos-text-primary);
 }
 
 .page-header {

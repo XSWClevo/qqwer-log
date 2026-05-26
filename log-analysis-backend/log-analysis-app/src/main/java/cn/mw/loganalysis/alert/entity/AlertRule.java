@@ -54,12 +54,6 @@ public class AlertRule implements Serializable {
     private List<String> tableNames;
 
     /**
-     * 告警条件（JSON 格式）
-     */
-    @TableField(typeHandler = PostgresJsonbTypeHandler.class)
-    private Map<String, Object> condition;
-
-    /**
      * 评估频率
      */
     private String evalEvery;
@@ -79,12 +73,6 @@ public class AlertRule implements Serializable {
      */
     @TableField(typeHandler = PostgresJsonbTypeHandler.class)
     private List<String> notificationChannels;
-
-    /**
-     * 去重字段列表
-     */
-    @TableField(typeHandler = PostgresJsonbTypeHandler.class)
-    private List<String> dedupKeyFields;
 
     /**
      * 告警消息模板

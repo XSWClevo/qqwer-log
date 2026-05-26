@@ -1,10 +1,12 @@
 package cn.mw.loganalysis.common.exception;
 
 import cn.mw.loganalysis.common.response.Result;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -45,6 +47,15 @@ public class GlobalExceptionHandler {
     public Result<Void> handleNotFound(ResourceNotFoundException ex) {
         log.warn("Resource not found: {}", ex.getMessage());
         return Result.notFound(ex.getMessage());
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNoResourceFound(NoResourceFoundException ex) {
+        String resourcePath = ex.getResourcePath();
+        String message = StringUtils.isBlank(resourcePath) ? "请求地址不存在" : "请求地址不存在: " + resourcePath;
+        log.warn("No resource found: {}", resourcePath);
+        return Result.notFound(message);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

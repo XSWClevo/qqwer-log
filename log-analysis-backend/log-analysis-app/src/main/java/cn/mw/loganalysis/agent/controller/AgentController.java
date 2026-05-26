@@ -7,12 +7,13 @@ import cn.mw.loganalysis.agent.dto.AgentEmailRequest;
 import cn.mw.loganalysis.agent.dto.AgentEmailResponse;
 import cn.mw.loganalysis.agent.dto.AgentConversationSummary;
 import cn.mw.loganalysis.agent.dto.AgentStreamEvent;
+import cn.mw.loganalysis.agent.dto.AgentVectorComponentCommitRequest;
 import cn.mw.loganalysis.agent.service.AgentEmailService;
 import cn.mw.loganalysis.agent.service.LogAnalysisAgentService;
 import cn.mw.loganalysis.agent.service.AgentStreamWriter;
+import cn.mw.loganalysis.agent.service.VectorComponentPlanToolHandler;
 import cn.mw.loganalysis.common.exception.UnauthorizedException;
 import cn.mw.loganalysis.common.response.Result;
-import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,10 +32,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-import java.io.IOException;
-import java.io.OutputStream;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 智能助手控制器
@@ -47,6 +45,7 @@ public class AgentController {
 
     private final LogAnalysisAgentService logAnalysisAgentService;
     private final AgentEmailService agentEmailService;
+    private final VectorComponentPlanToolHandler vectorComponentPlanToolHandler;
     private final ObjectMapper objectMapper;
 
     @PostMapping("/chat")
@@ -96,6 +95,13 @@ public class AgentController {
     @PostMapping("/email")
     public Result<AgentEmailResponse> sendEmail(@Valid @RequestBody AgentEmailRequest request, Authentication authentication) {
         return Result.success(agentEmailService.sendToCurrentUser(requireUserId(authentication), request));
+    }
+
+    @PostMapping("/vector-component-plans/{planId}/commit")
+    public Result<AgentChatResponse> commitVectorComponentPlan(@PathVariable String planId,
+                                                               @Valid @RequestBody AgentVectorComponentCommitRequest request,
+                                                               Authentication authentication) {
+        return Result.success(vectorComponentPlanToolHandler.commit(planId, requireUserId(authentication), request.getSessionId()));
     }
 
     private Long requireUserId(Authentication authentication) {

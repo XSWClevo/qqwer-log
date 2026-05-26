@@ -131,6 +131,9 @@ public class AgentResponseAssembler {
             case "schema" -> List.of("最近1小时有哪些错误日志", "看最近24小时日志趋势", "搜索包含 \"timeout\" 的日志");
             case "timeseries" -> List.of("查看最近1小时日志", "查看字段结构", "再看最近7天的趋势");
             case "text2sql" -> List.of("最近1天的数据有多少条", "按 severity 统计最近24小时数量", "统计最近7天每天的日志量");
+            case "vector_component_requirements" -> List.of("存当前数据源，表名 app_text_to_sql_logs，来源是文件日志", "使用当前数据源并自动生成表名，来源是 syslog", "来源是已有 Source，表名 app_text_to_sql_logs");
+            case "vector_component_plan" -> List.of("确认创建前帮我检查字段", "换一个表名重新生成", "再生成一个 Vector 组件计划");
+            case "vector_component_commit" -> List.of("查看字段结构", "查询最近15分钟日志", "继续生成另一个 Vector 组件");
             default -> List.of("看最近24小时日志趋势", "查看这个数据源的字段结构", "再查最近15分钟的日志");
         };
     }
@@ -141,6 +144,8 @@ public class AgentResponseAssembler {
             case "query_logs" -> "查询日志列表";
             case "query_timeseries" -> "查询日志趋势";
             case "text2sql_query" -> "自然语言统计查询";
+            case "collect_vector_component_requirements" -> "补齐 Vector 创建信息";
+            case "preview_vector_components" -> "预览 Vector 组件计划";
             default -> toolName;
         };
     }

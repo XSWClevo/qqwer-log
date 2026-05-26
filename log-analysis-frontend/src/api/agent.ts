@@ -24,8 +24,18 @@ export interface AgentToolCall {
   durationMs?: number
 }
 
+export interface AgentVectorComponentField {
+  name: string
+  type: string
+  sampleValue?: any
+  suggestion?: string
+  comment?: string
+}
+
 export interface AgentResult {
-  type: 'schema' | 'logs' | 'timeseries' | 'text2sql'
+  type: 'schema' | 'logs' | 'timeseries' | 'text2sql' | 'vector_component_requirements' | 'vector_component_plan' | 'vector_component_commit'
+  success?: boolean
+  error?: string
   timeRangeLabel?: string
   schema?: FieldInfo[]
   logs?: Array<Record<string, any>>
@@ -42,6 +52,18 @@ export interface AgentResult {
   sqlGenerationTime?: number
   sqlExecutionTime?: number
   totalExecutionTime?: number
+  planId?: string
+  logSample?: string
+  datasourceId?: string
+  datasourceName?: string
+  tableName?: string
+  regexPattern?: string
+  vrlScript?: string
+  fields?: AgentVectorComponentField[]
+  ddl?: string
+  warnings?: string[]
+  remapComponentId?: string
+  sinkComponentId?: string
 }
 
 export interface AgentChatResponse {
@@ -124,6 +146,15 @@ const extractErrorMessage = async (response: Response) => {
   }
 }
 
+const parseStreamEvent = (line: string) => {
+  try {
+    return JSON.parse(line) as AgentStreamEvent
+  } catch {
+    const preview = line.length > 160 ? `${line.slice(0, 160)}...` : line
+    throw new Error(`流式响应解析失败，收到非 NDJSON 数据: ${preview}`)
+  }
+}
+
 export function chatWithAgent(data: AgentChatRequest) {
   return request.post('/api/agent/chat', data)
 }
@@ -180,7 +211,7 @@ export async function streamChatWithAgent(data: AgentChatRequest, handlers: Stre
       if (!trimmed) {
         continue
       }
-      const event = JSON.parse(trimmed) as AgentStreamEvent
+      const event = parseStreamEvent(trimmed)
       handlers.onEvent?.(event)
       if (event.type === 'done' && event.response) {
         finalResponse = event.response
@@ -191,9 +222,10 @@ export async function streamChatWithAgent(data: AgentChatRequest, handlers: Stre
     }
   }
 
+  buffer += decoder.decode()
   const tail = buffer.trim()
   if (tail) {
-    const event = JSON.parse(tail) as AgentStreamEvent
+    const event = parseStreamEvent(tail)
     handlers.onEvent?.(event)
     if (event.type === 'done' && event.response) {
       finalResponse = event.response
@@ -224,4 +256,8 @@ export function deleteAgentConversation(sessionId: string) {
 
 export function sendAgentEmail(data: AgentEmailRequest) {
   return request.post('/api/agent/email', data)
+}
+
+export function commitVectorComponentPlan(planId: string, sessionId: string) {
+  return request.post(`/api/agent/vector-component-plans/${planId}/commit`, { sessionId })
 }

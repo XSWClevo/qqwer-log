@@ -31,52 +31,96 @@ public class FallbackAgentExecutor {
 
     private final ConfigComponentService configComponentService;
     private final FallbackIntentDetector intentDetector;
+    private final CreateLogParserTaskService createLogParserTaskService;
     private final AgentToolFacade toolFacade;
     private final AgentResponseAssembler responseAssembler;
 
-    public AgentChatResponse execute(AgentChatRequest request, AgentStreamEventEmitter emitter) throws IOException {
-        if (StringUtils.isBlank(request.getDatasourceId())) {
-            return responseAssembler.error("请选择一个可查询的数据源后再提问");
+    public boolean shouldHandleWithoutLlm(AgentChatRequest request, Long userId) {
+        if (request == null) {
+            return false;
         }
 
-        ConfigComponent datasource = configComponentService.getById(request.getDatasourceId());
+        if (intentDetector.isCreateLogParserIntent(request.getMessage())
+                || createLogParserTaskService.shouldContinueSlotFilling(request, userId)) {
+            return true;
+        }
+
+        if (StringUtils.isBlank(request.getDatasourceId())) {
+            return false;
+        }
+
+        ConfigComponent datasource = configComponentService.getQueryableDataSourceById(request.getDatasourceId());
         if (datasource == null) {
-            return responseAssembler.error("选中的数据源不存在");
+            return false;
+        }
+        FallbackIntentDetector.FallbackIntentDecision decision = intentDetector.detect(request, datasource.getVectorType());
+        return decision.isDeterministicToolRequest();
+    }
+
+    public AgentChatResponse execute(AgentChatRequest request,
+                                     Long userId,
+                                     String sessionId,
+                                     AgentStreamEventEmitter emitter) throws IOException {
+        ConfigComponent datasource = StringUtils.isNotBlank(request.getDatasourceId())
+                ? configComponentService.getQueryableDataSourceById(request.getDatasourceId())
+                : null;
+        FallbackIntentDetector.FallbackIntentDecision decision = intentDetector.detect(
+                request,
+                datasource != null ? datasource.getVectorType() : null
+        );
+        boolean createLogParserFlow = AgentIntent.CREATE_LOG_PARSER.equals(decision.getIntent())
+                || createLogParserTaskService.shouldContinueSlotFilling(request, userId);
+        if (StringUtils.isBlank(request.getDatasourceId()) && !createLogParserFlow) {
+            return responseAssembler.error("请选择一个可查询的数据源后再提问");
+        }
+        if (datasource == null && !createLogParserFlow) {
+            return responseAssembler.error("选中的数据源不存在或未标记为可查询 Sink");
         }
 
         AgentExecutionContextHolder.set(new AgentExecutionContext(
-                request.getDatasourceId(),
-                datasource.getName(),
-                datasource.getVectorType()
+                datasource != null ? request.getDatasourceId() : null,
+                datasource != null ? datasource.getName() : null,
+                datasource != null ? datasource.getVectorType() : null,
+                userId,
+                sessionId
         ));
         try {
-            FallbackIntentDetector.FallbackIntentDecision decision = intentDetector.detect(request, datasource.getVectorType());
-            AgentToolPayload payload = switch (decision.getIntent()) {
+            AgentIntent resolvedIntent = createLogParserFlow ? AgentIntent.CREATE_LOG_PARSER : decision.getIntent();
+            AgentToolPayload payload = switch (resolvedIntent) {
                 case SCHEMA -> toolFacade.getSchema();
                 case TIMESERIES -> toolFacade.queryTimeseries(decision.getEffectiveMessage(), null);
                 case TEXT2SQL -> toolFacade.text2SqlQuery(decision.getEffectiveMessage());
+                case CREATE_LOG_PARSER -> createLogParserTaskService.handle(
+                        AgentExecutionContextHolder.get(),
+                        request,
+                        userId,
+                        sessionId,
+                        datasource
+                );
+                case VECTOR_COMPONENT_PLAN -> toolFacade.previewVectorComponents(decision.getEffectiveMessage(), null, null, null);
                 case LOGS -> toolFacade.queryLogs(decision.getEffectiveMessage(), decision.getKeyword(), decision.getSeverity(), DEFAULT_PAGE_SIZE);
+                default -> toolFacade.queryLogs(decision.getEffectiveMessage(), decision.getKeyword(), decision.getSeverity(), DEFAULT_PAGE_SIZE);
             };
 
             AgentChatResponse response = responseAssembler.fromToolPayload(
                     AgentExecutionContextHolder.require(),
                     payload,
-                    buildToolInput(decision),
+                    buildToolInput(decision, resolvedIntent),
                     responseAssembler.defaultSuggestions(payload.getIntent())
             );
             emitCompletedToolCalls(response, emitter);
             return response;
         } catch (Exception ex) {
             log.error("智能助手处理失败, datasourceId={}, message={}", request.getDatasourceId(), request.getMessage(), ex);
-            return responseAssembler.error("处理失败: " + ex.getMessage());
+            return responseAssembler.error("处理失败: " + describeFailure(ex));
         } finally {
             AgentExecutionContextHolder.clear();
         }
     }
 
-    private Map<String, Object> buildToolInput(FallbackIntentDetector.FallbackIntentDecision decision) {
+    private Map<String, Object> buildToolInput(FallbackIntentDetector.FallbackIntentDecision decision, AgentIntent resolvedIntent) {
         Map<String, Object> input = new LinkedHashMap<>();
-        return switch (decision.getIntent()) {
+        return switch (resolvedIntent) {
             case SCHEMA -> input;
             case TIMESERIES -> {
                 input.put("timeRange", decision.getEffectiveMessage());
@@ -84,6 +128,14 @@ public class FallbackAgentExecutor {
             }
             case TEXT2SQL -> {
                 input.put("query", decision.getEffectiveMessage());
+                yield input;
+            }
+            case CREATE_LOG_PARSER -> {
+                input.put("message", decision.getEffectiveMessage());
+                yield input;
+            }
+            case VECTOR_COMPONENT_PLAN -> {
+                input.put("logSample", decision.getEffectiveMessage());
                 yield input;
             }
             case LOGS -> {
@@ -97,7 +149,27 @@ public class FallbackAgentExecutor {
                 input.put("limit", DEFAULT_PAGE_SIZE);
                 yield input;
             }
+            default -> {
+                input.put("timeRange", decision.getEffectiveMessage());
+                yield input;
+            }
         };
+    }
+
+    private String describeFailure(Exception ex) {
+        String message = StringUtils.trimToNull(ex.getMessage());
+        if (message != null) {
+            return message;
+        }
+        Throwable cause = ex.getCause();
+        while (cause != null) {
+            message = StringUtils.trimToNull(cause.getMessage());
+            if (message != null) {
+                return message;
+            }
+            cause = cause.getCause();
+        }
+        return ex.getClass().getSimpleName();
     }
 
     private void emitCompletedToolCalls(AgentChatResponse response, AgentStreamEventEmitter emitter) throws IOException {

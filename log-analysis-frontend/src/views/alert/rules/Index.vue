@@ -1,140 +1,162 @@
 <template>
   <AppLayout>
     <div class="alert-rules-page">
-      <!-- 页面头部 -->
       <div class="page-header">
-        <div class="header-content">
-          <div class="title-section">
-            <h1 class="page-title">告警规则</h1>
-            <p class="page-subtitle">管理基于日志数据模式和指标的告警规则</p>
-          </div>
-          <el-button type="primary" size="large" @click="showCreateDrawer = true">
-            <el-icon><Plus /></el-icon>
-            创建新规则
-          </el-button>
+        <div>
+          <h1 class="page-title">告警规则</h1>
+          <p class="page-subtitle">定义日志命中条件、触发阈值和通知动作</p>
+        </div>
+        <div class="header-actions">
+          <el-button :icon="Refresh" :loading="loading" @click="loadRules">刷新</el-button>
+          <el-button type="primary" :icon="Plus" @click="openCreateDrawer">创建规则</el-button>
         </div>
       </div>
 
-      <!-- 搜索和过滤栏 -->
-      <div class="filter-bar">
-        <div class="filter-bar-main">
-          <el-input
-            v-model="searchText"
-            placeholder="搜索规则名称、查询条件或标签..."
-            :prefix-icon="Search"
-            clearable
-            class="search-input"
-          />
-          <el-button
-            :type="showAdvancedFilter ? 'primary' : 'default'"
-            @click="showAdvancedFilter = !showAdvancedFilter"
-          >
-            <el-icon><Filter /></el-icon>
-            高级筛选
-            <el-badge v-if="activeFilterCount > 0" :value="activeFilterCount" class="filter-badge" />
-          </el-button>
-        </div>
-        <Transition name="filter-expand">
-          <div v-show="showAdvancedFilter" class="filter-bar-advanced">
-            <el-select v-model="filters.status" placeholder="状态" clearable class="filter-select">
-              <el-option label="全部" value="" />
-              <el-option label="已启用" value="enabled" />
-              <el-option label="已禁用" value="disabled" />
-            </el-select>
-            <el-select v-model="filters.severity" placeholder="严重程度" clearable class="filter-select">
-              <el-option label="全部" value="" />
-              <el-option label="严重" value="critical" />
-              <el-option label="警告" value="warning" />
-              <el-option label="信息" value="info" />
-            </el-select>
-            <el-select v-model="filters.type" placeholder="类型" clearable class="filter-select">
-              <el-option label="全部" value="" />
-              <el-option label="日志查询" value="log_query" />
-              <el-option label="指标阈值" value="metric_threshold" />
-              <el-option label="异常检测" value="anomaly" />
-            </el-select>
-            <el-select v-model="filters.channel" placeholder="通知渠道" clearable class="filter-select">
-              <el-option label="全部" value="" />
-              <el-option label="Slack" value="slack" />
-              <el-option label="邮件" value="email" />
-              <el-option label="Webhook" value="webhook" />
-            </el-select>
-            <el-button text @click="resetFilters" class="reset-btn">重置筛选</el-button>
-          </div>
-        </Transition>
+      <div class="toolbar">
+        <el-input
+          v-model="filters.keyword"
+          :prefix-icon="Search"
+          placeholder="搜索规则名称、描述或条件"
+          clearable
+          class="keyword-input"
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        />
+        <el-select v-model="filters.status" placeholder="运行状态" clearable class="filter-select" @change="handleSearch">
+          <el-option label="已启用" value="enabled" />
+          <el-option label="已禁用" value="disabled" />
+        </el-select>
+        <el-select v-model="filters.severity" placeholder="风险等级" clearable class="filter-select" @change="handleSearch">
+          <el-option label="严重" value="critical" />
+          <el-option label="警告" value="warning" />
+          <el-option label="信息" value="info" />
+        </el-select>
+        <el-select v-model="filters.type" placeholder="规则类型" clearable class="filter-select" @change="handleSearch">
+          <el-option label="日志查询" value="log_query" />
+          <el-option label="聚合阈值" value="aggregation" />
+          <el-option label="指标阈值" value="metric_threshold" />
+          <el-option label="异常检测" value="anomaly" />
+        </el-select>
+        <el-select v-model="filters.channel" placeholder="通知渠道" clearable class="filter-select" @change="handleSearch">
+          <el-option label="页面展示" value="page" />
+        </el-select>
+        <el-button text @click="resetFilters">重置</el-button>
       </div>
 
-      <!-- 规则列表表格 -->
-      <div class="table-container">
-        <el-table :data="filteredRules" style="width: 100%" stripe>
-          <el-table-column width="80" align="center">
-            <template #header>状态</template>
+      <div class="summary-grid">
+        <div v-for="item in summaryItems" :key="item.label" class="summary-tile">
+          <span class="summary-label">{{ item.label }}</span>
+          <strong class="summary-value">{{ item.value }}</strong>
+          <span class="summary-sub">{{ item.sub }}</span>
+        </div>
+      </div>
+
+      <section class="panel rules-panel">
+        <div class="panel-header">
+          <div>
+            <h2>规则清单</h2>
+            <p>{{ pagination.total }} 条规则，当前显示 {{ rules.length }} 条</p>
+          </div>
+        </div>
+
+        <el-table v-loading="loading" :data="rules" height="calc(100vh - 426px)" stripe>
+          <el-table-column label="状态" width="96" align="center">
             <template #default="{ row }">
               <el-switch
                 v-model="row.enabled"
+                :loading="togglingRuleId === row.id"
                 @change="handleToggleStatus(row)"
               />
             </template>
           </el-table-column>
 
-          <el-table-column label="规则名称" min-width="280">
+          <el-table-column label="规则" min-width="280">
             <template #default="{ row }">
               <div class="rule-name-cell">
-                <div class="rule-name" @click="handleViewRule(row)">{{ row.name }}</div>
-                <div class="rule-description">{{ row.description }}</div>
+                <button class="rule-link" type="button" @click="openEditDrawer(row.id)">{{ row.name }}</button>
+                <span class="rule-description">{{ row.description || '未填写描述' }}</span>
+                <div class="monitor-meta">
+                  <span v-if="monitorOptions(row).priority" class="meta-chip priority">
+                    {{ monitorOptions(row).priority }}
+                  </span>
+                  <span v-if="monitorOptions(row).team" class="meta-chip">
+                    {{ monitorOptions(row).team }}
+                  </span>
+                  <span class="meta-chip">{{ monitorModeLabel(row) }}</span>
+                </div>
               </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="严重程度" width="120" align="center">
+          <el-table-column label="Monitor" width="152">
             <template #default="{ row }">
-              <el-tag :type="getSeverityType(row.severity)" size="small">
-                {{ getSeverityLabel(row.severity) }}
+              <el-tag :type="stateTag(row.currentState?.state)" size="small">
+                {{ stateLabel(row.currentState?.state) }}
               </el-tag>
+              <div class="strategy-sub">{{ formatRelativeTime(row.currentState?.lastStateChangedAt) }}</div>
             </template>
           </el-table-column>
 
-          <el-table-column label="触发条件" min-width="200">
+          <el-table-column label="风险" width="104" align="center">
             <template #default="{ row }">
-              <div class="trigger-condition">{{ row.triggerCondition }}</div>
+              <el-tag :type="severityTag(row.severity)" size="small">{{ severityLabel(row.severity) }}</el-tag>
             </template>
           </el-table-column>
 
-          <el-table-column label="通知渠道" width="150" align="center">
+          <el-table-column label="触发逻辑" min-width="260">
             <template #default="{ row }">
-              <div class="notification-icons">
-                <el-tooltip v-for="channel in row.channels" :key="channel" :content="getChannelLabel(channel)">
-                  <el-icon :size="18" :color="getChannelColor(channel)">
-                    <component :is="getChannelIcon(channel)" />
-                  </el-icon>
+              <div class="trigger-summary">{{ row.triggerConditionSummary || buildConditionSummary(row) }}</div>
+              <div class="query-summary mono">{{ row.condition?.query || '结构化条件' }}</div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="执行策略" width="170">
+            <template #default="{ row }">
+              <div class="strategy-line">每 {{ row.evalEvery || '1m' }} 评估</div>
+              <div class="strategy-sub">连续 {{ row.consecutiveHits || 1 }} 次命中</div>
+              <div class="strategy-sub">{{ monitorOptionSummary(row) }}</div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="通知" width="150">
+            <template #default="{ row }">
+              <div class="channel-list">
+                <el-tooltip v-for="channel in row.notificationChannels || []" :key="channel" :content="channelLabel(channel)">
+                  <span class="channel-chip">{{ channelLabel(channel).slice(0, 1) }}</span>
                 </el-tooltip>
+                <span v-if="!row.notificationChannels?.length" class="muted">未配置</span>
               </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="最后触发" width="160">
+          <el-table-column label="最近触发" width="170">
             <template #default="{ row }">
-              <span class="last-triggered">{{ row.lastTriggered || '从未' }}</span>
+              <div class="last-triggered">{{ formatRelativeTime(row.lastEvaluation?.finishedAt || row.currentState?.lastEvaluatedAt || row.lastTriggeredAt) }}</div>
+              <div class="strategy-sub">累计 {{ row.triggerCount || 0 }} 次</div>
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="80" align="center" fixed="right">
+          <el-table-column label="操作" width="94" align="center" fixed="right">
             <template #default="{ row }">
-              <el-dropdown @command="(cmd) => handleAction(cmd, row)">
+              <el-dropdown trigger="click" @command="handleDropdownCommand($event, row)">
                 <el-button text :icon="MoreFilled" />
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="edit">
-                      <el-icon><Edit /></el-icon>编辑
-                    </el-dropdown-item>
-                    <el-dropdown-item command="duplicate">
-                      <el-icon><CopyDocument /></el-icon>复制
+                      <el-icon><Edit /></el-icon>
+                      编辑
                     </el-dropdown-item>
                     <el-dropdown-item command="test">
-                      <el-icon><VideoPlay /></el-icon>测试规则
+                      <el-icon><VideoPlay /></el-icon>
+                      测试
+                    </el-dropdown-item>
+                    <el-dropdown-item command="duplicate">
+                      <el-icon><CopyDocument /></el-icon>
+                      复制
                     </el-dropdown-item>
                     <el-dropdown-item command="delete" divided>
-                      <el-icon><Delete /></el-icon>删除
+                      <el-icon><Delete /></el-icon>
+                      删除
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -142,397 +164,560 @@
             </template>
           </el-table-column>
         </el-table>
-      </div>
 
-      <!-- 创建/编辑规则抽屉 -->
-      <CreateRuleDrawer 
-        v-model="showCreateDrawer" 
+        <div class="pagination">
+          <el-pagination
+            v-model:current-page="pagination.pageNum"
+            v-model:page-size="pagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="pagination.total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="loadRules"
+            @size-change="handlePageSizeChange"
+          />
+        </div>
+      </section>
+
+      <CreateRuleDrawer
+        v-model="drawerVisible"
         :rule-id="editingRuleId"
-        @success="handleCreateSuccess" 
+        @success="handleDrawerSuccess"
       />
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus,
-  Search,
-  Edit,
-  Delete,
   CopyDocument,
-  VideoPlay,
+  Delete,
+  Edit,
   MoreFilled,
-  Message,
-  ChatDotRound,
-  Link,
-  Filter
+  Plus,
+  Refresh,
+  Search,
+  VideoPlay
 } from '@element-plus/icons-vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import CreateRuleDrawer from './components/CreateRuleDrawer.vue'
 import {
-  queryAlertRules,
-  toggleAlertRuleStatus,
+  deleteAlertRule,
   duplicateAlertRule,
+  queryAlertRules,
   testAlertRule,
-  deleteAlertRule
+  toggleAlertRuleStatus,
+  type AlertRule
 } from '@/api/alert'
 
-// 搜索和过滤
-const searchText = ref('')
-const showAdvancedFilter = ref(false)
-const filters = ref({
+type AlertRuleRow = AlertRule & {
+  enabled: boolean
+}
+
+const loading = ref(false)
+const drawerVisible = ref(false)
+const editingRuleId = ref<number | null>(null)
+const togglingRuleId = ref<number | null>(null)
+const rules = ref<AlertRuleRow[]>([])
+
+const filters = reactive({
+  keyword: '',
   status: '',
   severity: '',
   type: '',
   channel: ''
 })
 
-// 计算激活的筛选数量
-const activeFilterCount = computed(() => {
-  return Object.values(filters.value).filter(v => v !== '').length
-})
-
-// 重置筛选
-const resetFilters = () => {
-  filters.value = { status: '', severity: '', type: '', channel: '' }
-}
-
-// 显示创建抽屉
-const showCreateDrawer = ref(false)
-const editingRuleId = ref<number | null>(null)
-
-// 加载状态
-const loading = ref(false)
-
-// 规则列表
-const rules = ref<any[]>([])
-const pagination = ref({
-  current: 1,
+const pagination = reactive({
+  pageNum: 1,
   pageSize: 20,
   total: 0
 })
 
-// 过滤后的规则（本地过滤，实际应该在后端过滤）
-const filteredRules = computed(() => {
-  return rules.value.filter(rule => {
-    if (searchText.value && !rule.name.toLowerCase().includes(searchText.value.toLowerCase()) &&
-        !rule.description.toLowerCase().includes(searchText.value.toLowerCase())) {
-      return false
-    }
-    return true
-  })
+const summaryItems = computed(() => {
+  const enabledCount = rules.value.filter(rule => rule.enabled).length
+  const criticalCount = rules.value.filter(rule => normalizeSeverity(rule.severity) === 'critical').length
+  const triggeredCount = rules.value.reduce((sum, rule) => sum + (rule.triggerCount || 0), 0)
+
+  return [
+    { label: '当前页规则', value: rules.value.length.toLocaleString(), sub: `共 ${pagination.total.toLocaleString()} 条` },
+    { label: '已启用', value: enabledCount.toLocaleString(), sub: `${rules.value.length - enabledCount} 条停用` },
+    { label: '严重规则', value: criticalCount.toLocaleString(), sub: '当前筛选范围' },
+    { label: '累计触发', value: triggeredCount.toLocaleString(), sub: '当前页合计' }
+  ]
 })
 
-// 加载规则列表
 const loadRules = async () => {
   loading.value = true
   try {
-    const params = {
-      keyword: searchText.value || undefined,
-      status: filters.value.status || undefined,
-      severity: filters.value.severity || undefined,
-      type: filters.value.type || undefined,
-      channel: filters.value.channel || undefined,
-      pageNum: pagination.value.current,
-      pageSize: pagination.value.pageSize
-    }
-    
-    const response = await queryAlertRules(params)
-    
-    // response 已经是 res.data，因为 request 工具返回的是 res
-    const data = response.data || response
-    
-    if (data && data.records) {
-      rules.value = data.records.map((rule: any) => ({
-        id: rule.id,
-        name: rule.name,
-        description: rule.description,
-        enabled: rule.enabled,
-        severity: rule.severity?.toLowerCase() || 'info',
-        type: rule.type || 'log_query',
-        triggerCondition: rule.triggerConditionSummary || '未配置',
-        channels: rule.notificationChannels || [],
-        lastTriggered: formatLastTriggered(rule.lastTriggeredAt),
-        triggerCount: rule.triggerCount || 0
-      }))
-      
-      pagination.value.total = data.total || 0
-    } else {
-      // 如果没有 records，可能是直接返回的数组
-      console.log('Response structure:', response)
-      rules.value = []
-    }
+    const response = await queryAlertRules({
+      keyword: filters.keyword || undefined,
+      status: filters.status || undefined,
+      severity: filters.severity || undefined,
+      type: filters.type || undefined,
+      channel: filters.channel || undefined,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize
+    })
+
+    const page = response.data
+    rules.value = (page?.records || []).map(rule => ({
+      ...rule,
+      enabled: rule.enabled !== false,
+      severity: normalizeSeverity(rule.severity)
+    }))
+    pagination.total = page?.total || 0
   } catch (error: any) {
-    console.error('Failed to load rules:', error)
-    ElMessage.error('加载规则列表失败: ' + (error.message || '未知错误'))
+    ElMessage.error('加载告警规则失败: ' + (error.message || '未知错误'))
   } finally {
     loading.value = false
   }
 }
 
-// 格式化最后触发时间
-const formatLastTriggered = (time: string | null) => {
-  if (!time) return null
-  
-  const now = new Date()
-  const triggered = new Date(time)
-  const diff = now.getTime() - triggered.getTime()
-  
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  if (days < 7) return `${days}天前`
-  return triggered.toLocaleDateString()
+const handleSearch = () => {
+  pagination.pageNum = 1
+  loadRules()
 }
 
-// 初始化加载
-onMounted(() => {
+const handlePageSizeChange = () => {
+  pagination.pageNum = 1
   loadRules()
-})
+}
 
-// 严重程度相关
-const getSeverityType = (severity: string) => {
-  const map: Record<string, any> = {
+const resetFilters = () => {
+  filters.keyword = ''
+  filters.status = ''
+  filters.severity = ''
+  filters.type = ''
+  filters.channel = ''
+  handleSearch()
+}
+
+const openCreateDrawer = () => {
+  editingRuleId.value = null
+  drawerVisible.value = true
+}
+
+const openEditDrawer = (ruleId: number) => {
+  editingRuleId.value = ruleId
+  drawerVisible.value = true
+}
+
+const handleDrawerSuccess = () => {
+  editingRuleId.value = null
+  loadRules()
+}
+
+const handleToggleStatus = async (rule: AlertRuleRow) => {
+  togglingRuleId.value = rule.id
+  try {
+    await toggleAlertRuleStatus(rule.id, rule.enabled)
+    ElMessage.success(`规则已${rule.enabled ? '启用' : '停用'}`)
+  } catch (error: any) {
+    rule.enabled = !rule.enabled
+    ElMessage.error('切换规则状态失败: ' + (error.message || '未知错误'))
+  } finally {
+    togglingRuleId.value = null
+  }
+}
+
+const handleAction = async (command: string | number | object, rule: AlertRuleRow) => {
+  const action = String(command)
+  if (action === 'edit') {
+    openEditDrawer(rule.id)
+    return
+  }
+
+  if (action === 'test') {
+    await handleTestRule(rule)
+    return
+  }
+
+  if (action === 'duplicate') {
+    await handleDuplicateRule(rule)
+    return
+  }
+
+  if (action === 'delete') {
+    await handleDeleteRule(rule)
+  }
+}
+
+const handleDropdownCommand = (command: string | number | object, rule: AlertRuleRow) => {
+  void handleAction(command, rule)
+}
+
+const handleTestRule = async (rule: AlertRuleRow) => {
+  try {
+    const response = await testAlertRule(rule.id)
+    const result = response.data || {}
+    const matchedCount = result.matchedCount ?? result.count ?? result.total
+    ElMessage.success(matchedCount === undefined ? '测试完成' : `测试完成，命中 ${matchedCount} 条`)
+  } catch (error: any) {
+    ElMessage.error('测试规则失败: ' + (error.message || '未知错误'))
+  }
+}
+
+const handleDuplicateRule = async (rule: AlertRuleRow) => {
+  try {
+    await duplicateAlertRule(rule.id)
+    ElMessage.success('规则已复制')
+    loadRules()
+  } catch (error: any) {
+    ElMessage.error('复制规则失败: ' + (error.message || '未知错误'))
+  }
+}
+
+const handleDeleteRule = async (rule: AlertRuleRow) => {
+  try {
+    await ElMessageBox.confirm(`确定删除规则“${rule.name}”吗？删除后不会再产生新的告警事件。`, '删除规则', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+    await deleteAlertRule(rule.id)
+    ElMessage.success('规则已删除')
+    loadRules()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除规则失败: ' + (error.message || '未知错误'))
+    }
+  }
+}
+
+const buildConditionSummary = (rule?: AlertRule) => {
+  if (!rule) return '未配置'
+  const condition = rule.condition || {}
+  const metric = condition.aggregate?.function || 'count'
+  const operator = rule.thresholds?.critical?.operator || condition.trigger?.operator || 'gt'
+  const threshold = rule.thresholds?.critical?.threshold ?? condition.trigger?.threshold ?? 0
+  const warningThreshold = rule.thresholds?.warning?.threshold ?? condition.trigger?.warningThreshold
+  const recoveryThreshold = rule.thresholds?.recovery?.threshold ?? condition.trigger?.recoveryThreshold
+  const timeWindow = rule.thresholds?.critical?.timeWindow || condition.trigger?.timeWindow || '5m'
+  const parts = [`${metric} ${operatorLabel(operator)} ${threshold} / ${timeWindow}`]
+  if (warningThreshold !== undefined && warningThreshold !== null && warningThreshold !== '') {
+    parts.push(`warning ${operatorLabel(operator)} ${warningThreshold}`)
+  }
+  if (recoveryThreshold !== undefined && recoveryThreshold !== null && recoveryThreshold !== '') {
+    parts.push(`recovery ${recoveryThreshold}`)
+  }
+  return parts.join(' · ')
+}
+
+const monitorOptions = (rule?: AlertRule) => rule?.monitorOptions || rule?.condition?.options || {}
+
+const monitorModeLabel = (rule?: AlertRule) => {
+  const mode = monitorOptions(rule).alertMode || (Array.isArray(rule?.condition?.groupBy) && rule.condition.groupBy.length ? 'multi' : 'simple')
+  return mode === 'multi' ? 'Multi Alert' : 'Simple Alert'
+}
+
+const monitorOptionSummary = (rule?: AlertRule) => {
+  const options = monitorOptions(rule)
+  const parts: string[] = []
+  if (options.notifyNoData) parts.push(`No Data ${options.noDataTimeframe || ''}`.trim())
+  if (options.evaluationDelaySeconds) parts.push(`延迟 ${options.evaluationDelaySeconds}s`)
+  if (options.renotifyIntervalMinutes) parts.push(`重通知 ${options.renotifyIntervalMinutes}m`)
+  return parts.length ? parts.join(' · ') : '默认 Monitor 选项'
+}
+
+const normalizeSeverity = (severity?: string) => String(severity || 'info').toLowerCase()
+
+const severityTag = (severity?: string) => {
+  const map: Record<string, 'danger' | 'warning' | 'info'> = {
     critical: 'danger',
     warning: 'warning',
     info: 'info'
   }
-  return map[severity] || 'info'
+  return map[normalizeSeverity(severity)] || 'info'
 }
 
-const getSeverityLabel = (severity: string) => {
+const severityLabel = (severity?: string) => {
   const map: Record<string, string> = {
     critical: '严重',
     warning: '警告',
     info: '信息'
   }
-  return map[severity] || severity
+  return map[normalizeSeverity(severity)] || severity || '-'
 }
 
-// 通知渠道相关
-const getChannelIcon = (channel: string) => {
-  const map: Record<string, any> = {
-    slack: ChatDotRound,
-    email: Message,
-    webhook: Link
-  }
-  return map[channel] || Message
+const stateTag = (state?: string) => {
+  const normalized = String(state || 'OK').toUpperCase()
+  if (normalized === 'CRITICAL') return 'danger'
+  if (normalized === 'WARNING' || normalized === 'NO_DATA') return 'warning'
+  if (normalized === 'RECOVERED') return 'success'
+  return 'info'
 }
 
-const getChannelLabel = (channel: string) => {
+const stateLabel = (state?: string) => {
   const map: Record<string, string> = {
-    slack: 'Slack',
+    OK: 'OK',
+    WARNING: 'WARNING',
+    CRITICAL: 'CRITICAL',
+    NO_DATA: 'NO DATA',
+    RECOVERED: 'RECOVERED'
+  }
+  return map[String(state || 'OK').toUpperCase()] || state || 'OK'
+}
+
+const operatorLabel = (operator?: string) => {
+  const map: Record<string, string> = {
+    gt: '>',
+    gte: '>=',
+    lt: '<',
+    lte: '<=',
+    eq: '=',
+    ne: '!='
+  }
+  return map[String(operator || '').toLowerCase()] || operator || '>'
+}
+
+const channelLabel = (channel: string) => {
+  const map: Record<string, string> = {
+    page: '页面展示',
     email: '邮件',
+    slack: 'Slack',
     webhook: 'Webhook'
   }
   return map[channel] || channel
 }
 
-const getChannelColor = (channel: string) => {
-  const map: Record<string, string> = {
-    slack: '#4A154B',
-    email: '#1890FF',
-    webhook: '#52C41A'
-  }
-  return map[channel] || '#666'
+const formatRelativeTime = (time?: string) => {
+  if (!time) return '从未触发'
+  const timestamp = new Date(time).getTime()
+  if (Number.isNaN(timestamp)) return time.replace('T', ' ').slice(0, 19)
+
+  const diff = Date.now() - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  if (hours < 24) return `${hours} 小时前`
+  if (days < 7) return `${days} 天前`
+  return new Date(time).toLocaleString()
 }
 
-// 切换状态
-const handleToggleStatus = async (rule: any) => {
-  try {
-    await toggleAlertRuleStatus(rule.id, rule.enabled)
-    ElMessage.success(`规则 "${rule.name}" 已${rule.enabled ? '启用' : '禁用'}`)
-  } catch (error: any) {
-    rule.enabled = !rule.enabled // 回滚状态
-    ElMessage.error('切换状态失败: ' + (error.message || '未知错误'))
-  }
-}
-
-// 查看规则
-const handleViewRule = (rule: any) => {
-  console.log('View rule:', rule)
-}
-
-// 操作处理
-const handleAction = async (command: string, rule: any) => {
-  switch (command) {
-    case 'edit':
-      editingRuleId.value = rule.id
-      showCreateDrawer.value = true
-      break
-    case 'duplicate':
-      try {
-        await duplicateAlertRule(rule.id)
-        ElMessage.success(`规则 "${rule.name}" 已复制`)
-        loadRules() // 重新加载列表
-      } catch (error: any) {
-        ElMessage.error('复制规则失败: ' + (error.message || '未知错误'))
-      }
-      break
-    case 'test':
-      try {
-        const result = await testAlertRule(rule.id)
-        ElMessage.success(`测试完成: ${result.message || '规则测试成功'}`)
-      } catch (error: any) {
-        ElMessage.error('测试规则失败: ' + (error.message || '未知错误'))
-      }
-      break
-    case 'delete':
-      try {
-        await ElMessageBox.confirm(`确定要删除规则 "${rule.name}" 吗？`, '确认删除', {
-          type: 'warning'
-        })
-        await deleteAlertRule(rule.id)
-        ElMessage.success('删除成功')
-        loadRules() // 重新加载列表
-      } catch (error: any) {
-        if (error !== 'cancel') {
-          ElMessage.error('删除失败: ' + (error.message || '未知错误'))
-        }
-      }
-      break
-  }
-}
-
-// 创建成功
-const handleCreateSuccess = () => {
-  editingRuleId.value = null // 重置编辑 ID
-  loadRules() // 重新加载列表
-}
+onMounted(() => {
+  loadRules()
+})
 </script>
 
 <style scoped lang="scss">
 .alert-rules-page {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--macos-bg-secondary);
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 20px 24px 28px;
+  background: var(--macos-fill-tertiary);
+  color: var(--macos-text-primary);
 }
 
 .page-header {
-  background: var(--macos-card-bg);
-  padding: 24px 32px;
-  border-bottom: 1px solid var(--macos-border);
-
-  .header-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .title-section {
-    .page-title {
-      font-size: 24px;
-      font-weight: 600;
-      color: var(--macos-text-primary);
-      margin: 0 0 8px 0;
-    }
-
-    .page-subtitle {
-      font-size: 14px;
-      color: var(--macos-text-tertiary);
-      margin: 0;
-    }
-  }
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.filter-bar {
-  background: var(--macos-bg-primary, #FFFFFF);
-  padding: 16px 32px;
+.page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--macos-text-secondary);
+  font-size: 13px;
+}
+
+.header-actions,
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toolbar {
+  flex-wrap: wrap;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--macos-card-bg);
+  border: 1px solid var(--macos-border);
+  border-radius: 8px;
+}
+
+.keyword-input {
+  width: 300px;
+}
+
+.filter-select {
+  width: 136px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.summary-tile {
+  min-height: 86px;
+  padding: 14px 16px;
+  background: var(--macos-card-bg);
+  border: 1px solid var(--macos-border);
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  border-bottom: 1px solid var(--macos-border, #E8E8E8);
-
-  .filter-bar-main {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-
-    .search-input {
-      flex: 1;
-      max-width: 400px;
-    }
-
-    .filter-badge {
-      margin-left: 4px;
-    }
-  }
-
-  .filter-bar-advanced {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--macos-border, #E8E8E8);
-
-    .filter-select {
-      width: 150px;
-    }
-
-    .reset-btn {
-      color: var(--macos-text-tertiary);
-    }
-  }
+  justify-content: space-between;
 }
 
-.filter-expand-enter-active,
-.filter-expand-leave-active {
-  transition: all 0.25s ease;
+.summary-label,
+.summary-sub,
+.strategy-sub,
+.muted {
+  color: var(--macos-text-tertiary);
+  font-size: 12px;
+}
+
+.summary-value {
+  margin-top: 8px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.panel {
+  background: var(--macos-card-bg);
+  border: 1px solid var(--macos-border);
+  border-radius: 8px;
   overflow: hidden;
 }
-.filter-expand-enter-from,
-.filter-expand-leave-to {
-  opacity: 0;
-  max-height: 0;
-  padding-top: 0;
+
+.panel-header {
+  min-height: 56px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--macos-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+  }
+
+  p {
+    margin: 4px 0 0;
+    color: var(--macos-text-secondary);
+    font-size: 12px;
+  }
 }
 
-.table-container {
-  flex: 1;
-  padding: 24px 32px;
-  overflow: auto;
+.rule-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
 
-  .rule-name-cell {
-    .rule-name {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--macos-blue);
-      cursor: pointer;
-      margin-bottom: 4px;
+.rule-link {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--macos-blue);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
 
-      &:hover {
-        text-decoration: underline;
-      }
-    }
+.rule-description,
+.query-summary,
+.strategy-line,
+.last-triggered {
+  color: var(--macos-text-secondary);
+  font-size: 12px;
+}
 
-    .rule-description {
-      font-size: 12px;
-      color: var(--macos-text-tertiary);
-      font-family: 'Monaco', 'Courier New', monospace;
-    }
+.monitor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meta-chip {
+  width: fit-content;
+  max-width: 130px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--macos-fill-secondary);
+  color: var(--macos-text-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.priority {
+    color: var(--macos-danger);
+    background: var(--macos-danger-bg);
+    font-weight: 700;
+  }
+}
+
+.trigger-summary {
+  color: var(--macos-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mono {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.channel-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.channel-chip {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--macos-blue-light);
+  color: var(--macos-blue);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--macos-border);
+}
+
+@media (max-width: 960px) {
+  .page-header {
+    flex-direction: column;
   }
 
-  .trigger-condition {
-    font-size: 13px;
-    color: var(--macos-text-secondary);
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .notification-icons {
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-  }
-
-  .last-triggered {
-    font-size: 13px;
-    color: var(--macos-text-tertiary);
+  .keyword-input,
+  .filter-select {
+    width: 100%;
   }
 }
 </style>

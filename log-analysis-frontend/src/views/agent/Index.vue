@@ -411,6 +411,200 @@
                         </el-table-column>
                       </el-table>
                     </template>
+
+                    <template v-else-if="entry.result.type === 'vector_component_requirements'">
+                      <div class="result-header vector-result-header">
+                        <div>
+                          <h3>日志解析创建信息</h3>
+                          <p>这是创建 Vector Remap/Sink 前的补槽阶段。信息补齐后才会生成正则、VRL、字段和 DDL 预览。</p>
+                        </div>
+                        <div class="summary-tags">
+                          <el-tag type="warning">待确认</el-tag>
+                          <el-tag v-if="getRequirementMissingSlots(entry.result).length" type="danger">
+                            缺 {{ getRequirementMissingSlots(entry.result).length }} 项
+                          </el-tag>
+                        </div>
+                      </div>
+
+                      <el-alert
+                        v-if="entry.result.warnings?.length"
+                        type="warning"
+                        show-icon
+                        :closable="false"
+                        class="vector-warning"
+                      >
+                        <template #title>
+                          {{ entry.result.warnings.join('；') }}
+                        </template>
+                      </el-alert>
+
+                      <div class="vector-requirement-grid">
+                        <div class="requirement-card fulfilled">
+                          <span>已识别</span>
+                          <strong>{{ getRequirementFilledLabels(entry.result).join('、') || '暂无' }}</strong>
+                        </div>
+                        <div class="requirement-card missing">
+                          <span>还缺少</span>
+                          <strong>{{ getRequirementMissingLabels(entry.result).join('、') || '已补齐' }}</strong>
+                        </div>
+                        <div class="requirement-card">
+                          <span>下一步</span>
+                          <strong>{{ getRequirementNextAction(entry.result) }}</strong>
+                        </div>
+                      </div>
+
+                      <div v-if="entry.result.logSample" class="vector-plan-section">
+                        <h4>日志样本</h4>
+                        <pre class="vector-code-block">{{ entry.result.logSample }}</pre>
+                      </div>
+
+                      <div class="vector-plan-section">
+                        <h4>推荐回复格式</h4>
+                        <pre class="vector-code-block">存当前数据源，表名 app_text_to_sql_logs，来源是文件日志</pre>
+                      </div>
+
+                      <div class="source-type-options">
+                        <span>来源选项</span>
+                        <el-tag
+                          v-for="option in getRequirementSourceTypeOptions(entry.result)"
+                          :key="option"
+                          size="small"
+                          type="info"
+                        >
+                          {{ formatSourceType(option) }}
+                        </el-tag>
+                      </div>
+                    </template>
+
+                    <template v-else-if="entry.result.type === 'vector_component_plan'">
+                      <div class="result-header vector-result-header">
+                        <div>
+                          <h3>Vector 组件生成计划</h3>
+                          <p>预览阶段不会建表或写入组件，请检查字段、正则和 DDL 后再确认创建。</p>
+                        </div>
+                        <div class="summary-tags">
+                          <el-tag type="success">Remap + Sink</el-tag>
+                          <el-tag v-if="entry.result.tableName">表 {{ entry.result.tableName }}</el-tag>
+                          <el-tag v-if="entry.result.fields?.length" type="primary">
+                            字段 {{ entry.result.fields.length }}
+                          </el-tag>
+                        </div>
+                      </div>
+
+                      <el-alert
+                        v-if="entry.result.warnings?.length"
+                        type="warning"
+                        show-icon
+                        :closable="false"
+                        class="vector-warning"
+                      >
+                        <template #title>
+                          {{ entry.result.warnings.join('；') }}
+                        </template>
+                      </el-alert>
+
+                      <div class="vector-plan-meta">
+                        <div>
+                          <span>目标数据源</span>
+                          <strong>{{ entry.result.datasourceName || entry.result.datasourceId || '-' }}</strong>
+                        </div>
+                        <div>
+                          <span>目标表</span>
+                          <strong>{{ entry.result.tableName || '-' }}</strong>
+                        </div>
+                        <div>
+                          <span>计划 ID</span>
+                          <strong>{{ entry.result.planId || '-' }}</strong>
+                        </div>
+                      </div>
+
+                      <div class="vector-plan-section">
+                        <h4>日志样本</h4>
+                        <pre class="vector-code-block">{{ entry.result.logSample }}</pre>
+                      </div>
+
+                      <div class="vector-plan-section">
+                        <h4>命名捕获正则</h4>
+                        <pre class="vector-code-block">{{ entry.result.regexPattern }}</pre>
+                      </div>
+
+                      <el-table
+                        :data="entry.result.fields || []"
+                        border
+                        stripe
+                        max-height="300"
+                        class="vector-fields-table"
+                      >
+                        <el-table-column prop="name" label="字段名" min-width="160" />
+                        <el-table-column prop="type" label="ClickHouse 类型" width="160" />
+                        <el-table-column label="样例值" min-width="220">
+                          <template #default="{ row }">
+                            <span class="vector-field-value">{{ formatVectorFieldValue(row.sampleValue) }}</span>
+                          </template>
+                        </el-table-column>
+                        <el-table-column prop="comment" label="说明" min-width="180" />
+                      </el-table>
+
+                      <el-collapse class="vector-plan-collapse">
+                        <el-collapse-item title="查看 VRL 脚本" name="vrl">
+                          <pre class="vector-code-block">{{ entry.result.vrlScript }}</pre>
+                        </el-collapse-item>
+                        <el-collapse-item title="查看 ClickHouse DDL" name="ddl">
+                          <pre class="vector-code-block">{{ entry.result.ddl }}</pre>
+                        </el-collapse-item>
+                      </el-collapse>
+
+                      <div class="vector-plan-actions">
+                        <el-button
+                          type="primary"
+                          :disabled="!entry.result.planId"
+                          :loading="committingPlanId === entry.result.planId"
+                          @click="handleCommitVectorPlan(entry)"
+                        >
+                          确认创建
+                        </el-button>
+                        <span>确认后会创建 ClickHouse 表，并入库 Remap Transform 与 ClickHouse Sink。</span>
+                      </div>
+                    </template>
+
+                    <template v-else-if="entry.result.type === 'vector_component_commit'">
+                      <div class="result-header vector-result-header">
+                        <div>
+                          <h3>Vector 组件创建结果</h3>
+                          <p>{{ entry.result.success ? '表和组件已创建完成，可以在 Vector 管理中继续接入 Source 或编排 Pipeline。' : '创建失败，请根据错误信息调整后重试。' }}</p>
+                        </div>
+                        <div class="summary-tags">
+                          <el-tag :type="entry.result.success ? 'success' : 'danger'">
+                            {{ entry.result.success ? '创建成功' : '创建失败' }}
+                          </el-tag>
+                          <el-tag v-if="entry.result.tableName">表 {{ entry.result.tableName }}</el-tag>
+                        </div>
+                      </div>
+
+                      <el-alert
+                        v-if="!entry.result.success"
+                        type="error"
+                        show-icon
+                        :closable="false"
+                        :title="entry.result.error || '创建失败'"
+                        class="vector-warning"
+                      />
+
+                      <div class="vector-plan-meta commit-meta">
+                        <div>
+                          <span>ClickHouse 表</span>
+                          <strong>{{ entry.result.tableName || '-' }}</strong>
+                        </div>
+                        <div>
+                          <span>Remap 组件</span>
+                          <strong>{{ entry.result.remapComponentId || '-' }}</strong>
+                        </div>
+                        <div>
+                          <span>Sink 组件</span>
+                          <strong>{{ entry.result.sinkComponentId || '-' }}</strong>
+                        </div>
+                      </div>
+                    </template>
                   </div>
 
                   <div v-if="entry.suggestions?.length && !entry.loading" class="suggestion-list">
@@ -435,7 +629,7 @@
                 type="textarea"
                 :autosize="{ minRows: 3, maxRows: 6 }"
                 resize="none"
-                placeholder="例如：最近1小时错误日志；查看字段结构；按 severity 统计最近24小时数量"
+                placeholder="例如：最近1小时错误日志；查看字段结构；按 severity 统计最近24小时数量；贴一条日志样本生成 Vector 组件"
                 @keydown.enter.exact.prevent="handleSend()"
               />
 
@@ -501,6 +695,7 @@ import AiQueryResultCard from '@/components/ai-query-result/AiQueryResultCard.vu
 import TimeSeriesChart from '@/components/ai-query-result/TimeSeriesChart.vue'
 import {
   chatWithAgent,
+  commitVectorComponentPlan,
   deleteAgentConversation,
   getAgentConversation,
   listAgentConversations,
@@ -540,7 +735,8 @@ const quickPrompts = [
   '搜索包含 "timeout" 的日志',
   '看最近24小时日志趋势',
   '最近1天的数据有多少条',
-  '按 severity 统计最近24小时数量'
+  '按 severity 统计最近24小时数量',
+  '根据这条日志样本生成 Vector 组件'
 ]
 const STREAMING_PREFERENCE_KEY = 'agent-streaming-enabled'
 
@@ -559,6 +755,7 @@ const conversationLoading = ref(false)
 const sending = ref(false)
 const deletingSessionId = ref('')
 const emailingEntryId = ref('')
+const committingPlanId = ref('')
 
 const datasources = ref<ConfigComponent[]>([])
 const conversations = ref<AgentConversationSummary[]>([])
@@ -579,7 +776,7 @@ const buildWelcomeEntry = (): ChatEntry => ({
   id: `assistant-welcome-${Date.now()}`,
   role: 'assistant',
   system: true,
-  content: '我现在能帮你读取字段结构、查询日志列表、查看日志趋势；如果当前数据源是 ClickHouse，还可以做自然语言统计查询并生成 SQL。直接提问即可。',
+  content: '我现在能帮你读取字段结构、查询日志列表、查看日志趋势；如果当前数据源是 ClickHouse，还可以做自然语言统计查询，或根据日志样本预览生成 Vector Remap/Sink 组件。直接提问即可。',
   suggestions: quickPrompts
 })
 
@@ -678,6 +875,71 @@ const formatText2SqlCell = (value: any, isTime: boolean, isNumber: boolean) => {
 
   return String(value)
 }
+
+const formatVectorFieldValue = (value: any) => {
+  if (value == null || value === '') {
+    return '-'
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value)
+  }
+  return String(value)
+}
+
+const requirementSlotLabels: Record<string, string> = {
+  logSample: '日志样本',
+  targetSinkId: '目标 Sink',
+  targetDatasourceId: 'ClickHouse 数据源',
+  targetDatasource: '目标数据源',
+  tableName: '目标表名',
+  componentPrefix: '组件前缀',
+  sourceType: '日志来源',
+  regexPattern: '自定义正则',
+  parseMethod: '解析方式'
+}
+
+const sourceTypeLabels: Record<string, string> = {
+  file: '文件日志',
+  syslog: 'Syslog',
+  http: 'HTTP/Webhook',
+  existing_source: '已有 Source'
+}
+
+const getRequirementSummary = (result?: AgentResult) => {
+  return (result?.summary || {}) as Record<string, any>
+}
+
+const getRequirementFilledSlots = (result?: AgentResult): Record<string, any> => {
+  const filledSlots = getRequirementSummary(result).filledSlots
+  return filledSlots && typeof filledSlots === 'object' ? filledSlots as Record<string, any> : {}
+}
+
+const getRequirementMissingSlots = (result?: AgentResult): string[] => {
+  const missingSlots = getRequirementSummary(result).missingSlots
+  return Array.isArray(missingSlots) ? missingSlots.map(String) : []
+}
+
+const getRequirementFilledLabels = (result?: AgentResult) => {
+  return Object.keys(getRequirementFilledSlots(result))
+    .filter(key => key !== 'parseMethod')
+    .map(key => requirementSlotLabels[key] || key)
+}
+
+const getRequirementMissingLabels = (result?: AgentResult) => {
+  return getRequirementMissingSlots(result).map(key => requirementSlotLabels[key] || key)
+}
+
+const getRequirementSourceTypeOptions = (result?: AgentResult): string[] => {
+  const options = getRequirementSummary(result).sourceTypeOptions
+  return Array.isArray(options) ? options.map(String) : ['file', 'syslog', 'http', 'existing_source']
+}
+
+const getRequirementNextAction = (result?: AgentResult) => {
+  const nextAction = getRequirementSummary(result).nextAction
+  return nextAction === 'ask_user' ? '等待补齐信息' : String(nextAction || '等待确认')
+}
+
+const formatSourceType = (value: string) => sourceTypeLabels[value] || value
 
 const formatConversationTime = (value?: string) => {
   if (!value) {
@@ -1139,6 +1401,62 @@ const handleSendEmail = async (entry: ChatEntry) => {
     ElMessage.error(error?.message || '邮件发送失败')
   } finally {
     emailingEntryId.value = ''
+  }
+}
+
+const handleCommitVectorPlan = async (entry: ChatEntry) => {
+  const planId = entry.result?.planId
+  const currentSessionId = selectedConversationId.value || sessionId.value
+  if (!planId) {
+    ElMessage.warning('缺少计划 ID，请重新生成组件计划')
+    return
+  }
+  if (!currentSessionId) {
+    ElMessage.warning('缺少会话 ID，请重新生成组件计划')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认创建 ClickHouse 表 ${entry.result?.tableName || ''}，并入库 Remap/Sink 组件吗？`,
+      '确认创建 Vector 组件',
+      {
+        type: 'warning',
+        confirmButtonText: '确认创建',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+
+  committingPlanId.value = planId
+  try {
+    const response = unwrapResult<AgentChatResponse>(
+      await commitVectorComponentPlan(planId, currentSessionId) as ApiResult<AgentChatResponse>
+    )
+    const resultEntry = buildAssistantEntry(response)
+    messages.value.push(resultEntry)
+
+    if (response.success) {
+      ElMessage.success('Vector 组件创建成功')
+      await loadDatasources()
+      if (response.result?.sinkComponentId) {
+        suppressDatasourceReset.value = true
+        selectedDatasourceId.value = response.result.sinkComponentId
+        await nextTick()
+        suppressDatasourceReset.value = false
+      }
+    } else {
+      ElMessage.error(response.error || response.answer || 'Vector 组件创建失败')
+    }
+
+    await loadConversationList()
+    await forceScrollToBottom()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '确认创建失败')
+  } finally {
+    committingPlanId.value = ''
   }
 }
 
@@ -2050,6 +2368,167 @@ html.dark .agent-page {
     margin: 0;
     font-size: 18px;
     color: var(--agent-ink);
+  }
+}
+
+.vector-result-header {
+  p {
+    margin: 6px 0 0;
+    color: var(--agent-muted);
+    line-height: 1.6;
+    font-size: 13px;
+  }
+}
+
+.vector-warning {
+  margin-bottom: 14px;
+}
+
+.vector-requirement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.requirement-card {
+  min-width: 0;
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+
+  span {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--agent-muted);
+    font-size: 12px;
+  }
+
+  strong {
+    display: block;
+    color: var(--agent-ink);
+    line-height: 1.5;
+    font-size: 13px;
+  }
+
+  &.fulfilled {
+    border-color: rgba(34, 197, 94, 0.22);
+    background: linear-gradient(180deg, rgba(240, 253, 244, 0.88), rgba(255, 255, 255, 0.72));
+  }
+
+  &.missing {
+    border-color: rgba(245, 158, 11, 0.28);
+    background: linear-gradient(180deg, rgba(255, 251, 235, 0.9), rgba(255, 255, 255, 0.72));
+  }
+}
+
+.source-type-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--agent-muted);
+  font-size: 12px;
+}
+
+.vector-plan-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+
+  div {
+    min-width: 0;
+    border-radius: 12px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+  }
+
+  span {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--agent-muted);
+    font-size: 12px;
+  }
+
+  strong {
+    display: block;
+    color: var(--agent-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: 'SFMono-Regular', 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+}
+
+.commit-meta {
+  margin-bottom: 0;
+}
+
+.vector-plan-section {
+  margin-top: 14px;
+
+  h4 {
+    margin: 0 0 8px;
+    color: var(--agent-ink);
+    font-size: 14px;
+  }
+}
+
+.vector-code-block {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #dbeafe;
+  background: #0f172a;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SFMono-Regular', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.vector-fields-table {
+  margin-top: 14px;
+}
+
+.vector-field-value {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+  font-family: 'SFMono-Regular', 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.vector-plan-collapse {
+  margin-top: 14px;
+
+  :deep(.el-collapse-item__content) {
+    padding-bottom: 12px;
+  }
+}
+
+.vector-plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+
+  span {
+    color: var(--agent-muted);
+    line-height: 1.5;
+    font-size: 12px;
   }
 }
 

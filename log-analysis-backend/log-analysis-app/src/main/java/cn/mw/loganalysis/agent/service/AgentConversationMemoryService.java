@@ -13,6 +13,7 @@ import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,8 @@ public class AgentConversationMemoryService {
      * 与 OpenAI 新模型同编码族的兼容模型名，仅用于记忆窗口裁剪，不影响真实调用模型。
      */
     private static final String DEFAULT_ESTIMATOR_MODEL = "gpt-5.2";
+    private static final int MAX_SESSION_ID_LENGTH = 64;
+    private static final String SESSION_ID_PATTERN = "^[A-Za-z0-9_-]+$";
 
     private final Cache<String, ConversationSession> sessions = Caffeine.newBuilder()
             .maximumSize(1000)
@@ -62,12 +65,11 @@ public class AgentConversationMemoryService {
      * 如果前端已经传了 history，但当前 session 还是空的，就把这份 history 当成 bootstrap；
      * 这样旧前端或刷新后的首个请求也不会丢上下文。
      */
-    public PreparedAgentChatRequest prepare(AgentChatRequest request) {
-        String sessionId = StringUtils.isNotBlank(request.getSessionId())
-                ? StringUtils.trim(request.getSessionId())
-                : UUID.randomUUID().toString();
+    public PreparedAgentChatRequest prepare(AgentChatRequest request, Long userId) {
+        String sessionId = normalizeSessionId(request.getSessionId());
+        String sessionKey = buildSessionKey(userId, sessionId);
 
-        ConversationSession session = sessions.get(sessionId, this::createConversationSession);
+        ConversationSession session = sessions.get(sessionKey, this::createConversationSession);
         synchronized (session) {
             if (StringUtils.isNotBlank(request.getDatasourceId())
                     && StringUtils.isNotBlank(session.datasourceId)
@@ -97,16 +99,19 @@ public class AgentConversationMemoryService {
      * 这样既能让 LLM 理解上下文，又不会把 prompt 越堆越大。
      */
     public void remember(String sessionId,
+                         Long userId,
                          String datasourceId,
                          String datasourceName,
                          String datasourceType,
                          String userMessage,
                          String assistantMessage) {
-        if (StringUtils.isBlank(sessionId)) {
+        String normalizedSessionId = normalizeExistingSessionId(sessionId);
+        if (StringUtils.isBlank(normalizedSessionId)) {
             return;
         }
 
-        ConversationSession session = sessions.get(sessionId, this::createConversationSession);
+        String sessionKey = buildSessionKey(userId, normalizedSessionId);
+        ConversationSession session = sessions.get(sessionKey, this::createConversationSession);
         synchronized (session) {
             if (StringUtils.isNotBlank(datasourceId)
                     && StringUtils.isNotBlank(session.datasourceId)
@@ -136,6 +141,14 @@ public class AgentConversationMemoryService {
             return;
         }
         sessions.invalidate(StringUtils.trim(sessionId));
+    }
+
+    public void forget(String sessionId, Long userId) {
+        String normalizedSessionId = normalizeExistingSessionId(sessionId);
+        if (StringUtils.isBlank(normalizedSessionId)) {
+            return;
+        }
+        sessions.invalidate(buildSessionKey(userId, normalizedSessionId));
     }
 
     private boolean isUsableMessage(AgentChatMessage message) {
@@ -208,8 +221,27 @@ public class AgentConversationMemoryService {
         }
     }
 
-    private ConversationSession createConversationSession(String sessionId) {
-        return new ConversationSession(createChatMemory(sessionId));
+    private String normalizeSessionId(String sessionId) {
+        String normalized = normalizeExistingSessionId(sessionId);
+        return StringUtils.isNotBlank(normalized) ? normalized : UUID.randomUUID().toString();
+    }
+
+    private String normalizeExistingSessionId(String sessionId) {
+        String normalized = StringUtils.trimToNull(sessionId);
+        if (StringUtils.isBlank(normalized)
+                || normalized.length() > MAX_SESSION_ID_LENGTH
+                || !normalized.matches(SESSION_ID_PATTERN)) {
+            return null;
+        }
+        return normalized;
+    }
+
+    private String buildSessionKey(Long userId, String sessionId) {
+        return ObjectUtils.defaultIfNull(userId, 0L) + ":" + sessionId;
+    }
+
+    private ConversationSession createConversationSession(String sessionKey) {
+        return new ConversationSession(createChatMemory(sessionKey));
     }
 
     /**

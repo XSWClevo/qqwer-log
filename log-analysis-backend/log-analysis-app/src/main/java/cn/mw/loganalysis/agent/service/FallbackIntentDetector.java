@@ -33,12 +33,25 @@ public class FallbackIntentDetector {
                 intent,
                 effectiveMessage,
                 extractKeyword(effectiveMessage),
-                extractSeverity(effectiveMessage)
+                extractSeverity(effectiveMessage),
+                isDeterministicToolRequest(effectiveMessage, datasourceType, intent)
         );
+    }
+
+    boolean isCreateLogParserIntent(String message) {
+        return isCreateLogParserIntentText(AgentToolSupport.normalizeText(message));
     }
 
     private AgentIntent detectIntent(String message, String datasourceType) {
         String lower = message.toLowerCase(Locale.ROOT);
+        if (isCreateLogParserIntentText(lower)) {
+            return AgentIntent.CREATE_LOG_PARSER;
+        }
+        if (containsAny(lower,
+                "vector组件", "vector 组件", "创建组件", "生成组件", "解析组件", "生成正则",
+                "生成remap", "remap", "sink", "建表", "入库", "日志样本")) {
+            return AgentIntent.VECTOR_COMPONENT_PLAN;
+        }
         if (containsAny(lower, "字段", "表结构", "schema", "有哪些列", "哪些字段", "列结构")) {
             return AgentIntent.SCHEMA;
         }
@@ -50,6 +63,36 @@ public class FallbackIntentDetector {
             return AgentIntent.TEXT2SQL;
         }
         return AgentIntent.LOGS;
+    }
+
+    private boolean isCreateLogParserIntentText(String message) {
+        String lower = StringUtils.lowerCase(message, Locale.ROOT);
+        return containsAny(lower,
+                "创建日志解析", "创建这个日志的解析", "创建这条日志的解析", "日志解析",
+                "解析这个日志", "解析这条日志", "解析规则", "生成解析", "生成正则",
+                "接入日志", "采集日志", "入库解析", "创建入库", "生成remap",
+                "vector组件", "vector 组件", "remap", "sink", "建表", "入库", "日志样本")
+                || Pattern.compile("(创建|生成|配置|接入|采集).{0,12}(日志|log).{0,12}(解析|正则|入库|组件|表)")
+                .matcher(lower)
+                .find()
+                || Pattern.compile("(日志|log).{0,12}(解析|正则|入库).{0,12}(创建|生成|配置)")
+                .matcher(lower)
+                .find();
+    }
+
+    private boolean isDeterministicToolRequest(String message, String datasourceType, AgentIntent intent) {
+        if (!AgentIntent.LOGS.equals(intent)) {
+            return true;
+        }
+
+        String lower = message.toLowerCase(Locale.ROOT);
+        return containsAny(lower,
+                "日志", "log", "查询", "查看", "搜索", "查找", "包含", "关键字", "关键词",
+                "最近", "今天", "昨天", "错误", "异常", "告警", "警告", "warn", "warning",
+                "error", "info", "debug", "trace", "fatal", "critical", "message", "severity",
+                "source", "host", "hostname", "ip", "路径", "接口", "状态码", "status")
+                || StringUtils.isNotBlank(extractSeverity(message))
+                || StringUtils.isBlank(datasourceType);
     }
 
     private String enrichMessageWithHistory(String message, List<AgentChatMessage> history) {
@@ -144,12 +187,18 @@ public class FallbackIntentDetector {
         private final String effectiveMessage;
         private final String keyword;
         private final String severity;
+        private final boolean deterministicToolRequest;
 
-        private FallbackIntentDecision(AgentIntent intent, String effectiveMessage, String keyword, String severity) {
+        private FallbackIntentDecision(AgentIntent intent,
+                                       String effectiveMessage,
+                                       String keyword,
+                                       String severity,
+                                       boolean deterministicToolRequest) {
             this.intent = intent;
             this.effectiveMessage = effectiveMessage;
             this.keyword = keyword;
             this.severity = severity;
+            this.deterministicToolRequest = deterministicToolRequest;
         }
     }
 }

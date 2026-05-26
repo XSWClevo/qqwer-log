@@ -22,6 +22,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.List;
@@ -65,6 +66,22 @@ public class AgentConversationHistoryService {
             }
             return request;
         }
+
+        AgentConversation existingConversation = conversationRepository.findById(request.getSessionId());
+        if (existingConversation != null && ObjectUtils.notEqual(existingConversation.getUserId(), userId)) {
+            log.warn("智能助手 sessionId 已归属其他用户，已为当前用户切换新会话, sessionId={}, userId={}",
+                    request.getSessionId(), userId);
+            return copyRequestWithSessionId(request, null);
+        }
+        if (existingConversation != null
+                && StringUtils.isNotBlank(request.getDatasourceId())
+                && StringUtils.isNotBlank(existingConversation.getDatasourceId())
+                && !StringUtils.equals(request.getDatasourceId(), existingConversation.getDatasourceId())) {
+            log.warn("智能助手 sessionId 的数据源发生变化，已切换新会话, sessionId={}, oldDatasourceId={}, newDatasourceId={}",
+                    request.getSessionId(), existingConversation.getDatasourceId(), request.getDatasourceId());
+            return copyRequestWithSessionId(request, null);
+        }
+
         if (CollectionUtils.isNotEmpty(request.getHistory())) {
             return request;
         }
@@ -86,6 +103,7 @@ public class AgentConversationHistoryService {
      * 将本轮 user/assistant 对话持久化。
      * 这里直接复用 sessionId 作为 conversation id，避免 memory 与 history 再做映射。
      */
+    @Transactional(rollbackFor = Exception.class)
     public void saveTurn(Long userId,
                          String sessionId,
                          String datasourceId,
@@ -104,7 +122,9 @@ public class AgentConversationHistoryService {
 
         ConversationIdentity identity = resolveConversationIdentity(sessionId, datasourceId, datasourceName, datasourceType);
         ConversationIdentity targetIdentity = fillDatasource(identity, datasourceId, datasourceName, datasourceType);
-        upsertConversation(userId, targetIdentity, userMessage);
+        if (!upsertConversation(userId, targetIdentity, userMessage)) {
+            throw new IllegalStateException("当前智能助手会话已归属其他用户，请重新开始新对话");
+        }
 
         if (StringUtils.isNotBlank(userMessage)) {
             insertMessage(sessionId, "user", userMessage, null, null, null);
@@ -128,7 +148,7 @@ public class AgentConversationHistoryService {
         if (messageCount > 0) {
             String preview = StringUtils.isNotBlank(assistantContent) ? assistantContent : userMessage;
             String titleSeed = StringUtils.isNotBlank(userMessage) ? userMessage : preview;
-            updateConversationAfterTurn(sessionId, targetIdentity, titleSeed, preview, messageCount);
+            updateConversationAfterTurn(userId, sessionId, targetIdentity, titleSeed, preview, messageCount);
         }
     }
 
@@ -199,11 +219,11 @@ public class AgentConversationHistoryService {
                 .toList();
     }
 
-    private void upsertConversation(Long userId, ConversationIdentity identity, String userMessage) {
+    private boolean upsertConversation(Long userId, ConversationIdentity identity, String userMessage) {
         String sessionId = identity.sessionId();
         String title = abbreviate(StringUtils.isNotBlank(userMessage) ? userMessage : "新对话", MAX_TITLE_LENGTH);
 
-        conversationRepository.createIfAbsent(AgentConversation.builder()
+        return conversationRepository.createIfAbsent(AgentConversation.builder()
                 .id(sessionId)
                 .userId(userId)
                 .title(title)
@@ -212,7 +232,7 @@ public class AgentConversationHistoryService {
                 .datasourceName(identity.datasourceName())
                 .datasourceType(identity.datasourceType())
                 .messageCount(0)
-                .build());
+                .build(), userId);
     }
 
     private void insertMessage(String sessionId,
@@ -231,12 +251,14 @@ public class AgentConversationHistoryService {
                 .build());
     }
 
-    private void updateConversationAfterTurn(String sessionId,
+    private void updateConversationAfterTurn(Long userId,
+                                             String sessionId,
                                              ConversationIdentity identity,
                                              String titleSeed,
                                              String previewSeed,
                                              int messageCount) {
         conversationRepository.updateAfterTurn(
+                userId,
                 sessionId,
                 abbreviate(titleSeed, MAX_TITLE_LENGTH),
                 abbreviate(previewSeed, MAX_PREVIEW_LENGTH),
@@ -245,6 +267,15 @@ public class AgentConversationHistoryService {
                 identity.datasourceType(),
                 messageCount
         );
+    }
+
+    private AgentChatRequest copyRequestWithSessionId(AgentChatRequest request, String sessionId) {
+        AgentChatRequest copied = new AgentChatRequest();
+        copied.setMessage(request.getMessage());
+        copied.setDatasourceId(request.getDatasourceId());
+        copied.setSessionId(sessionId);
+        copied.setHistory(StringUtils.isBlank(sessionId) ? null : request.getHistory());
+        return copied;
     }
 
     private ConversationIdentity fillDatasource(ConversationIdentity identity,

@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 创建告警规则请求DTO
@@ -28,8 +27,13 @@ public class CreateAlertRuleRequest {
 
     private List<String> tableNames;
 
-    @NotNull(message = "告警条件不能为空")
-    private Map<String, Object> condition;
+    @NotNull(message = "告警查询条件不能为空")
+    private AlertConditionDTO condition;
+
+    @NotNull(message = "告警阈值不能为空")
+    private AlertThresholdsDTO thresholds;
+
+    private AlertMonitorOptionsDTO monitorOptions;
 
     private String evalEvery = "1m";
 
@@ -39,8 +43,6 @@ public class CreateAlertRuleRequest {
     private String severity;
 
     private List<String> notificationChannels;
-
-    private List<String> dedupKeyFields;
 
     private String messageTemplate;
 
