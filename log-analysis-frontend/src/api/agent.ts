@@ -32,6 +32,15 @@ export interface AgentVectorComponentField {
   comment?: string
 }
 
+export interface AgentVectorDeploymentSummary {
+  ready?: boolean
+  visualConfigId?: string
+  visualConfigName?: string
+  nextAction?: string
+  requiresHostSelection?: boolean
+  warnings?: string[]
+}
+
 export interface AgentResult {
   type: 'schema' | 'logs' | 'timeseries' | 'text2sql' | 'vector_component_requirements' | 'vector_component_plan' | 'vector_component_commit'
   success?: boolean
@@ -62,8 +71,14 @@ export interface AgentResult {
   fields?: AgentVectorComponentField[]
   ddl?: string
   warnings?: string[]
+  sourceType?: string
+  sourceConfig?: Record<string, any>
+  sourceComponentId?: string
   remapComponentId?: string
   sinkComponentId?: string
+  visualConfigId?: string
+  visualConfigName?: string
+  deployment?: AgentVectorDeploymentSummary
 }
 
 export interface AgentChatResponse {
