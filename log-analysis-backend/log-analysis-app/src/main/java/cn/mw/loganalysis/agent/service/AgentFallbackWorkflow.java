@@ -12,7 +12,10 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 /**
- * 规则 Agent 工作流。
+ * 本地 Agent 工作流。
+ *
+ * 执行阶段对齐参考工程：上下文增强 -> IntentDecision(模型 NLU + 规则兜底)
+ * -> 意图执行策略 -> 响应组装 -> 观察者记录。
  */
 @Slf4j
 @Component
@@ -21,19 +24,20 @@ public class AgentFallbackWorkflow {
 
     private final AgentContextEnhancerChain contextEnhancerChain;
     private final AgentIntentRecognitionService intentRecognitionService;
+    private final IntentDecision intentDecision;
     private final AgentFallbackToolExecutorRegistry toolExecutorRegistry;
     private final AgentResponseAssembler responseAssembler;
     private final AgentFlowEventPublisher eventPublisher;
 
     /**
-     * 判断请求是否命中确定性规则链路，避免不必要的 LLM 调用。
+     * 只用轻量规则判断请求是否进入本地 Agent 链路，不在预判阶段调用模型 NLU。
      */
     boolean shouldHandleWithoutLlm(AgentChatRequest request, Long userId) {
         if (request == null) {
             return false;
         }
 
-        AgentRuntimeContext context = prepareContext(request, userId, request.getSessionId(), null);
+        AgentRuntimeContext context = prepareContext(request, userId, request.getSessionId(), null, false);
         boolean createLogParserFlow = AgentIntent.CREATE_LOG_PARSER.equals(context.getIntent());
         if (createLogParserFlow) {
             return true;
@@ -45,13 +49,13 @@ public class AgentFallbackWorkflow {
     }
 
     /**
-     * 执行完整规则 Agent 链路：准备上下文、执行工具、组装响应和发布事件。
+     * 执行完整本地 Agent 链路：准备上下文、执行工具、组装响应和发布事件。
      */
     AgentChatResponse execute(AgentChatRequest request,
                               Long userId,
                               String sessionId,
                               AgentStreamEventEmitter emitter) throws IOException {
-        AgentRuntimeContext context = prepareContext(request, userId, sessionId, emitter);
+        AgentRuntimeContext context = prepareContext(request, userId, sessionId, emitter, true);
         boolean createLogParserFlow = AgentIntent.CREATE_LOG_PARSER.equals(context.getIntent());
 
         if (StringUtils.isBlank(request.getDatasourceId()) && !createLogParserFlow) {
@@ -87,12 +91,13 @@ public class AgentFallbackWorkflow {
     }
 
     /**
-     * 构造并增强运行时上下文，同时完成意图识别。
+     * 构造并增强运行时上下文，同时按需要执行模型 NLU 意图理解。
      */
     private AgentRuntimeContext prepareContext(AgentChatRequest request,
                                                Long userId,
                                                String sessionId,
-                                               AgentStreamEventEmitter emitter) {
+                                               AgentStreamEventEmitter emitter,
+                                               boolean useModelNlu) {
         AgentRuntimeContext context = AgentRuntimeContext.builder()
                 .request(request)
                 .userId(userId)
@@ -101,7 +106,11 @@ public class AgentFallbackWorkflow {
                 .build();
         contextEnhancerChain.enhance(context);
         eventPublisher.publish(AgentFlowEventType.CONTEXT_ENHANCED, context);
-        intentRecognitionService.recognize(context);
+        if (useModelNlu) {
+            intentDecision.execute(context);
+        } else {
+            intentRecognitionService.recognize(context);
+        }
         eventPublisher.publish(AgentFlowEventType.INTENT_MATCHED, context);
         return context;
     }

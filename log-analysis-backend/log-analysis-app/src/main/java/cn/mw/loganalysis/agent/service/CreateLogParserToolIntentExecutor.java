@@ -30,7 +30,8 @@ public class CreateLogParserToolIntentExecutor implements AgentFallbackToolExecu
                 context.getRequest(),
                 context.getUserId(),
                 context.getSessionId(),
-                context.getDatasource()
+                context.getDatasource(),
+                context.getNluSlots()
         );
     }
 

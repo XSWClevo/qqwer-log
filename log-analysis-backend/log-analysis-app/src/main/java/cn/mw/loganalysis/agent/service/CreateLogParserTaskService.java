@@ -22,6 +22,7 @@ public class CreateLogParserTaskService {
 
     private final AgentToolFacade toolFacade;
     private final CreateLogParserTaskFrameStore taskFrameStore;
+    private final CreateLogParserNluSlotsMerger nluSlotsMerger;
     private final CreateLogParserSlotExtractor slotExtractor;
     private final CreateLogParserSlotPolicy slotPolicy;
     private final CreateLogParserRequirementPresenter requirementPresenter;
@@ -46,9 +47,11 @@ public class CreateLogParserTaskService {
                                    AgentChatRequest request,
                                    Long userId,
                                    String sessionId,
-                                   ConfigComponent currentSink) {
+                                   ConfigComponent currentSink,
+                                   AgentNluSlots nluSlots) {
         long startedAt = System.currentTimeMillis();
         AgentTaskFrame frame = taskFrameStore.loadOrCreate(userId, sessionId);
+        nluSlotsMerger.merge(frame, nluSlots);
         slotExtractor.mergeSlots(frame, request.getMessage(), currentSink);
 
         List<String> missingSlots = slotPolicy.resolveMissingSlots(frame);

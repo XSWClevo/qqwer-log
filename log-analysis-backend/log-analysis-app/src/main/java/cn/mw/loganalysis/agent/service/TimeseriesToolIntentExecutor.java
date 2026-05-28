@@ -1,6 +1,7 @@
 package cn.mw.loganalysis.agent.service;
 
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -25,7 +26,9 @@ public class TimeseriesToolIntentExecutor implements AgentFallbackToolExecutor {
      */
     @Override
     public AgentToolPayload execute(AgentRuntimeContext context) {
-        return toolFacade.queryTimeseries(context.getEffectiveMessage(), null);
+        AgentNluSlots slots = context.getNluSlots();
+        String granularity = slots != null ? slots.getGranularity() : null;
+        return toolFacade.queryTimeseries(context.getEffectiveMessage(), StringUtils.trimToNull(granularity));
     }
 
     /**
@@ -35,6 +38,10 @@ public class TimeseriesToolIntentExecutor implements AgentFallbackToolExecutor {
     public Map<String, Object> buildToolInput(AgentRuntimeContext context) {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("timeRange", context.getEffectiveMessage());
+        AgentNluSlots slots = context.getNluSlots();
+        if (slots != null && StringUtils.isNotBlank(slots.getGranularity())) {
+            input.put("granularity", slots.getGranularity());
+        }
         return input;
     }
 }

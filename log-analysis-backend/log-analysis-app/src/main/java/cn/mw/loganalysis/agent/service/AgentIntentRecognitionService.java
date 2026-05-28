@@ -23,20 +23,34 @@ public class AgentIntentRecognitionService {
     }
 
     /**
-     * 按优先级匹配意图，并把决策结果写回运行时上下文。
+     * 按优先级匹配规则意图，并把决策结果写回运行时上下文。
      */
     AgentIntentDecision recognize(AgentRuntimeContext context) {
+        AgentIntentDecision decision = decide(context);
+        apply(context, decision);
+        return decision;
+    }
+
+    /**
+     * 只计算规则意图决策，不修改运行时上下文。
+     */
+    AgentIntentDecision decide(AgentRuntimeContext context) {
         for (AgentIntentMatcher matcher : matchers) {
             if (matcher.matches(context)) {
-                AgentIntentDecision decision = matcher.match(context);
-                context.setIntent(decision.intent());
-                context.setEffectiveMessage(decision.effectiveMessage());
-                context.setKeyword(decision.keyword());
-                context.setSeverity(decision.severity());
-                context.setDeterministicToolRequest(decision.deterministicToolRequest());
-                return decision;
+                return matcher.match(context);
             }
         }
         throw new IllegalStateException("未找到可用的意图匹配策略");
+    }
+
+    /**
+     * 将意图决策写回运行时上下文。
+     */
+    void apply(AgentRuntimeContext context, AgentIntentDecision decision) {
+        context.setIntent(decision.intent());
+        context.setEffectiveMessage(decision.effectiveMessage());
+        context.setKeyword(decision.keyword());
+        context.setSeverity(decision.severity());
+        context.setDeterministicToolRequest(decision.deterministicToolRequest());
     }
 }

@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="agent-page">      <section class="hero-shell" :class="{ collapsed: heroCollapsed }">
+    <div class="agent-page">
+      <section class="hero-shell" :class="{ collapsed: heroCollapsed }">
         <div v-show="!heroCollapsed" class="hero-copy">
           <div class="hero-eyebrow">Smart Agent Workspace</div>
           <h1>智能助手</h1>
@@ -76,87 +77,48 @@
             </div>
           </el-card>
 
-          <el-card shadow="never" class="panel-card history-card">
+          <el-card shadow="never" class="panel-card session-card">
             <template #header>
               <div class="panel-header">
                 <div class="panel-title">
                   <el-icon><Document /></el-icon>
-                  <span>历史对话</span>
-                </div>
-
-                <div class="panel-actions">
-                  <el-button text @click="refreshConversationList" :loading="historyLoading">
-                    <el-icon><RefreshRight /></el-icon>
-                  </el-button>
-                  <el-button type="primary" plain @click="startNewConversation()">
-                    <el-icon><Plus /></el-icon>
-                    新建对话
-                  </el-button>
+                  <span>会话控制</span>
                 </div>
               </div>
             </template>
 
-            <div class="history-body">
-              <el-skeleton :loading="historyLoading" animated :rows="6">
-                <template #template>
-                  <div class="history-skeleton">
-                    <div class="history-skeleton-item" v-for="index in 4" :key="index" />
-                  </div>
-                </template>
+            <div class="session-control">
+              <div class="session-status">
+                <span>{{ currentConversationState }}</span>
+                <strong>{{ currentConversationTitle }}</strong>
+                <small>{{ currentConversationSubtitle }}</small>
+              </div>
 
-                <template #default>
-                  <div class="draft-card" :class="{ active: !selectedConversationId }" @click="startNewConversation()">
-                    <div class="draft-card-title">
-                      <span>新对话</span>
-                      <el-tag size="small" type="success" effect="plain">草稿</el-tag>
-                    </div>
-                    <p>保留当前数据源，开始一段新的上下文，不覆盖历史会话。</p>
-                  </div>
+              <div class="session-actions">
+                <el-button type="primary" plain @click="startNewConversation(true)">
+                  <el-icon><Plus /></el-icon>
+                  新建对话
+                </el-button>
+                <el-button plain :loading="historyLoading" @click="refreshConversationList">
+                  <el-icon><RefreshRight /></el-icon>
+                  刷新列表
+                </el-button>
+              </div>
 
-                  <div v-if="conversations.length" class="conversation-list">
-                    <div
-                      v-for="conversation in conversations"
-                      :key="conversation.sessionId"
-                      class="conversation-item"
-                      :class="{ active: conversation.sessionId === selectedConversationId }"
-                      @click="openConversation(conversation)"
-                    >
-                      <div class="conversation-main">
-                        <div class="conversation-title-row">
-                          <strong>{{ formatConversationLabel(conversation) }}</strong>
-                          <el-tag
-                            v-if="conversation.datasourceType"
-                            size="small"
-                            effect="plain"
-                            class="conversation-type"
-                          >
-                            {{ conversation.datasourceType }}
-                          </el-tag>
-                        </div>
-                        <div class="conversation-meta">
-                          <span>{{ truncateText(conversation.datasourceName || '未绑定数据源', 15) }}</span>
-                          <span>{{ formatConversationTime(conversation.lastMessageAt || conversation.updatedAt) }}</span>
-                        </div>
-                      </div>
-
-                      <el-button
-                        text
-                        class="delete-btn"
-                        :loading="deletingSessionId === conversation.sessionId"
-                        @click.stop="handleDeleteConversation(conversation)"
-                      >
-                        <el-icon><Delete /></el-icon>
-                      </el-button>
-                    </div>
-                  </div>
-
-                  <el-empty
-                    v-else
-                    description="还没有保存过智能助手会话"
-                    :image-size="88"
-                  />
-                </template>
-              </el-skeleton>
+              <div class="streaming-toggle wide">
+                <div>
+                  <span>流式返回</span>
+                  <small>开启后可以看到工具调用和增量回答。</small>
+                </div>
+                <el-switch
+                  v-model="streamingEnabled"
+                  size="small"
+                  inline-prompt
+                  active-text="开"
+                  inactive-text="关"
+                  :disabled="sending"
+                />
+              </div>
             </div>
           </el-card>
 
@@ -244,59 +206,94 @@
 
             <div
               v-loading="conversationLoading"
-              ref="messageContainerRef"
-              class="message-list"
-              @scroll="handleMessageScroll"
+              class="advanced-chat-frame"
+              :style="{ '--agent-chat-height': chatWindowHeight }"
             >
-              <div v-for="entry in messages" :key="entry.id" class="message-row" :class="entry.role">
-                <div class="message-avatar">
-                  <el-icon v-if="entry.role === 'assistant'"><Cpu /></el-icon>
-                  <el-icon v-else><User /></el-icon>
-                </div>
-
-                <div class="message-stack">
-                  <div class="message-bubble" :class="[entry.role, { system: entry.system }]">
-                    <div class="message-role">
-                      {{ entry.role === 'assistant' ? '日志助手' : '你' }}
-                    </div>
-
-                    <div v-if="entry.loading" class="loading-state">
-                      <el-icon class="is-loading"><Loading /></el-icon>
-                      <span>正在分析请求并调用工具...</span>
-                    </div>
-                    <div
-                      v-else-if="entry.role === 'assistant'"
-                      class="message-text markdown-body"
-                      v-html="renderMarkdown(entry.content)"
-                    />
-                    <div v-else class="message-text plain-text">{{ entry.content }}</div>
+              <vue-advanced-chat
+                ref="advancedChatRef"
+                :height="chatWindowHeight"
+                current-user-id="current-user"
+                :rooms="chatRooms"
+                :messages="chatMessages"
+                :room-id="currentRoomId"
+                :loading-rooms="historyLoading"
+                :rooms-loaded="!historyLoading"
+                :messages-loaded="!conversationLoading"
+                :single-room="true"
+                :show-add-room="false"
+                :show-files="false"
+                :show-audio="false"
+                :show-emojis="false"
+                :show-reaction-emojis="false"
+                :show-footer="false"
+                :show-send-icon="false"
+                :message-actions="[]"
+                :message-selection-actions="[]"
+                :room-actions="chatRoomActions"
+                :text-messages="chatTextMessages"
+                :text-formatting="{ disabled: true }"
+                :link-options="{ disabled: true }"
+                :styles="chatThemeStyles"
+                responsive-breakpoint="1080"
+                @send-message="handleChatSendMessage"
+                @fetch-messages="handleChatFetchMessages"
+                @room-action-handler="handleChatRoomAction"
+              >
+                <div
+                  v-for="entry in messages"
+                  :key="entry.id"
+                  :slot="`message_${entry.id}`"
+                  class="message-row"
+                  :class="entry.role"
+                >
+                  <div class="message-avatar">
+                    <el-icon v-if="entry.role === 'assistant'"><Cpu /></el-icon>
+                    <el-icon v-else><User /></el-icon>
                   </div>
 
-                  <div v-if="entry.toolCalls?.length" class="tool-call-list">
-                    <div v-for="tool in entry.toolCalls" :key="`${entry.id}-${tool.toolName}`" class="tool-call-card">
-                      <div class="tool-call-header">
-                        <strong>{{ tool.toolLabel }}</strong>
-                        <el-tag size="small" type="success">{{ tool.status }}</el-tag>
+                  <div class="message-stack">
+                    <div class="message-bubble" :class="[entry.role, { system: entry.system }]">
+                      <div class="message-role">
+                        {{ entry.role === 'assistant' ? '日志助手' : '你' }}
                       </div>
-                      <div class="tool-call-summary">{{ tool.summary }}</div>
-                      <div class="tool-call-meta">
-                        <span>{{ tool.toolName }}</span>
-                        <span v-if="tool.durationMs != null">{{ tool.durationMs }} ms</span>
+
+                      <div v-if="entry.loading" class="loading-state">
+                        <el-icon class="is-loading"><Loading /></el-icon>
+                        <span>正在分析请求并调用工具...</span>
+                      </div>
+                      <div
+                        v-else-if="entry.role === 'assistant'"
+                        class="message-text markdown-body"
+                        v-html="renderMarkdown(entry.content)"
+                      />
+                      <div v-else class="message-text plain-text">{{ entry.content }}</div>
+                    </div>
+
+                    <div v-if="entry.toolCalls?.length" class="tool-call-list">
+                      <div v-for="tool in entry.toolCalls" :key="`${entry.id}-${tool.toolName}`" class="tool-call-card">
+                        <div class="tool-call-header">
+                          <strong>{{ tool.toolLabel }}</strong>
+                          <el-tag size="small" type="success">{{ tool.status }}</el-tag>
+                        </div>
+                        <div class="tool-call-summary">{{ tool.summary }}</div>
+                        <div class="tool-call-meta">
+                          <span>{{ tool.toolName }}</span>
+                          <span v-if="tool.durationMs != null">{{ tool.durationMs }} ms</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div v-if="entry.role === 'assistant' && !entry.loading && entry.content" class="message-actions">
-                    <el-button
-                      size="small"
-                      plain
-                      :loading="emailingEntryId === entry.id"
-                      @click="handleSendEmail(entry)"
-                    >
-                      <el-icon><Message /></el-icon>
-                      发送到我的邮箱
-                    </el-button>
-                  </div>
+                    <div v-if="entry.role === 'assistant' && !entry.loading && entry.content" class="message-actions">
+                      <el-button
+                        size="small"
+                        plain
+                        :loading="emailingEntryId === entry.id"
+                        @click="handleSendEmail(entry)"
+                      >
+                        <el-icon><Message /></el-icon>
+                        发送到我的邮箱
+                      </el-button>
+                    </div>
 
                   <div v-if="entry.result && !entry.loading" class="result-panel">
                     <template v-if="entry.result.type === 'schema'">
@@ -785,49 +782,28 @@
                   </div>
                 </div>
               </div>
+              </vue-advanced-chat>
             </div>
 
-            <div class="composer">
+            <form class="agent-composer" @submit.prevent="submitComposer">
               <el-input
-                ref="composerInputRef"
-                v-model="draft"
+                v-model="chatDraft"
                 type="textarea"
-                :autosize="{ minRows: 3, maxRows: 6 }"
                 resize="none"
-                placeholder="例如：最近1小时错误日志；查看字段结构；按 severity 统计最近24小时数量；贴一条日志样本生成 Vector 组件"
-                @keydown.enter.exact.prevent="handleSend()"
+                :autosize="{ minRows: 1, maxRows: 4 }"
+                :disabled="sending"
+                placeholder="输入问题，或贴一条日志样本让助手生成解析组件。Enter 发送，Shift + Enter 换行。"
+                @keydown.enter.exact.prevent="submitComposer"
               />
-
-              <div class="composer-footer">
-                <div class="composer-hint">
-                  <span v-if="selectedDatasource">
-                    当前数据源：{{ selectedDatasource.name }}
-                  </span>
-                  <span v-else>
-                    请先选择一个可查询数据源
-                  </span>
-                </div>
-
-                <div class="composer-actions">
-                  <div class="streaming-toggle">
-                    <span>流式返回</span>
-                    <el-switch
-                      v-model="streamingEnabled"
-                      size="small"
-                      inline-prompt
-                      active-text="开"
-                      inactive-text="关"
-                      :disabled="sending"
-                    />
-                  </div>
-                  <el-button plain @click="draft = ''">清空</el-button>
-                  <el-button type="primary" :loading="sending" @click="handleSend()">
-                    <el-icon><Promotion /></el-icon>
-                    发送
-                  </el-button>
-                </div>
-              </div>
-            </div>
+              <el-button
+                type="primary"
+                native-type="submit"
+                :loading="sending"
+                :disabled="!chatDraft.trim() || !selectedDatasourceId"
+              >
+                发送
+              </el-button>
+            </form>
           </el-card>
         </section>
       </div>
@@ -850,11 +826,11 @@ import {
   MagicStick,
   Message,
   Plus,
-  Promotion,
   RefreshRight,
   User
 } from '@element-plus/icons-vue'
 import * as yaml from 'js-yaml'
+import { register } from 'vue-advanced-chat'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AiQueryResultCard from '@/components/ai-query-result/AiQueryResultCard.vue'
 import TimeSeriesChart from '@/components/ai-query-result/TimeSeriesChart.vue'
@@ -877,12 +853,15 @@ import {
 } from '@/api/agent'
 import { configComponentApi, vectorDeploymentApi, vectorMachineApi, type ConfigComponent } from '@/api/vector'
 
+register()
+
 interface ChatEntry {
   id: string
   role: 'user' | 'assistant'
   content: string
   loading?: boolean
   system?: boolean
+  createdAt?: string
   toolCalls?: AgentToolCall[]
   result?: AgentResult
   suggestions?: string[]
@@ -914,6 +893,48 @@ interface VectorCreateStep {
   state: 'done' | 'active' | 'todo'
 }
 
+interface ChatRoomUser {
+  _id: string
+  username: string
+  avatar: string
+  status: {
+    state: 'online' | 'offline'
+    lastChanged: string
+  }
+}
+
+interface ChatRoom {
+  roomId: string
+  roomName: string
+  avatar: string
+  users: ChatRoomUser[]
+  index?: string | number
+  lastMessage?: {
+    content: string
+    senderId: string
+    username?: string
+    timestamp?: string
+    saved?: boolean
+    distributed?: boolean
+    seen?: boolean
+  }
+}
+
+interface ChatMessage {
+  _id: string
+  senderId: string
+  content: string
+  username: string
+  date: string
+  timestamp: string
+  system?: boolean
+  saved?: boolean
+  distributed?: boolean
+  seen?: boolean
+  disableActions?: boolean
+  disableReactions?: boolean
+}
+
 const quickPrompts = [
   '查看字段结构',
   '最近1小时错误日志',
@@ -924,6 +945,8 @@ const quickPrompts = [
   '根据这条日志样本生成 Vector 组件'
 ]
 const STREAMING_PREFERENCE_KEY = 'agent-streaming-enabled'
+// vue-advanced-chat 需要显式像素高度，否则 Shadow DOM 会按消息内容撑开宿主元素。
+const chatWindowHeight = '640px'
 
 const readStreamingPreference = () => {
   if (typeof window === 'undefined') {
@@ -933,7 +956,7 @@ const readStreamingPreference = () => {
   return stored == null ? true : stored !== 'false'
 }
 
-const heroCollapsed = ref(false)
+const heroCollapsed = ref(true)
 const datasourceLoading = ref(false)
 const historyLoading = ref(false)
 const conversationLoading = ref(false)
@@ -943,21 +966,18 @@ const emailingEntryId = ref('')
 const committingPlanId = ref('')
 const loadingMachines = ref(false)
 const deployingConfigId = ref('')
+const advancedChatRef = ref<HTMLElement | null>(null)
 
 const datasources = ref<ConfigComponent[]>([])
 const conversations = ref<AgentConversationSummary[]>([])
 const vectorMachines = ref<any[]>([])
 const deployTargets = ref<Record<string, string[]>>({})
+const chatDraft = ref('')
 const selectedDatasourceId = ref('')
 const selectedConversationId = ref('')
 const sessionId = ref('')
-const draft = ref('')
 const streamingEnabled = ref(readStreamingPreference())
-const messageContainerRef = ref<HTMLElement>()
-const composerInputRef = ref<any>()
 const suppressDatasourceReset = ref(false)
-const autoScrollEnabled = ref(true)
-const autoScrollThreshold = 80
 
 const createSessionId = () => `agent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
@@ -966,6 +986,7 @@ const buildWelcomeEntry = (): ChatEntry => ({
   role: 'assistant',
   system: true,
   content: '我现在能帮你读取字段结构、查询日志列表、查看日志趋势；如果当前数据源是 ClickHouse，还可以做自然语言统计查询，或根据日志样本生成 Source/Remap/Sink 组件与部署预览。确认创建后，我会再让你选择 Vector 主机部署。',
+  createdAt: new Date().toISOString(),
   suggestions: quickPrompts
 })
 
@@ -978,6 +999,8 @@ const selectedDatasource = computed(() =>
 const activeConversation = computed(() =>
   conversations.value.find(item => item.sessionId === selectedConversationId.value) || null
 )
+
+const currentRoomId = computed(() => selectedConversationId.value || sessionId.value)
 
 const currentConversationTitle = computed(() => {
   if (activeConversation.value?.title) {
@@ -997,6 +1020,160 @@ const currentConversationSubtitle = computed(() => {
 })
 
 const selectedTableName = computed(() => getTableName(selectedDatasource.value?.configYaml))
+
+const chatUsers: ChatRoomUser[] = [
+  {
+    _id: 'current-user',
+    username: '你',
+    avatar: '',
+    status: { state: 'online', lastChanged: '当前在线' }
+  },
+  {
+    _id: 'assistant',
+    username: '日志助手',
+    avatar: '',
+    status: { state: 'online', lastChanged: '随时待命' }
+  }
+]
+
+const chatRoomActions = [
+  { name: 'deleteConversation', title: '删除会话' }
+]
+
+const chatTextMessages = {
+  ROOMS_EMPTY: '暂无历史会话',
+  ROOM_EMPTY: '请选择或新建一个对话',
+  NEW_MESSAGES: '新消息',
+  MESSAGE_DELETED: '这条消息已删除',
+  MESSAGES_EMPTY: '暂无消息',
+  CONVERSATION_STARTED: '会话开始于：',
+  TYPE_MESSAGE: '输入问题，或贴一条日志样本让助手生成解析组件',
+  SEARCH: '搜索历史会话',
+  IS_ONLINE: '在线',
+  LAST_SEEN: '最后在线 ',
+  IS_TYPING: '正在输入...',
+  CANCEL_SELECT_MESSAGE: '取消选择'
+}
+
+const chatThemeStyles = {
+  general: {
+    color: '#0f172a',
+    colorButtonClear: '#0f766e',
+    colorButton: '#ffffff',
+    backgroundColorButton: '#0f766e',
+    backgroundInput: '#ffffff',
+    colorPlaceholder: '#94a3b8',
+    colorCaret: '#0f766e',
+    colorSpinner: '#0f766e',
+    borderStyle: '1px solid rgba(148, 163, 184, 0.22)',
+    backgroundScrollIcon: '#ffffff'
+  },
+  container: {
+    border: '1px solid rgba(148, 163, 184, 0.16)',
+    borderRadius: '22px',
+    boxShadow: '0 22px 60px rgba(15, 23, 42, 0.08)'
+  },
+  header: {
+    background: '#ffffff',
+    colorRoomName: '#0f172a',
+    colorRoomInfo: '#64748b',
+    position: 'relative',
+    width: '100%'
+  },
+  footer: {
+    background: '#f8fafc',
+    borderStyleInput: '1px solid rgba(148, 163, 184, 0.26)',
+    borderInputSelected: '#0f766e',
+    backgroundReply: '#ecfdf5',
+    backgroundTagActive: '#ccfbf1',
+    backgroundTag: '#f1f5f9'
+  },
+  content: {
+    background: '#f8fafc'
+  },
+  sidemenu: {
+    background: '#ffffff',
+    backgroundHover: '#f0fdfa',
+    backgroundActive: '#ccfbf1',
+    colorActive: '#0f766e',
+    borderColorSearch: 'rgba(148, 163, 184, 0.2)'
+  },
+  message: {
+    background: '#ffffff',
+    backgroundMe: '#dbeafe',
+    color: '#0f172a',
+    colorStarted: '#94a3b8',
+    colorUsername: '#64748b',
+    colorTimestamp: '#94a3b8',
+    backgroundDate: '#e0f2fe',
+    colorDate: '#0369a1',
+    backgroundSystem: '#ecfdf5',
+    colorSystem: '#0f766e'
+  },
+  room: {
+    colorUsername: '#0f172a',
+    colorMessage: '#64748b',
+    colorTimestamp: '#94a3b8',
+    colorStateOnline: '#16a34a',
+    colorStateOffline: '#94a3b8',
+    backgroundCounterBadge: '#0f766e',
+    colorCounterBadge: '#ffffff'
+  }
+}
+
+const chatRooms = computed<ChatRoom[]>(() => {
+  const draftRoom: ChatRoom = {
+    roomId: sessionId.value,
+    roomName: '新对话',
+    avatar: '',
+    users: chatUsers,
+    index: Number.MAX_SAFE_INTEGER,
+    lastMessage: {
+      content: selectedDatasource.value ? `当前数据源：${selectedDatasource.value.name}` : '选择数据源后开始提问',
+      senderId: 'assistant',
+      username: '日志助手',
+      timestamp: '草稿'
+    }
+  }
+
+  const historyRooms = conversations.value.map((conversation, index) => ({
+    roomId: conversation.sessionId,
+    roomName: formatConversationLabel(conversation),
+    avatar: '',
+    users: chatUsers,
+    index: conversations.value.length - index,
+    lastMessage: {
+      content: conversation.preview || conversation.datasourceName || '历史会话',
+      senderId: 'assistant',
+      username: '日志助手',
+      timestamp: formatConversationTime(conversation.lastMessageAt || conversation.updatedAt),
+      seen: true
+    }
+  }))
+
+  return selectedConversationId.value
+    ? historyRooms
+    : [draftRoom, ...historyRooms]
+})
+
+const chatMessages = computed<ChatMessage[]>(() => messages.value.map((entry) => {
+  const createdAt = entry.createdAt ? new Date(entry.createdAt) : new Date()
+  const validDate = Number.isNaN(createdAt.getTime()) ? new Date() : createdAt
+  return {
+    _id: entry.id,
+    senderId: entry.role === 'user' ? 'current-user' : 'assistant',
+    username: entry.role === 'user' ? '你' : '日志助手',
+    content: entry.loading ? '正在分析请求并调用工具...' : (entry.content || ' '),
+    date: validDate.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }),
+    timestamp: validDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+    system: Boolean(entry.system),
+    saved: true,
+    distributed: true,
+    seen: entry.role === 'user',
+    disableActions: true,
+    disableReactions: true
+  }
+}))
 
 const unwrapResult = <T>(response: ApiResult<T> | T) => {
   if (response && typeof response === 'object' && 'data' in (response as ApiResult<T>)) {
@@ -1477,6 +1654,7 @@ const buildAssistantEntry = (response?: AgentChatResponse): ChatEntry => ({
   role: 'assistant',
   loading: false,
   content: response?.success ? (response.answer || '已完成处理') : (response?.error || '处理失败'),
+  createdAt: new Date().toISOString(),
   toolCalls: response?.toolCalls || [],
   result: response?.result,
   suggestions: response?.suggestions || []
@@ -1534,7 +1712,6 @@ const applyStreamEvent = (entry: ChatEntry, event: AgentStreamEvent) => {
         : (event.message || '流式响应失败')
       break
   }
-  void scrollToBottom()
 }
 
 const mapConversationMessages = (entries?: AgentConversationEntry[]): ChatEntry[] => {
@@ -1546,50 +1723,11 @@ const mapConversationMessages = (entries?: AgentConversationEntry[]): ChatEntry[
     id: `history-${entry.id}`,
     role: entry.role,
     content: entry.content || '',
+    createdAt: entry.createdAt,
     toolCalls: entry.toolCalls || [],
     result: entry.result,
     suggestions: entry.suggestions || []
   }))
-}
-
-const scrollToBottom = async () => {
-  await nextTick()
-  const container = messageContainerRef.value
-  if (!container) {
-    return
-  }
-  if (autoScrollEnabled.value) {
-    container.scrollTop = container.scrollHeight
-  }
-}
-
-const forceScrollToBottom = async () => {
-  await nextTick()
-  const container = messageContainerRef.value
-  if (!container) {
-    return
-  }
-  container.scrollTop = container.scrollHeight
-}
-
-const isNearBottom = () => {
-  const container = messageContainerRef.value
-  if (!container) {
-    return true
-  }
-  const distance = container.scrollHeight - container.scrollTop - container.clientHeight
-  return distance <= autoScrollThreshold
-}
-
-const handleMessageScroll = () => {
-  autoScrollEnabled.value = isNearBottom()
-}
-
-const focusComposerInput = async () => {
-  await nextTick()
-  if (composerInputRef.value?.focus) {
-    composerInputRef.value.focus()
-  }
 }
 
 const loadDatasources = async () => {
@@ -1698,10 +1836,96 @@ const canDeploy = (result?: AgentResult) => {
   return isDeploymentReady(result) && getDeployTargets(result).length > 0 && deployingConfigId.value !== getDeploymentConfigId(result)
 }
 
+const patchAdvancedChatShadowStyles = async () => {
+  await nextTick()
+  const shadowRoot = advancedChatRef.value?.shadowRoot
+  if (!shadowRoot || shadowRoot.querySelector('#agent-chat-shadow-style')) {
+    return
+  }
+
+  const style = document.createElement('style')
+  style.id = 'agent-chat-shadow-style'
+  style.textContent = `
+    .vac-message-wrapper {
+      margin: 0 0 20px !important;
+    }
+
+    .vac-message-wrapper:last-child {
+      margin-bottom: 6px !important;
+    }
+
+    .vac-message-wrapper .vac-message-box {
+      flex: 0 0 94% !important;
+      max-width: 94% !important;
+      padding: 0 !important;
+    }
+
+    .vac-message-wrapper .vac-message-box.vac-offset-current {
+      margin-left: 6% !important;
+      justify-content: flex-end !important;
+    }
+
+    .vac-message-wrapper slot {
+      display: block !important;
+      width: 100% !important;
+    }
+
+    .vac-col-messages .vac-messages-container {
+      padding: 18px 18px 28px !important;
+    }
+
+    .vac-col-messages .vac-messages-hidden {
+      opacity: 1 !important;
+    }
+
+    .vac-container-scroll > .vac-loader-wrapper {
+      display: none !important;
+    }
+  `
+  shadowRoot.appendChild(style)
+}
+
 const formatMachineLabel = (machine: any) => {
   const name = machine?.name || machine?.hostname || machine?.id || '未命名主机'
   const address = machine?.ipAddress || machine?.hostname || machine?.status || ''
   return address ? `${name} (${address})` : String(name)
+}
+
+const normalizeChatEvent = <T extends Record<string, any>>(event: T | CustomEvent<T>) => {
+  return 'detail' in event ? event.detail : event
+}
+
+const handleChatSendMessage = (event: CustomEvent<{ content?: string }> | { content?: string }) => {
+  const detail = normalizeChatEvent(event)
+  void handleSend(String(detail.content || ''))
+}
+
+const submitComposer = () => {
+  const content = chatDraft.value.trim()
+  if (!content) {
+    return
+  }
+  chatDraft.value = ''
+  void handleSend(content)
+}
+
+const handleChatFetchMessages = (event: CustomEvent<{ room?: { roomId?: string } }> | { room?: { roomId?: string } }) => {
+  const detail = normalizeChatEvent(event)
+  const roomId = String(detail.room?.roomId || '')
+  if (!roomId || roomId === selectedConversationId.value || roomId === sessionId.value) {
+    return
+  }
+  const conversation = conversations.value.find(item => item.sessionId === roomId)
+  if (conversation) {
+    void openConversation(conversation)
+  }
+}
+
+const handleChatRoomAction = (event: CustomEvent<{ roomId?: string, action?: { name?: string } }> | { roomId?: string, action?: { name?: string } }) => {
+  const detail = normalizeChatEvent(event)
+  if (detail.action?.name === 'deleteConversation' && detail.roomId) {
+    void handleDeleteConversation(detail.roomId)
+  }
 }
 
 const handleDeployVectorConfig = async (result?: AgentResult) => {
@@ -1752,17 +1976,14 @@ const refreshConversationList = async () => {
 const startNewConversation = (showMessage = false) => {
   selectedConversationId.value = ''
   sessionId.value = createSessionId()
-  draft.value = ''
   messages.value = [buildWelcomeEntry()]
   if (showMessage) {
     ElMessage.success('已开始新对话')
   }
-  void forceScrollToBottom()
-  void focusComposerInput()
 }
 
 const usePrompt = (prompt: string) => {
-  draft.value = prompt
+  void handleSend(prompt)
 }
 
 const openConversation = async (conversation: AgentConversationSummary) => {
@@ -1793,8 +2014,6 @@ const openConversation = async (conversation: AgentConversationSummary) => {
     await nextTick()
     suppressDatasourceReset.value = false
     conversationLoading.value = false
-    await forceScrollToBottom()
-    await focusComposerInput()
   }
 }
 
@@ -1907,7 +2126,6 @@ const handleCommitVectorPlan = async (entry: ChatEntry) => {
     }
 
     await loadConversationList()
-    await forceScrollToBottom()
   } catch (error: any) {
     ElMessage.error(error?.message || '确认创建失败')
   } finally {
@@ -1915,13 +2133,13 @@ const handleCommitVectorPlan = async (entry: ChatEntry) => {
   }
 }
 
-const handleSend = async (preset?: string) => {
+const handleSend = async (content: string) => {
   if (sending.value) {
     return
   }
 
-  const content = (preset || draft.value).trim()
-  if (!content) {
+  const normalizedContent = content.trim()
+  if (!normalizedContent) {
     ElMessage.warning('请输入问题')
     return
   }
@@ -1931,26 +2149,26 @@ const handleSend = async (preset?: string) => {
   }
 
   sending.value = true
-  draft.value = ''
 
   const userEntry: ChatEntry = {
     id: `user-${Date.now()}`,
     role: 'user',
-    content
+    content: normalizedContent,
+    createdAt: new Date().toISOString()
   }
   const pendingEntry: ChatEntry = {
     id: `assistant-${Date.now()}`,
     role: 'assistant',
     content: '',
-    loading: true
+    loading: true,
+    createdAt: new Date().toISOString()
   }
 
   messages.value.push(userEntry, pendingEntry)
-  await forceScrollToBottom()
 
   try {
     const payload = {
-        message: content,
+        message: normalizedContent,
         datasourceId: selectedDatasourceId.value,
         sessionId: sessionId.value
       }
@@ -1979,7 +2197,6 @@ const handleSend = async (preset?: string) => {
       : (error?.message || '请求失败，请稍后重试。')
   } finally {
     sending.value = false
-    await scrollToBottom()
   }
 }
 
@@ -1989,8 +2206,12 @@ onMounted(async () => {
   if (conversations.value[0]) {
     await openConversation(conversations.value[0])
   }
-  await focusComposerInput()
+  await patchAdvancedChatShadowStyles()
 })
+
+watch([chatRooms, chatMessages], () => {
+  void patchAdvancedChatShadowStyles()
+}, { flush: 'post' })
 
 watch(streamingEnabled, (value) => {
   if (typeof window === 'undefined') {
@@ -2271,127 +2492,65 @@ html.dark .agent-page {
   }
 }
 
-.history-card :deep(.el-card__body) {
+.session-card :deep(.el-card__body) {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  gap: 14px;
 }
 
-.history-body {
+.session-control {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
-.history-skeleton {
-  display: grid;
-  gap: 12px;
-}
-
-.history-skeleton-item {
-  height: 88px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, rgba(226, 232, 240, 0.55), rgba(241, 245, 249, 0.9));
-}
-
-.draft-card,
-.conversation-item {
-  border-radius: 8px;
+.session-status {
+  border-radius: 16px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.14), transparent 45%),
+    rgba(248, 250, 252, 0.86);
   border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(255, 255, 255, 0.8);
-  transition: 0.2s ease;
 }
 
-.draft-card {
-  padding: 12px 14px;
-  cursor: pointer;
-
-  p {
-    margin: 6px 0 0;
-    color: var(--agent-muted);
-    line-height: 1.5;
-    font-size: 12px;
-  }
-
-  &.active,
-  &:hover {
-    border-color: rgba(14, 165, 233, 0.35);
-    box-shadow: 0 14px 34px rgba(14, 165, 233, 0.12);
-    transform: translateY(-1px);
-  }
+.session-status span,
+.session-status small {
+  display: block;
+  color: var(--agent-muted);
+  font-size: 12px;
 }
 
-.draft-card-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.session-status strong {
+  display: block;
+  margin: 6px 0;
   color: var(--agent-ink);
+  line-height: 1.45;
 }
 
-.conversation-list {
+.session-actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.conversation-item {
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-
-  &:hover {
-    border-color: rgba(14, 165, 233, 0.35);
-    transform: translateY(-1px);
-  }
-
-  &.active {
-    border-color: rgba(15, 118, 110, 0.42);
-    background: linear-gradient(180deg, rgba(236, 253, 245, 0.9), rgba(240, 249, 255, 0.9));
-    box-shadow: 0 16px 34px rgba(15, 118, 110, 0.12);
-  }
-}
-
-.conversation-main {
-  min-width: 0;
-  flex: 1;
-}
-
-.conversation-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-
-  strong {
-    color: var(--agent-ink);
-    min-width: 0;
-    flex: 1;
-    font-size: 13px;
-    line-height: 1.35;
-  }
-}
-
-.conversation-type {
-  text-transform: uppercase;
-}
-
-.conversation-meta {
-  margin-top: 6px;
-  display: flex;
-  justify-content: space-between;
   gap: 10px;
-  color: #94a3b8;
-  font-size: 11px;
+  flex-wrap: wrap;
 }
 
-.conversation-meta span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.streaming-toggle.wide {
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(240, 249, 255, 0.82);
+  border: 1px solid rgba(14, 165, 233, 0.16);
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  small {
+    color: var(--agent-muted);
+    line-height: 1.4;
+  }
 }
 
 .delete-btn {
@@ -2506,6 +2665,62 @@ html.dark .agent-page {
   align-items: center;
 }
 
+.advanced-chat-frame {
+  flex: 1;
+  height: var(--agent-chat-height);
+  min-height: var(--agent-chat-height);
+  max-height: var(--agent-chat-height);
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+.advanced-chat-frame vue-advanced-chat {
+  display: block;
+  width: 100%;
+  height: var(--agent-chat-height);
+  min-height: var(--agent-chat-height);
+  max-height: var(--agent-chat-height);
+  overflow: hidden;
+}
+
+.agent-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92)),
+    radial-gradient(circle at left top, rgba(20, 184, 166, 0.12), transparent 42%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+
+  :deep(.el-textarea__inner) {
+    min-height: 44px !important;
+    border: 0;
+    border-radius: 14px;
+    padding: 12px 14px;
+    color: var(--agent-ink);
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+    line-height: 1.55;
+  }
+
+  :deep(.el-textarea__inner:focus) {
+    box-shadow:
+      inset 0 0 0 1px rgba(15, 118, 110, 0.48),
+      0 0 0 3px rgba(20, 184, 166, 0.12);
+  }
+
+  .el-button {
+    min-height: 44px;
+    border-radius: 14px;
+    padding-inline: 22px;
+    font-weight: 700;
+  }
+}
+
 .message-list {
   flex: 1;
   min-height: 0;
@@ -2529,15 +2744,27 @@ html.dark .agent-page {
 .message-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
+  width: 100%;
+  padding: 2px 0 18px;
   animation: message-in 0.3s ease-out;
 
   &.user {
     flex-direction: row-reverse;
+    padding-top: 0;
+    padding-bottom: 20px;
 
     .message-stack {
       align-items: flex-end;
     }
+
+    .message-bubble {
+      max-width: min(100%, 560px);
+    }
+  }
+
+  &.assistant {
+    padding-bottom: 24px;
   }
 }
 
@@ -2575,7 +2802,7 @@ html.dark .agent-page {
   width: min(100%, 780px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .message-row.user .message-stack {
@@ -2586,6 +2813,7 @@ html.dark .agent-page {
   border-radius: 18px;
   padding: 16px 20px;
   position: relative;
+  max-width: min(100%, 720px);
 
   &.assistant {
     color: var(--agent-ink);
@@ -2603,7 +2831,7 @@ html.dark .agent-page {
     color: #fff;
     background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
     border-radius: 18px 18px 4px 18px;
-    box-shadow: 0 4px 16px rgba(14, 165, 233, 0.25);
+    box-shadow: 0 10px 22px rgba(14, 165, 233, 0.2);
   }
 }
 
@@ -2750,12 +2978,14 @@ html.dark .agent-page {
 .tool-call-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+  gap: 12px;
+  width: 100%;
 }
 
 .message-actions {
   display: flex;
   justify-content: flex-start;
+  margin-top: -2px;
 }
 
 .message-row.user .message-actions {
@@ -2809,7 +3039,10 @@ html.dark .agent-page {
 }
 
 .result-panel {
-  padding: 16px;
+  width: 100%;
+  padding: 18px;
+  margin-top: 2px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
 }
 
 .result-header {
@@ -3317,64 +3550,6 @@ html.dark .agent-page {
   margin-top: 16px;
 }
 
-.composer {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px 0 0;
-  flex-shrink: 0;
-  position: relative;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: -20px;
-    left: 0;
-    right: 0;
-    height: 20px;
-    background: linear-gradient(to top, var(--macos-card-bg), transparent);
-    pointer-events: none;
-  }
-
-  :deep(.el-textarea__inner) {
-    border-radius: 16px;
-    padding: 14px 18px;
-    font-size: 14px;
-    line-height: 1.6;
-    border: 1.5px solid var(--macos-border);
-    background: var(--macos-fill-tertiary);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    transition: all 0.2s ease;
-    resize: none;
-
-    &:focus {
-      border-color: var(--macos-blue);
-      box-shadow: 0 0 0 4px var(--macos-blue-light), 0 2px 8px rgba(0, 0, 0, 0.04);
-      background: var(--macos-card-bg);
-    }
-  }
-}
-
-.composer-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-}
-
-.composer-hint {
-  color: var(--macos-text-tertiary);
-  font-size: 12px;
-}
-
-.composer-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
 .streaming-toggle {
   display: inline-flex;
   align-items: center;
@@ -3423,7 +3598,6 @@ html.dark .agent-page {
 
   .hero-shell,
   .chat-toolbar,
-  .composer-footer,
   .result-header,
   .panel-header {
     grid-template-columns: 1fr;
@@ -3432,8 +3606,7 @@ html.dark .agent-page {
   }
 
   .chat-toolbar-actions,
-  .panel-actions,
-  .composer-actions {
+  .panel-actions {
     width: 100%;
   }
 
@@ -3448,10 +3621,6 @@ html.dark .agent-page {
 
   .message-stack {
     width: 100%;
-  }
-
-  .conversation-item {
-    padding-right: 10px;
   }
 
   .chat-card :deep(.el-card__body) {

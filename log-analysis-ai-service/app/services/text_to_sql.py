@@ -1,6 +1,7 @@
 import time
 import logging
 from typing import Dict, Any, Optional, List
+import httpx
 from langchain_anthropic import ChatAnthropic
 from app.config import Settings
 
@@ -18,6 +19,13 @@ class TextToSQLService:
     def _initialize(self):
         """初始化LangChain组件"""
         try:
+            if self._use_openai_provider():
+                logger.info(f"初始化OpenAI兼容API，模型: {self.settings.openai_model}")
+                logger.info(f"使用Base URL: {self.settings.openai_base_url}")
+                if not self.settings.openai_api_key:
+                    raise ValueError("OPENAI_API_KEY不能为空")
+                return
+
             # 初始化Claude
             logger.info(f"初始化Claude API，模型: {self.settings.claude_model}")
             logger.info(f"使用Base URL: {self.settings.anthropic_base_url}")
@@ -34,6 +42,10 @@ class TextToSQLService:
         except Exception as e:
             logger.error(f"TextToSQL服务初始化失败: {e}")
             raise
+
+    def _use_openai_provider(self) -> bool:
+        """判断是否使用OpenAI兼容接口。"""
+        return self.settings.llm_provider.lower() in {"openai", "openai-compatible", "chat-completions"}
 
     def generate_sql(
         self,
@@ -68,9 +80,8 @@ class TextToSQLService:
             logger.info(f"生成SQL查询: {natural_language}")
             logger.debug(f"表名: {table_name}, 数据源类型: {datasource_type}")
 
-            # 调用Claude生成SQL
-            response = self._llm.invoke(prompt)
-            sql = response.content.strip()
+            # 调用配置的模型生成SQL
+            sql = self._invoke_llm(prompt)
 
             # 清理SQL（移除markdown代码块标记）
             sql = self._clean_sql(sql)
@@ -98,6 +109,46 @@ class TextToSQLService:
                 "error": error_msg,
                 "execution_time": round(execution_time, 2)
             }
+
+    def _invoke_llm(self, prompt: str) -> str:
+        """根据配置调用Anthropic或OpenAI兼容模型。"""
+        if self._use_openai_provider():
+            return self._invoke_openai_compatible(prompt)
+        if self._llm is None:
+            raise RuntimeError("Anthropic LLM未初始化")
+        response = self._llm.invoke(prompt)
+        return response.content.strip()
+
+    def _invoke_openai_compatible(self, prompt: str) -> str:
+        """调用OpenAI兼容的/v1/chat/completions接口。"""
+        base_url = self.settings.openai_base_url.rstrip("/")
+        url = f"{base_url}/chat/completions"
+        payload = {
+            "model": self.settings.openai_model,
+            "temperature": 0,
+            "max_tokens": 4096,
+            "messages": [
+                {"role": "system", "content": "你是数据库SQL专家，只返回可执行的SELECT SQL。"},
+                {"role": "user", "content": prompt}
+            ]
+        }
+        headers = {
+            "Authorization": f"Bearer {self.settings.openai_api_key}",
+            "Content-Type": "application/json"
+        }
+        with httpx.Client(timeout=self.settings.max_execution_time) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("OpenAI兼容接口返回空choices")
+        message = choices[0].get("message") or {}
+        content = message.get("content")
+        if not content:
+            raise RuntimeError("OpenAI兼容接口返回空content")
+        return content.strip()
 
     def _build_prompt(
         self,
@@ -245,7 +296,7 @@ MySQL语法提示:
             是否正常
         """
         try:
-            return self._llm is not None
+            return bool(self.settings.openai_api_key) if self._use_openai_provider() else self._llm is not None
         except Exception as e:
             logger.error(f"服务测试失败: {e}")
             return False

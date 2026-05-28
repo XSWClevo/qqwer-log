@@ -286,6 +286,15 @@ const toggleDark = useToggle(isDark)
     }
   }
 
+  :deep(> .el-menu-item),
+  :deep(> .el-sub-menu > .el-sub-menu__title) {
+    padding-left: 18px !important;
+  }
+
+  :deep(> .el-menu-item) {
+    padding-right: 16px !important;
+  }
+
   :deep(.el-sub-menu__title) {
     position: relative;
     padding-right: 38px !important;
@@ -320,18 +329,39 @@ const toggleDark = useToggle(isDark)
 
   :deep(.el-sub-menu .el-menu) {
     background: transparent;
+    padding: 4px 0 6px;
   }
   
   :deep(.el-sub-menu .el-menu-item) {
     box-sizing: border-box;
+    position: relative;
     width: 100%;
-    padding-left: 48px !important;
+    padding-left: 76px !important;
+    padding-right: 12px !important;
     height: 40px;
     line-height: 40px;
+    font-size: 14px;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 58px;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.35;
+      transform: translateY(-50%);
+    }
 
     &.is-active {
         background: var(--macos-blue-light);
         color: var(--macos-blue);
+    }
+
+    &.is-active::before {
+      opacity: 0.75;
     }
   }
 }

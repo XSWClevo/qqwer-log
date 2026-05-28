@@ -5,8 +5,8 @@ import cn.mw.loganalysis.stats.dto.AiQueryRequest;
 import cn.mw.loganalysis.stats.dto.AiQueryResponse;
 import cn.mw.loganalysis.stats.service.AiQueryService;
 import cn.mw.loganalysis.stats.service.DynamicLogQueryService;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -17,19 +17,36 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Component
-@RequiredArgsConstructor
 public class Text2SqlToolHandler {
 
     private static final int MAX_TEXT2SQL_ROWS = 200;
 
     private final AiQueryService aiQueryService;
     private final DynamicLogQueryService dynamicLogQueryService;
+    private final List<Text2SqlPreflightStrategy> preflightStrategies;
+
+    /**
+     * 注入 Text2SQL 服务和前置确定性策略，并按策略优先级排序。
+     */
+    public Text2SqlToolHandler(AiQueryService aiQueryService,
+                               DynamicLogQueryService dynamicLogQueryService,
+                               List<Text2SqlPreflightStrategy> preflightStrategies) {
+        this.aiQueryService = aiQueryService;
+        this.dynamicLogQueryService = dynamicLogQueryService;
+        this.preflightStrategies = new ArrayList<>(preflightStrategies);
+        AnnotationAwareOrderComparator.sort(this.preflightStrategies);
+    }
 
     public AgentToolPayload handle(AgentExecutionContext context, String query) {
         long startedAt = System.currentTimeMillis();
 
         if (StringUtils.isBlank(context.datasourceType()) || !"clickhouse".equalsIgnoreCase(context.datasourceType())) {
             throw new IllegalStateException("text2sql_query 仅支持 ClickHouse 数据源，当前数据源类型为 " + context.datasourceType());
+        }
+
+        AgentToolPayload preflightPayload = executePreflight(context, query);
+        if (preflightPayload != null) {
+            return preflightPayload;
         }
 
         AiQueryRequest request = new AiQueryRequest();
@@ -73,6 +90,18 @@ public class Text2SqlToolHandler {
                         .totalExecutionTime(response.getTotalExecutionTime())
                         .build())
                 .build();
+    }
+
+    /**
+     * 先尝试用确定性策略处理简单统计，降低对大模型 SQL 生成的依赖。
+     */
+    private AgentToolPayload executePreflight(AgentExecutionContext context, String query) {
+        for (Text2SqlPreflightStrategy strategy : preflightStrategies) {
+            if (strategy.supports(context, query)) {
+                return strategy.execute(context, query);
+            }
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")

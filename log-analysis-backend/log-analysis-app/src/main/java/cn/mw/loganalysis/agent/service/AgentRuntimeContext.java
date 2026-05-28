@@ -8,6 +8,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 规则 Agent 的一次请求上下文。
  *
@@ -36,6 +38,10 @@ class AgentRuntimeContext {
 
     private AgentIntent intent;
 
+    private List<IntentSlotsEntity> intentSlots;
+
+    private IntentNode intentNode;
+
     private String keyword;
 
     private String severity;
@@ -47,4 +53,14 @@ class AgentRuntimeContext {
     private AgentToolPayload toolPayload;
 
     private AgentChatResponse response;
+
+    /**
+     * 获取模型 NLU 建议的通用槽位。
+     */
+    AgentNluSlots getNluSlots() {
+        if (intentNode == null || !(intentNode.getSlots() instanceof AgentNluSlots slots)) {
+            return null;
+        }
+        return slots;
+    }
 }

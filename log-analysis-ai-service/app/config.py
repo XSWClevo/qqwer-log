@@ -5,12 +5,20 @@ from functools import lru_cache
 class Settings(BaseSettings):
     """应用配置"""
 
+    # LLM Provider配置：anthropic / openai
+    llm_provider: str = "anthropic"
+
     # Anthropic API配置
     anthropic_base_url: str = "https://api.anthropic.com"
-    anthropic_api_key: str
+    anthropic_api_key: str = ""
     claude_model: str = "claude-3-5-sonnet-20241022"
     anthropic_default_opus_model: str = "claude-3-opus-20240229"
     anthropic_default_sonnet_model: str = "claude-3-5-sonnet-20241022"
+
+    # OpenAI-compatible API配置
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
 
     # 服务配置
     service_host: str = "0.0.0.0"
