@@ -61,6 +61,19 @@ class SqlCandidateValidatorTest {
     }
 
     @Test
+    void shouldRejectCrossDatabaseSameTableSql() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM other_db.syslog_logs")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("表");
+    }
+
+    @Test
     void shouldRejectCommaSeparatedCrossTableSql() {
         givenCurrentTableSchema();
 
@@ -97,6 +110,71 @@ class SqlCandidateValidatorTest {
 
         assertThat(result.valid()).isFalse();
         assertThat(result.reason()).contains("字段");
+    }
+
+    @Test
+    void shouldRejectUnknownPlainSelectFields() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT message, unknown_field FROM syslog_logs")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("字段");
+    }
+
+    @Test
+    void shouldRejectUnknownPlainWhereFields() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT message FROM syslog_logs WHERE unknown_field = 1")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("字段");
+    }
+
+    @Test
+    void shouldRejectUnknownPlainGroupByFields() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT severity, count() FROM syslog_logs GROUP BY unknown_field")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("字段");
+    }
+
+    @Test
+    void shouldRejectUnknownPlainOrderByFields() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT message FROM syslog_logs ORDER BY unknown_field DESC")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("字段");
+    }
+
+    @Test
+    void shouldRejectWithCteSql() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("WITH recent AS (SELECT `message` FROM `syslog_logs`) SELECT `message` FROM recent")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("WITH").contains("CTE");
     }
 
     @Test

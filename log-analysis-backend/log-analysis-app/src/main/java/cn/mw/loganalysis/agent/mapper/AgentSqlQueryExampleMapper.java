@@ -51,6 +51,7 @@ public interface AgentSqlQueryExampleMapper extends BaseMapper<AgentSqlQueryExam
                 question = EXCLUDED.question,
                 sql_template = EXCLUDED.sql_template,
                 result_type = EXCLUDED.result_type,
+                hit_count = agent_sql_query_examples.hit_count + 1,
                 last_used_at = EXCLUDED.last_used_at,
                 updated_at = EXCLUDED.updated_at
             """)

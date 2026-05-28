@@ -27,10 +27,10 @@ class HistorySqlCandidateProviderTest {
 
     @Test
     void shouldReturnHistoryCandidateForSimilarNormalizedQuestion() {
-        String normalizedQuestion = normalizer.normalize("按 severity 统计最近1小时日志数量");
-        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example(normalizedQuestion)));
+        String normalizedQuestion = normalizer.normalize("按 severity 统计日志数量");
+        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example("按 severity 统计日志数量", normalizedQuestion)));
 
-        Optional<SqlCandidate> candidate = provider.generate(context, "按 severity 统计最近24小时日志数量");
+        Optional<SqlCandidate> candidate = provider.generate(context, "按 severity 统计日志数量");
 
         assertThat(candidate).isPresent();
         assertThat(candidate.get().source()).isEqualTo("history");
@@ -45,8 +45,8 @@ class HistorySqlCandidateProviderTest {
 
     @Test
     void shouldReturnEmptyWhenSimilarityIsLow() {
-        String normalizedQuestion = normalizer.normalize("按 severity 统计最近1小时日志数量");
-        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example(normalizedQuestion)));
+        String normalizedQuestion = normalizer.normalize("按 severity 统计日志数量");
+        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example("按 severity 统计日志数量", normalizedQuestion)));
 
         Optional<SqlCandidate> candidate = provider.generate(context, "查询 message 包含 timeout 的最新明细");
 
@@ -84,13 +84,63 @@ class HistorySqlCandidateProviderTest {
         assertThat(normalizer.similarity(previous, current)).isGreaterThanOrEqualTo(0.58D);
     }
 
-    private AgentSqlQueryExample example(String normalizedQuestion) {
+    @Test
+    void shouldRejectHistoryCandidateWhenRelativeTimeRangeDiffers() {
+        String normalizedQuestion = normalizer.normalize("按 severity 统计最近1小时日志数量");
+        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example("按 severity 统计最近1小时日志数量", normalizedQuestion)));
+
+        Optional<SqlCandidate> candidate = provider.generate(context, "按 severity 统计最近24小时日志数量");
+
+        assertThat(candidate).isEmpty();
+    }
+
+    @Test
+    void shouldRejectHistoryCandidateWhenPastTimeRangeDiffers() {
+        String normalizedQuestion = normalizer.normalize("按 severity 统计过去1小时日志数量");
+        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example("按 severity 统计过去1小时日志数量", normalizedQuestion)));
+
+        Optional<SqlCandidate> candidate = provider.generate(context, "按 severity 统计过去24小时日志数量");
+
+        assertThat(candidate).isEmpty();
+    }
+
+    @Test
+    void shouldRejectHistoryCandidateWhenWithinTimeRangeDiffers() {
+        String normalizedQuestion = normalizer.normalize("按 severity 统计1小时内日志数量");
+        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example("按 severity 统计1小时内日志数量", normalizedQuestion)));
+
+        Optional<SqlCandidate> candidate = provider.generate(context, "按 severity 统计24小时内日志数量");
+
+        assertThat(candidate).isEmpty();
+    }
+
+    @Test
+    void shouldRejectHistoryCandidateWhenAnyComparedRelativeRangeDiffers() {
+        String normalizedQuestion = normalizer.normalize("比较最近1小时和最近24小时日志数量");
+        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example("比较最近1小时和最近24小时日志数量", normalizedQuestion)));
+
+        Optional<SqlCandidate> candidate = provider.generate(context, "比较最近1小时和最近7天日志数量");
+
+        assertThat(candidate).isEmpty();
+    }
+
+    @Test
+    void shouldReturnHistoryCandidateWhenRelativeTimeRangeMatches() {
+        String normalizedQuestion = normalizer.normalize("按 severity 统计最近1小时日志数量");
+        when(repository.findRecent(1001L, "sink-1")).thenReturn(List.of(example("按 severity 统计最近1小时日志数量", normalizedQuestion)));
+
+        Optional<SqlCandidate> candidate = provider.generate(context, "按 severity 统计最近1小时日志数量");
+
+        assertThat(candidate).isPresent();
+    }
+
+    private AgentSqlQueryExample example(String question, String normalizedQuestion) {
         return AgentSqlQueryExample.builder()
                 .id(7L)
                 .userId(1001L)
                 .datasourceId("sink-1")
                 .datasourceType("clickhouse")
-                .question("按 severity 统计最近1小时日志数量")
+                .question(question)
                 .normalizedQuestion(normalizedQuestion)
                 .sqlTemplate("SELECT severity, count() FROM logs GROUP BY severity")
                 .resultType("category")

@@ -79,7 +79,7 @@ class SqlCandidateRaceServiceTest {
 
     @Test
     void shouldUseLlmWhenCheapCandidatesDoNotMatch() {
-        SqlCandidate llm = candidate("llm", "SELECT * FROM logs", "list", Map.of());
+        SqlCandidate llm = candidate("llm", "SELECT * FROM logs", "list", Map.of("sqlGenerationTime", 0.42D));
         StubProvider templateProvider = new StubProvider("template", 10, Optional::empty);
         StubProvider llmProvider = new StubProvider("llm", 100, llm);
         when(validator.validate(context, llm))
@@ -92,6 +92,7 @@ class SqlCandidateRaceServiceTest {
 
         assertThat(result.candidateSource()).isEqualTo("llm");
         assertThat(result.response().getSql()).isEqualTo("SELECT * FROM logs LIMIT 200");
+        assertThat(result.response().getSqlGenerationTime()).isEqualTo(0.42D);
         assertThat(result.validatedCandidates()).containsExactly("llm");
         assertThat(result.rejectedCandidates()).contains("template: 未生成候选 SQL");
     }
@@ -319,7 +320,7 @@ class SqlCandidateRaceServiceTest {
 
     @Test
     void shouldCreateAgentText2SqlExecutorBeanWithExpectedThreadPrefix() {
-        Executor executorBean = new AgentText2SqlExecutorConfig().agentText2SqlExecutor();
+        Executor executorBean = new AgentText2SqlExecutorConfig(2, 4, 20, 60, 30).agentText2SqlExecutor();
         try {
             assertThat(executorBean).isInstanceOf(ThreadPoolTaskExecutor.class);
             ThreadPoolTaskExecutor taskExecutor = (ThreadPoolTaskExecutor) executorBean;

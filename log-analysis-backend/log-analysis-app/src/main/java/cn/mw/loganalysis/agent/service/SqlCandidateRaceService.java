@@ -193,7 +193,7 @@ public class SqlCandidateRaceService {
                     .success(true)
                     .sql(validation.sql())
                     .result(rawResult)
-                    .sqlGenerationTime(candidate.generationTimeMs() / 1000D)
+                    .sqlGenerationTime(sqlGenerationSeconds(candidate))
                     .sqlExecutionTime(executionMs / 1000D)
                     .build();
             return CandidateAttempt.success(provider.source(), candidate, response);
@@ -289,6 +289,14 @@ public class SqlCandidateRaceService {
             }
         }
         return null;
+    }
+
+    private double sqlGenerationSeconds(SqlCandidate candidate) {
+        Map<String, Object> metadata = candidate.metadata();
+        if (metadata != null && metadata.get("sqlGenerationTime") instanceof Number value) {
+            return value.doubleValue();
+        }
+        return candidate.generationTimeMs() / 1000D;
     }
 
     private void cancelPending(List<Future<CandidateAttempt>> futures) {
