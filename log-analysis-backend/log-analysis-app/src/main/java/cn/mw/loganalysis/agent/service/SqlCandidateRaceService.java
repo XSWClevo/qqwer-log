@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -77,7 +78,7 @@ public class SqlCandidateRaceService {
                 .filter(provider -> !isLlmProvider(provider))
                 .toList();
 
-        int submitted = submitProviders(completionService, futures, cheapProviders, context, query);
+        int submitted = submitProviders(completionService, futures, rejectedCandidates, cheapProviders, context, query);
         boolean llmSubmitted = false;
         try {
             long llmDeadline = startedAt + LLM_DELAY_MS;
@@ -85,10 +86,15 @@ public class SqlCandidateRaceService {
                 Future<CandidateAttempt> completed = pollNext(completionService, submitted, startedAt, llmDeadline, llmSubmitted);
                 if (completed == null) {
                     if (!llmSubmitted && !llmProviders.isEmpty()) {
-                        waitUntilLlmDelay(startedAt);
-                        submitted += submitProviders(completionService, futures, llmProviders, context, query);
+                        if (submitted > 0) {
+                            waitUntilLlmDelay(startedAt);
+                        }
+                        submitted += submitProviders(completionService, futures, rejectedCandidates, llmProviders, context, query);
                         llmSubmitted = true;
                         continue;
+                    }
+                    if (submitted <= 0) {
+                        break;
                     }
                     completed = completionService.poll(remainingMs(startedAt), TimeUnit.MILLISECONDS);
                     if (completed == null) {
@@ -103,11 +109,13 @@ public class SqlCandidateRaceService {
                     continue;
                 }
                 submitted--;
-                if (attempt.success()) {
+                if (attempt.validated()) {
                     validatedCandidates.add(attempt.source());
+                }
+                if (attempt.success()) {
                     SqlCandidateResult result = buildResult(attempt, startedAt, validatedCandidates, rejectedCandidates);
-                    recordSuccess(context, query, attempt);
                     cancelPending(futures);
+                    recordSuccess(context, query, attempt);
                     return result;
                 }
                 rejectedCandidates.add(attempt.rejectedReason());
@@ -140,13 +148,18 @@ public class SqlCandidateRaceService {
 
     private int submitProviders(CompletionService<CandidateAttempt> completionService,
                                 List<Future<CandidateAttempt>> futures,
+                                List<String> rejectedCandidates,
                                 List<SqlCandidateProvider> providersToSubmit,
                                 AgentExecutionContext context,
                                 String query) {
         int submitted = 0;
         for (SqlCandidateProvider provider : providersToSubmit) {
-            futures.add(completionService.submit(candidateTask(provider, context, query)));
-            submitted++;
+            try {
+                futures.add(completionService.submit(candidateTask(provider, context, query)));
+                submitted++;
+            } catch (RejectedExecutionException e) {
+                rejectedCandidates.add(provider.source() + ": 候选任务提交失败 - " + readableMessage(e));
+            }
         }
         return submitted;
     }
@@ -185,7 +198,7 @@ public class SqlCandidateRaceService {
                     .build();
             return CandidateAttempt.success(provider.source(), candidate, response);
         } catch (RuntimeException e) {
-            return CandidateAttempt.rejected(provider.source(), provider.source() + ": SQL 执行失败 - " + readableMessage(e));
+            return CandidateAttempt.validatedRejected(provider.source(), provider.source() + ": SQL 执行失败 - " + readableMessage(e));
         }
     }
 
@@ -242,21 +255,25 @@ public class SqlCandidateRaceService {
     }
 
     private void recordSuccess(AgentExecutionContext context, String query, CandidateAttempt attempt) {
-        SqlCandidate candidate = attempt.candidate();
-        if (StringUtils.equalsIgnoreCase(attempt.source(), HISTORY_SOURCE)) {
-            Long exampleId = historyExampleId(candidate.metadata());
-            exampleRepository.markUsed(exampleId);
-            return;
+        try {
+            SqlCandidate candidate = attempt.candidate();
+            if (StringUtils.equalsIgnoreCase(attempt.source(), HISTORY_SOURCE)) {
+                Long exampleId = historyExampleId(candidate.metadata());
+                exampleRepository.markUsed(exampleId);
+                return;
+            }
+            exampleRepository.saveSuccess(
+                    context.userId(),
+                    context.datasourceId(),
+                    context.datasourceType(),
+                    query,
+                    questionNormalizer.normalize(query),
+                    attempt.response().getSql(),
+                    candidate.resultType()
+            );
+        } catch (RuntimeException e) {
+            log.warn("记录 Text2SQL 成功经验失败: source={}, datasourceId={}", attempt.source(), context.datasourceId(), e);
         }
-        exampleRepository.saveSuccess(
-                context.userId(),
-                context.datasourceId(),
-                context.datasourceType(),
-                query,
-                questionNormalizer.normalize(query),
-                attempt.response().getSql(),
-                candidate.resultType()
-        );
     }
 
     private Long historyExampleId(Map<String, Object> metadata) {
@@ -292,14 +309,19 @@ public class SqlCandidateRaceService {
     private record CandidateAttempt(String source,
                                     SqlCandidate candidate,
                                     AiQueryResponse response,
-                                    String rejectedReason) {
+                                    String rejectedReason,
+                                    boolean validated) {
 
         static CandidateAttempt success(String source, SqlCandidate candidate, AiQueryResponse response) {
-            return new CandidateAttempt(source, candidate, response, null);
+            return new CandidateAttempt(source, candidate, response, null, true);
         }
 
         static CandidateAttempt rejected(String source, String reason) {
-            return new CandidateAttempt(source, null, null, StringUtils.defaultIfBlank(reason, source + ": 候选失败"));
+            return new CandidateAttempt(source, null, null, StringUtils.defaultIfBlank(reason, source + ": 候选失败"), false);
+        }
+
+        static CandidateAttempt validatedRejected(String source, String reason) {
+            return new CandidateAttempt(source, null, null, StringUtils.defaultIfBlank(reason, source + ": 候选失败"), true);
         }
 
         boolean success() {

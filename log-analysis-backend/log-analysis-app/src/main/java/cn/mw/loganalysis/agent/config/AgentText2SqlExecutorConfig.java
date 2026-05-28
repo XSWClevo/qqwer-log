@@ -21,7 +21,7 @@ public class AgentText2SqlExecutorConfig {
         executor.setQueueCapacity(20);
         executor.setThreadNamePrefix("agent-text2sql-");
         executor.setKeepAliveSeconds(60);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();

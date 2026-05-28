@@ -16,6 +16,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -141,6 +143,7 @@ class SqlCandidateRaceServiceTest {
 
         assertThat(result.candidateSource()).isEqualTo("history");
         assertThat(result.response().getSql()).isEqualTo("SELECT * FROM logs LIMIT 200");
+        assertThat(result.validatedCandidates()).containsExactly("template", "history");
         assertThat(result.rejectedCandidates())
                 .containsExactly("template: SQL 执行失败 - ClickHouse timeout");
     }
@@ -198,6 +201,24 @@ class SqlCandidateRaceServiceTest {
     }
 
     @Test
+    void shouldReturnWinnerWhenHistoryMarkUsedFails() {
+        SqlCandidate history = candidate("history", "SELECT * FROM logs", "list", Map.of("exampleId", 7L));
+        StubProvider historyProvider = new StubProvider("history", 20, history);
+        when(validator.validate(context, history))
+                .thenReturn(SqlCandidateValidationResult.valid("SELECT * FROM logs LIMIT 200"));
+        when(dynamicLogQueryService.executeRawSQL("sink-1", "SELECT * FROM logs LIMIT 200"))
+                .thenReturn(List.of(Map.of("message", "ok")));
+        org.mockito.Mockito.doThrow(new IllegalStateException("postgres down"))
+                .when(repository).markUsed(7L);
+
+        SqlCandidateResult result = service(List.of(historyProvider))
+                .race(context, "查询最近日志");
+
+        assertThat(result.candidateSource()).isEqualTo("history");
+        assertThat(result.response().getSuccess()).isTrue();
+    }
+
+    @Test
     void shouldSaveSuccessfulNonHistoryCandidate() {
         SqlCandidate template = candidate("template", "SELECT count() FROM logs", "metric", Map.of());
         StubProvider templateProvider = new StubProvider("template", 10, template);
@@ -214,6 +235,50 @@ class SqlCandidateRaceServiceTest {
                 "日志总数", normalizer.normalize("日志总数"),
                 "SELECT count() FROM logs LIMIT 200", "metric");
         verify(repository, never()).markUsed(7L);
+    }
+
+    @Test
+    void shouldReturnWinnerWhenSaveSuccessFails() {
+        SqlCandidate template = candidate("template", "SELECT count() FROM logs", "metric", Map.of());
+        StubProvider templateProvider = new StubProvider("template", 10, template);
+        when(validator.validate(context, template))
+                .thenReturn(SqlCandidateValidationResult.valid("SELECT count() FROM logs LIMIT 200"));
+        when(dynamicLogQueryService.executeRawSQL("sink-1", "SELECT count() FROM logs LIMIT 200"))
+                .thenReturn(List.of(Map.of("total", 12)));
+        org.mockito.Mockito.doThrow(new IllegalStateException("postgres down"))
+                .when(repository).saveSuccess(eq(1001L), eq("sink-1"), eq("clickhouse"),
+                        eq("日志总数"), eq(normalizer.normalize("日志总数")),
+                        eq("SELECT count() FROM logs LIMIT 200"), eq("metric"));
+
+        SqlCandidateResult result = service(List.of(templateProvider))
+                .race(context, "日志总数");
+
+        assertThat(result.candidateSource()).isEqualTo("template");
+        assertThat(result.response().getSuccess()).isTrue();
+    }
+
+    @Test
+    void shouldSubmitLlmPromptlyWhenAllCheapProvidersReturnEmpty() {
+        AtomicBoolean llmCalled = new AtomicBoolean(false);
+        SqlCandidate llm = candidate("llm", "SELECT * FROM logs", "list", Map.of());
+        StubProvider templateProvider = new StubProvider("template", 10, Optional::empty);
+        StubProvider historyProvider = new StubProvider("history", 20, Optional::empty);
+        StubProvider llmProvider = new StubProvider("llm", 100, () -> {
+            llmCalled.set(true);
+            return Optional.of(llm);
+        });
+        when(validator.validate(context, llm))
+                .thenReturn(SqlCandidateValidationResult.valid("SELECT * FROM logs LIMIT 200"));
+        when(dynamicLogQueryService.executeRawSQL("sink-1", "SELECT * FROM logs LIMIT 200"))
+                .thenReturn(List.of(Map.of("message", "ok")));
+
+        long startedAt = System.currentTimeMillis();
+        SqlCandidateResult result = service(List.of(llmProvider, historyProvider, templateProvider))
+                .race(context, "查询最近日志");
+
+        assertThat(result.candidateSource()).isEqualTo("llm");
+        assertThat(llmCalled).isTrue();
+        assertThat(System.currentTimeMillis() - startedAt).isLessThan(120L);
     }
 
     @Test
@@ -259,6 +324,8 @@ class SqlCandidateRaceServiceTest {
             assertThat(executorBean).isInstanceOf(ThreadPoolTaskExecutor.class);
             ThreadPoolTaskExecutor taskExecutor = (ThreadPoolTaskExecutor) executorBean;
             assertThat(taskExecutor.getThreadNamePrefix()).isEqualTo("agent-text2sql-");
+            assertThat(taskExecutor.getThreadPoolExecutor().getRejectedExecutionHandler())
+                    .isInstanceOf(ThreadPoolExecutor.AbortPolicy.class);
         } finally {
             if (executorBean instanceof ThreadPoolTaskExecutor taskExecutor) {
                 taskExecutor.shutdown();
@@ -279,6 +346,22 @@ class SqlCandidateRaceServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("所有 SQL 候选均失败")
                 .hasMessageContaining("template: 只允许 SELECT/WITH 查询");
+        assertThat(System.currentTimeMillis() - startedAt).isLessThan(1_000L);
+    }
+
+    @Test
+    void shouldRecordRejectedSubmissionReasonWhenExecutorRejectsProvider() {
+        SqlCandidate template = candidate("template", "SELECT count() FROM logs", "metric", Map.of());
+        StubProvider templateProvider = new StubProvider("template", 10, template);
+        Executor rejectingExecutor = command -> {
+            throw new RejectedExecutionException("queue full");
+        };
+
+        long startedAt = System.currentTimeMillis();
+
+        assertThatThrownBy(() -> service(List.of(templateProvider), rejectingExecutor).race(context, "日志总数"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("template: 候选任务提交失败 - queue full");
         assertThat(System.currentTimeMillis() - startedAt).isLessThan(1_000L);
     }
 
