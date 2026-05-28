@@ -1,12 +1,9 @@
 package cn.mw.loganalysis.agent.service;
 
 import cn.mw.loganalysis.agent.dto.AgentResult;
-import cn.mw.loganalysis.stats.dto.AiQueryRequest;
 import cn.mw.loganalysis.stats.dto.AiQueryResponse;
-import cn.mw.loganalysis.stats.service.AiQueryService;
 import cn.mw.loganalysis.stats.service.DynamicLogQueryService;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -21,20 +18,13 @@ public class Text2SqlToolHandler {
 
     private static final int MAX_TEXT2SQL_ROWS = 200;
 
-    private final AiQueryService aiQueryService;
+    private final SqlCandidateRaceService raceService;
     private final DynamicLogQueryService dynamicLogQueryService;
-    private final List<Text2SqlPreflightStrategy> preflightStrategies;
 
-    /**
-     * 注入 Text2SQL 服务和前置确定性策略，并按策略优先级排序。
-     */
-    public Text2SqlToolHandler(AiQueryService aiQueryService,
-                               DynamicLogQueryService dynamicLogQueryService,
-                               List<Text2SqlPreflightStrategy> preflightStrategies) {
-        this.aiQueryService = aiQueryService;
+    public Text2SqlToolHandler(SqlCandidateRaceService raceService,
+                               DynamicLogQueryService dynamicLogQueryService) {
+        this.raceService = raceService;
         this.dynamicLogQueryService = dynamicLogQueryService;
-        this.preflightStrategies = new ArrayList<>(preflightStrategies);
-        AnnotationAwareOrderComparator.sort(this.preflightStrategies);
     }
 
     public AgentToolPayload handle(AgentExecutionContext context, String query) {
@@ -44,16 +34,9 @@ public class Text2SqlToolHandler {
             throw new IllegalStateException("text2sql_query 仅支持 ClickHouse 数据源，当前数据源类型为 " + context.datasourceType());
         }
 
-        AgentToolPayload preflightPayload = executePreflight(context, query);
-        if (preflightPayload != null) {
-            return preflightPayload;
-        }
-
-        AiQueryRequest request = new AiQueryRequest();
-        request.setQuery(StringUtils.defaultString(StringUtils.trimToNull(query)));
-        request.setDatasourceId(context.datasourceId());
-
-        AiQueryResponse response = aiQueryService.query(request);
+        String normalizedQuery = StringUtils.defaultString(StringUtils.trimToNull(query));
+        SqlCandidateResult candidateResult = raceService.race(context, normalizedQuery);
+        AiQueryResponse response = candidateResult.response();
         if (!Boolean.TRUE.equals(response.getSuccess())) {
             throw new IllegalStateException(StringUtils.isNotBlank(response.getError()) ? response.getError() : "text2sql 查询失败");
         }
@@ -70,6 +53,10 @@ public class Text2SqlToolHandler {
         summary.put("sqlGenerationTime", response.getSqlGenerationTime());
         summary.put("sqlExecutionTime", response.getSqlExecutionTime());
         summary.put("totalExecutionTime", response.getTotalExecutionTime());
+        summary.put("candidateSource", candidateResult.candidateSource());
+        summary.put("candidateRaceMs", candidateResult.raceMs());
+        summary.put("validatedCandidates", candidateResult.validatedCandidates());
+        summary.put("rejectedCandidates", candidateResult.rejectedCandidates());
 
         return AgentToolPayload.builder()
                 .toolName("text2sql_query")
@@ -90,18 +77,6 @@ public class Text2SqlToolHandler {
                         .totalExecutionTime(response.getTotalExecutionTime())
                         .build())
                 .build();
-    }
-
-    /**
-     * 先尝试用确定性策略处理简单统计，降低对大模型 SQL 生成的依赖。
-     */
-    private AgentToolPayload executePreflight(AgentExecutionContext context, String query) {
-        for (Text2SqlPreflightStrategy strategy : preflightStrategies) {
-            if (strategy.supports(context, query)) {
-                return strategy.execute(context, query);
-            }
-        }
-        return null;
     }
 
     @SuppressWarnings("unchecked")
