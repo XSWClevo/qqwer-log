@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -25,8 +26,12 @@ public class SqlCandidateValidator {
             "\\b(insert|update|delete|drop|alter|truncate|create|replace|rename|grant|revoke|attach|detach|optimize|system|kill)\\b",
             Pattern.CASE_INSENSITIVE
     );
-    private static final Pattern TABLE_PATTERN = Pattern.compile("\\b(?:from|join)\\s+`?([A-Za-z0-9_\\.]+)`?", Pattern.CASE_INSENSITIVE);
-    private static final Pattern LIMIT_PATTERN = Pattern.compile("\\blimit\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern TABLE_CLAUSE_PATTERN = Pattern.compile(
+            "\\b(from|join)\\b(.+?)(?=\\b(?:where|prewhere|group\\s+by|having|order\\s+by|limit|settings|union|join|on)\\b|$)",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+    );
+    private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("^`?([A-Za-z0-9_\\.]+)`?");
+    private static final Pattern LIMIT_CLAUSE_PATTERN = Pattern.compile("\\blimit\\s+\\d+\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern BACKTICKED_TOKEN_PATTERN = Pattern.compile("`([^`]+)`");
     private static final int DEFAULT_LIMIT = 200;
 
@@ -100,16 +105,44 @@ public class SqlCandidateValidator {
      * SQL 中所有 FROM/JOIN 表都必须指向当前数据源表。
      */
     private boolean referencesOnlyCurrentTable(String sql, String tableName) {
-        Matcher matcher = TABLE_PATTERN.matcher(sql);
-        boolean matched = false;
-        while (matcher.find()) {
-            matched = true;
-            String referenced = unquote(lastNamePart(matcher.group(1)));
+        List<String> referencedTables = findReferencedTables(sql);
+        if (CollectionUtils.isEmpty(referencedTables)) {
+            return false;
+        }
+        for (String referencedTable : referencedTables) {
+            String referenced = unquote(lastNamePart(referencedTable));
             if (!StringUtils.equalsIgnoreCase(referenced, tableName)) {
                 return false;
             }
         }
-        return matched;
+        return true;
+    }
+
+    /**
+     * 提取 FROM/JOIN 后的表名，包含逗号多表写法。
+     */
+    private List<String> findReferencedTables(String sql) {
+        List<String> tables = new ArrayList<>();
+        Matcher matcher = TABLE_CLAUSE_PATTERN.matcher(sql);
+        while (matcher.find()) {
+            String clauseType = matcher.group(1);
+            String tableClause = matcher.group(2);
+            if (StringUtils.equalsIgnoreCase(clauseType, "join")) {
+                addFirstTable(tables, tableClause);
+            } else {
+                for (String tablePart : StringUtils.split(tableClause, ",")) {
+                    addFirstTable(tables, tablePart);
+                }
+            }
+        }
+        return tables;
+    }
+
+    private void addFirstTable(List<String> tables, String tablePart) {
+        Matcher matcher = TABLE_NAME_PATTERN.matcher(StringUtils.trimToEmpty(tablePart));
+        if (matcher.find()) {
+            tables.add(matcher.group(1));
+        }
     }
 
     /**
@@ -141,7 +174,7 @@ public class SqlCandidateValidator {
      * 缺少 LIMIT 时自动补默认限制，避免大结果拖慢助手。
      */
     private String ensureLimit(String sql, String structuralSql) {
-        if (LIMIT_PATTERN.matcher(structuralSql).find()) {
+        if (LIMIT_CLAUSE_PATTERN.matcher(structuralSql).find()) {
             return sql;
         }
         return sql + " LIMIT " + DEFAULT_LIMIT;

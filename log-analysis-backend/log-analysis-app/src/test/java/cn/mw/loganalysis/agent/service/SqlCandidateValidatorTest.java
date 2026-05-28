@@ -61,6 +61,19 @@ class SqlCandidateValidatorTest {
     }
 
     @Test
+    void shouldRejectCommaSeparatedCrossTableSql() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT message FROM syslog_logs, audit_logs")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("表");
+    }
+
+    @Test
     void shouldRejectUnknownBacktickedFields() {
         givenCurrentTableSchema();
 
@@ -84,6 +97,19 @@ class SqlCandidateValidatorTest {
 
         assertThat(result.valid()).isTrue();
         assertThat(result.sql()).isEqualTo("SELECT `message` FROM `syslog_logs` ORDER BY `timestamp` DESC LIMIT 20");
+    }
+
+    @Test
+    void shouldAppendLimitWhenLimitIsOnlyAlias() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT count(*) AS limit FROM syslog_logs")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).isEqualTo("SELECT count(*) AS limit FROM syslog_logs LIMIT 200");
     }
 
     @Test
