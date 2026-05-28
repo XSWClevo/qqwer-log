@@ -113,12 +113,38 @@ class SqlCandidateValidatorTest {
     }
 
     @Test
+    void shouldRejectLimitBySql() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message`, `severity` FROM `syslog_logs` LIMIT 10 BY `severity`")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("LIMIT BY");
+    }
+
+    @Test
     void shouldNormalizeTooLargeLimit() {
         givenCurrentTableSchema();
 
         SqlCandidateValidationResult result = validator.validate(
                 context,
                 candidate("SELECT `message` FROM `syslog_logs` LIMIT 1000000")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).isEqualTo("SELECT `message` FROM `syslog_logs` LIMIT 200");
+    }
+
+    @Test
+    void shouldNormalizeOverflowLimitNumber() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM `syslog_logs` LIMIT 999999999999999999999999")
         );
 
         assertThat(result.valid()).isTrue();
@@ -162,6 +188,19 @@ class SqlCandidateValidatorTest {
 
         assertThat(result.valid()).isTrue();
         assertThat(result.sql()).isEqualTo("SELECT count() AS `total` FROM `syslog_logs` LIMIT 200");
+    }
+
+    @Test
+    void shouldAllowBacktickedSelectAliasWithoutAs() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT count() `total` FROM `syslog_logs`")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).isEqualTo("SELECT count() `total` FROM `syslog_logs` LIMIT 200");
     }
 
     @Test

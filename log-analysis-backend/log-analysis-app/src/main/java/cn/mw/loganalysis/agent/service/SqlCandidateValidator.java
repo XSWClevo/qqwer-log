@@ -32,12 +32,14 @@ public class SqlCandidateValidator {
     );
     private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("^`?([A-Za-z0-9_\\.]+)`?");
     private static final Pattern DERIVED_TABLE_PATTERN = Pattern.compile("\\b(?:from|join)\\s*\\(", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIMIT_BY_PATTERN = Pattern.compile("\\blimit\\b.+?\\bby\\b", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern LIMIT_CLAUSE_PATTERN = Pattern.compile(
             "\\blimit\\s+(?:(\\d+)\\s*,\\s*)?(\\d+)\\b",
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern BACKTICKED_TOKEN_PATTERN = Pattern.compile("`([^`]+)`");
     private static final Pattern BACKTICKED_ALIAS_PATTERN = Pattern.compile("(?i)\\bas\\s+`([^`]+)`");
+    private static final Pattern BACKTICKED_IMPLICIT_ALIAS_PATTERN = Pattern.compile("\\)\\s+`([^`]+)`");
     private static final int DEFAULT_LIMIT = 200;
 
     private final DynamicLogQueryService dynamicLogQueryService;
@@ -63,6 +65,9 @@ public class SqlCandidateValidator {
         }
         if (DERIVED_TABLE_PATTERN.matcher(structuralSql).find()) {
             return SqlCandidateValidationResult.invalid("不支持子查询或派生表");
+        }
+        if (LIMIT_BY_PATTERN.matcher(structuralSql).find()) {
+            return SqlCandidateValidationResult.invalid("不支持 LIMIT BY");
         }
         String tableName = dynamicLogQueryService.getTableName(context.datasourceId());
         if (!referencesOnlyCurrentTable(structuralSql, tableName)) {
@@ -183,7 +188,21 @@ public class SqlCandidateValidator {
         return BACKTICKED_ALIAS_PATTERN.matcher(sql)
                 .results()
                 .map(match -> lastNamePart(match.group(1)).toLowerCase(Locale.ROOT))
-                .collect(Collectors.toSet());
+                .collect(Collectors.collectingAndThen(Collectors.toSet(), aliases -> {
+                    BACKTICKED_IMPLICIT_ALIAS_PATTERN.matcher(sql)
+                            .results()
+                            .map(match -> lastNamePart(match.group(1)).toLowerCase(Locale.ROOT))
+                            .forEach(aliases::add);
+                    return aliases;
+                }));
+    }
+
+    private long parseLimitRowCount(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return DEFAULT_LIMIT + 1L;
+        }
     }
 
     /**
@@ -195,7 +214,7 @@ public class SqlCandidateValidator {
             return sql + " LIMIT " + DEFAULT_LIMIT;
         }
 
-        long rowCount = Long.parseLong(matcher.group(2));
+        long rowCount = parseLimitRowCount(matcher.group(2));
         if (rowCount <= DEFAULT_LIMIT) {
             return sql;
         }
