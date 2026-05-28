@@ -7,10 +7,10 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -31,8 +31,13 @@ public class SqlCandidateValidator {
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL
     );
     private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("^`?([A-Za-z0-9_\\.]+)`?");
-    private static final Pattern LIMIT_CLAUSE_PATTERN = Pattern.compile("\\blimit\\s+\\d+\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DERIVED_TABLE_PATTERN = Pattern.compile("\\b(?:from|join)\\s*\\(", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIMIT_CLAUSE_PATTERN = Pattern.compile(
+            "\\blimit\\s+(?:(\\d+)\\s*,\\s*)?(\\d+)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
     private static final Pattern BACKTICKED_TOKEN_PATTERN = Pattern.compile("`([^`]+)`");
+    private static final Pattern BACKTICKED_ALIAS_PATTERN = Pattern.compile("(?i)\\bas\\s+`([^`]+)`");
     private static final int DEFAULT_LIMIT = 200;
 
     private final DynamicLogQueryService dynamicLogQueryService;
@@ -45,16 +50,19 @@ public class SqlCandidateValidator {
             return SqlCandidateValidationResult.invalid("候选 SQL 为空");
         }
         String sql = stripTrailingSemicolon(candidate.sql());
-        if (StringUtils.contains(sql, ";")) {
+        String structuralSql = maskStringLiterals(sql);
+        if (StringUtils.contains(structuralSql, ";")) {
             return SqlCandidateValidationResult.invalid("SQL 只能包含单条查询语句");
         }
-        String structuralSql = maskStringLiterals(sql);
         String normalized = sql.toLowerCase(Locale.ROOT);
         if (!(normalized.startsWith("select") || normalized.startsWith("with"))) {
             return SqlCandidateValidationResult.invalid("只允许 SELECT/WITH 查询");
         }
         if (FORBIDDEN_SQL_PATTERN.matcher(structuralSql).find()) {
             return SqlCandidateValidationResult.invalid("SQL 包含禁止的写入或 DDL 关键字");
+        }
+        if (DERIVED_TABLE_PATTERN.matcher(structuralSql).find()) {
+            return SqlCandidateValidationResult.invalid("不支持子查询或派生表");
         }
         String tableName = dynamicLogQueryService.getTableName(context.datasourceId());
         if (!referencesOnlyCurrentTable(structuralSql, tableName)) {
@@ -160,24 +168,39 @@ public class SqlCandidateValidator {
                 .collect(Collectors.toSet());
         fields.add(tableName.toLowerCase(Locale.ROOT));
 
+        Set<String> aliases = findBacktickedAliases(sql);
         Matcher matcher = BACKTICKED_TOKEN_PATTERN.matcher(sql);
         while (matcher.find()) {
             String token = lastNamePart(matcher.group(1)).toLowerCase(Locale.ROOT);
-            if (!fields.contains(token)) {
+            if (!fields.contains(token) && !aliases.contains(token)) {
                 return false;
             }
         }
         return true;
     }
 
+    private Set<String> findBacktickedAliases(String sql) {
+        return BACKTICKED_ALIAS_PATTERN.matcher(sql)
+                .results()
+                .map(match -> lastNamePart(match.group(1)).toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+    }
+
     /**
      * 缺少 LIMIT 时自动补默认限制，避免大结果拖慢助手。
      */
     private String ensureLimit(String sql, String structuralSql) {
-        if (LIMIT_CLAUSE_PATTERN.matcher(structuralSql).find()) {
+        Matcher matcher = LIMIT_CLAUSE_PATTERN.matcher(structuralSql);
+        if (!matcher.find()) {
+            return sql + " LIMIT " + DEFAULT_LIMIT;
+        }
+
+        long rowCount = Long.parseLong(matcher.group(2));
+        if (rowCount <= DEFAULT_LIMIT) {
             return sql;
         }
-        return sql + " LIMIT " + DEFAULT_LIMIT;
+
+        return sql.substring(0, matcher.start()) + "LIMIT " + DEFAULT_LIMIT + sql.substring(matcher.end());
     }
 
     private String lastNamePart(String value) {

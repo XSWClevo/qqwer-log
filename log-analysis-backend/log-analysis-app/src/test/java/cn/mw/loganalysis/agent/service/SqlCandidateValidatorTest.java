@@ -74,6 +74,19 @@ class SqlCandidateValidatorTest {
     }
 
     @Test
+    void shouldRejectDerivedTableSourceSql() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT s.message FROM `syslog_logs` s JOIN (SELECT * FROM audit_logs) a ON s.id = a.id")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("子查询").contains("派生表");
+    }
+
+    @Test
     void shouldRejectUnknownBacktickedFields() {
         givenCurrentTableSchema();
 
@@ -100,6 +113,32 @@ class SqlCandidateValidatorTest {
     }
 
     @Test
+    void shouldNormalizeTooLargeLimit() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM `syslog_logs` LIMIT 1000000")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).isEqualTo("SELECT `message` FROM `syslog_logs` LIMIT 200");
+    }
+
+    @Test
+    void shouldNormalizeTooLargeOffsetLimitCount() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM `syslog_logs` LIMIT 0, 1000000")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).isEqualTo("SELECT `message` FROM `syslog_logs` LIMIT 200");
+    }
+
+    @Test
     void shouldAppendLimitWhenLimitIsOnlyAlias() {
         givenCurrentTableSchema();
 
@@ -113,6 +152,19 @@ class SqlCandidateValidatorTest {
     }
 
     @Test
+    void shouldAllowBacktickedSelectAlias() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT count() AS `total` FROM `syslog_logs`")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).isEqualTo("SELECT count() AS `total` FROM `syslog_logs` LIMIT 200");
+    }
+
+    @Test
     void shouldIgnoreKeywordsInsideStringLiterals() {
         givenCurrentTableSchema();
 
@@ -123,6 +175,19 @@ class SqlCandidateValidatorTest {
 
         assertThat(result.valid()).isTrue();
         assertThat(result.sql()).endsWith("LIMIT 200");
+    }
+
+    @Test
+    void shouldAllowSemicolonInsideStringLiteral() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM `syslog_logs` WHERE `message` = 'a;b'")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).isEqualTo("SELECT `message` FROM `syslog_logs` WHERE `message` = 'a;b' LIMIT 200");
     }
 
     @Test
