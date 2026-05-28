@@ -3,11 +3,9 @@ package cn.mw.loganalysis.agent.service;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Text2SQL 问题归一化与轻量相似度计算。
@@ -45,9 +43,38 @@ public class SqlQuestionNormalizer {
     }
 
     private Set<String> tokens(String text) {
-        return Arrays.stream(StringUtils.defaultString(text).split("\\s+"))
-                .map(String::trim)
-                .filter(StringUtils::isNotBlank)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> tokens = new LinkedHashSet<>();
+        String[] parts = StringUtils.defaultString(text).split("\\s+");
+        for (String part : parts) {
+            String token = StringUtils.trim(part);
+            if (StringUtils.isBlank(token)) {
+                continue;
+            }
+            tokens.add(token);
+            if (containsChinese(token)) {
+                addCharacterNgrams(token, tokens);
+            }
+        }
+        return tokens;
+    }
+
+    private boolean containsChinese(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            Character.UnicodeScript script = Character.UnicodeScript.of(text.charAt(i));
+            if (script == Character.UnicodeScript.HAN) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void addCharacterNgrams(String text, Set<String> tokens) {
+        String compact = text.replaceAll("\\s+", "");
+        for (int i = 0; i < compact.length(); i++) {
+            tokens.add(String.valueOf(compact.charAt(i)));
+            if (i + 2 <= compact.length()) {
+                tokens.add(compact.substring(i, i + 2));
+            }
+        }
     }
 }

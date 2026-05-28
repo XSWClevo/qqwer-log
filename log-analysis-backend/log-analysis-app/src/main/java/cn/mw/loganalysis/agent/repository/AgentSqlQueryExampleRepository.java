@@ -54,7 +54,7 @@ public class AgentSqlQueryExampleRepository {
                             String sql,
                             String resultType) {
         if (ObjectUtils.isEmpty(userId)
-                || StringUtils.isAnyBlank(datasourceId, normalizedQuestion, sql)) {
+                || StringUtils.isAnyBlank(datasourceId, datasourceType, question, normalizedQuestion, sql)) {
             return;
         }
         LocalDateTime now = LocalDateTime.now();

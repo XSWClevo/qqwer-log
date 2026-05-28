@@ -1,6 +1,7 @@
 package cn.mw.loganalysis.agent.service;
 
 import cn.mw.loganalysis.agent.entity.AgentSqlQueryExample;
+import cn.mw.loganalysis.agent.mapper.AgentSqlQueryExampleMapper;
 import cn.mw.loganalysis.agent.repository.AgentSqlQueryExampleRepository;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +11,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class HistorySqlCandidateProviderTest {
@@ -74,6 +76,27 @@ class HistorySqlCandidateProviderTest {
         assertThat(provider.supports(missingUser, "按 severity 统计日志数量")).isFalse();
         assertThat(provider.supports(missingDatasource, "按 severity 统计日志数量")).isFalse();
         assertThat(provider.supports(context, " ")).isFalse();
+    }
+
+    @Test
+    void shouldKeepUnspacedChineseTimeRangeQuestionsSimilar() {
+        String previous = normalizer.normalize("按severity统计最近1小时日志数量");
+        String current = normalizer.normalize("按severity统计最近24小时日志数量");
+
+        assertThat(normalizer.similarity(previous, current)).isGreaterThanOrEqualTo(0.58D);
+    }
+
+    @Test
+    void shouldNoopWhenRequiredSuccessStoreFieldsAreMissing() {
+        AgentSqlQueryExampleMapper mapper = mock(AgentSqlQueryExampleMapper.class);
+        AgentSqlQueryExampleRepository queryExampleRepository = new AgentSqlQueryExampleRepository(mapper);
+
+        queryExampleRepository.saveSuccess(1001L, "sink-1", "", "按 severity 统计日志数量",
+                "按 severity 统计日志数量", "SELECT 1", "metric");
+        queryExampleRepository.saveSuccess(1001L, "sink-1", "clickhouse", " ",
+                "按 severity 统计日志数量", "SELECT 1", "metric");
+
+        verifyNoInteractions(mapper);
     }
 
     private AgentSqlQueryExample example(String normalizedQuestion) {

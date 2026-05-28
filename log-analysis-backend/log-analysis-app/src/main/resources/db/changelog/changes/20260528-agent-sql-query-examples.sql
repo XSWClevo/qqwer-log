@@ -23,3 +23,7 @@ ON agent_sql_query_examples(user_id, datasource_id, updated_at DESC);
 --changeset codex:20260528-03-index-agent-sql-query-examples-normalized
 CREATE INDEX IF NOT EXISTS idx_agent_sql_query_examples_normalized
 ON agent_sql_query_examples(datasource_id, normalized_question);
+
+--changeset codex:20260528-04-unique-agent-sql-query-examples-question
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_sql_query_examples_user_ds_question
+ON agent_sql_query_examples(user_id, datasource_id, normalized_question);
