@@ -102,7 +102,13 @@ public class SqlCandidateValidator {
         boolean inDoubleQuote = false;
         for (int i = 0; i < sql.length(); i++) {
             char current = sql.charAt(i);
-            if (current == '\'' && !inDoubleQuote) {
+            if (inSingleQuote && current == '\\') {
+                masked.append(' ');
+                if (i + 1 < sql.length()) {
+                    masked.append(' ');
+                    i++;
+                }
+            } else if (current == '\'' && !inDoubleQuote) {
                 inSingleQuote = !inSingleQuote;
                 masked.append(' ');
             } else if (current == '"' && !inSingleQuote) {

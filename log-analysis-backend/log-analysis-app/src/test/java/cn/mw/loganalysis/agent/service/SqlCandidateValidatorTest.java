@@ -230,6 +230,45 @@ class SqlCandidateValidatorTest {
     }
 
     @Test
+    void shouldAllowLineCommentMarkerInsideStringLiteral() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM `syslog_logs` WHERE `message` = '-- comment-like text'")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).endsWith("LIMIT 200");
+    }
+
+    @Test
+    void shouldAllowBlockCommentMarkerInsideStringLiteral() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM `syslog_logs` WHERE `message` = '/* comment-like text */'")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).endsWith("LIMIT 200");
+    }
+
+    @Test
+    void shouldAllowEscapedQuoteBeforeCommentMarkerInsideStringLiteral() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT `message` FROM `syslog_logs` WHERE `message` = 'can\\'t -- comment-like text'")
+        );
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.sql()).endsWith("LIMIT 200");
+    }
+
+    @Test
     void shouldRejectInternalSemicolonMultiStatementSql() {
         givenCurrentTableSchema();
 
