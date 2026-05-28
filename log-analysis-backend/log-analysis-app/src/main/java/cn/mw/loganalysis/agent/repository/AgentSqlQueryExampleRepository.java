@@ -58,40 +58,7 @@ public class AgentSqlQueryExampleRepository {
             return;
         }
         LocalDateTime now = LocalDateTime.now();
-        AgentSqlQueryExample existing = exampleMapper.selectOne(
-                Wrappers.<AgentSqlQueryExample>lambdaQuery()
-                        .eq(AgentSqlQueryExample::getUserId, userId)
-                        .eq(AgentSqlQueryExample::getDatasourceId, datasourceId)
-                        .eq(AgentSqlQueryExample::getNormalizedQuestion, normalizedQuestion)
-                        .last("LIMIT 1")
-        );
-        if (existing == null) {
-            exampleMapper.insert(AgentSqlQueryExample.builder()
-                    .userId(userId)
-                    .datasourceId(datasourceId)
-                    .datasourceType(datasourceType)
-                    .question(question)
-                    .normalizedQuestion(normalizedQuestion)
-                    .sqlTemplate(sql)
-                    .resultType(resultType)
-                    .hitCount(0)
-                    .lastUsedAt(now)
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build());
-            return;
-        }
-
-        exampleMapper.update(
-                null,
-                Wrappers.<AgentSqlQueryExample>lambdaUpdate()
-                        .eq(AgentSqlQueryExample::getId, existing.getId())
-                        .set(AgentSqlQueryExample::getQuestion, question)
-                        .set(AgentSqlQueryExample::getSqlTemplate, sql)
-                        .set(AgentSqlQueryExample::getResultType, resultType)
-                        .set(AgentSqlQueryExample::getLastUsedAt, now)
-                        .set(AgentSqlQueryExample::getUpdatedAt, now)
-        );
+        exampleMapper.upsertSuccess(userId, datasourceId, datasourceType, question, normalizedQuestion, sql, resultType, now);
     }
 
     /**
@@ -101,18 +68,7 @@ public class AgentSqlQueryExampleRepository {
         if (id == null) {
             return;
         }
-        AgentSqlQueryExample existing = exampleMapper.selectById(id);
-        if (existing == null) {
-            return;
-        }
         LocalDateTime now = LocalDateTime.now();
-        exampleMapper.update(
-                null,
-                Wrappers.<AgentSqlQueryExample>lambdaUpdate()
-                        .eq(AgentSqlQueryExample::getId, id)
-                        .set(AgentSqlQueryExample::getHitCount, ObjectUtils.defaultIfNull(existing.getHitCount(), 0) + 1)
-                        .set(AgentSqlQueryExample::getLastUsedAt, now)
-                        .set(AgentSqlQueryExample::getUpdatedAt, now)
-        );
+        exampleMapper.incrementHitCount(id, now);
     }
 }
