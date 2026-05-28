@@ -53,6 +53,9 @@ public class SqlCandidateValidator {
         }
         String sql = stripTrailingSemicolon(candidate.sql());
         String structuralSql = maskStringLiterals(sql);
+        if (hasSqlComment(structuralSql)) {
+            return SqlCandidateValidationResult.invalid("SQL 不支持注释");
+        }
         if (StringUtils.contains(structuralSql, ";")) {
             return SqlCandidateValidationResult.invalid("SQL 只能包含单条查询语句");
         }
@@ -112,6 +115,10 @@ public class SqlCandidateValidator {
             }
         }
         return masked.toString();
+    }
+
+    private boolean hasSqlComment(String structuralSql) {
+        return StringUtils.contains(structuralSql, "--") || StringUtils.contains(structuralSql, "/*");
     }
 
     /**

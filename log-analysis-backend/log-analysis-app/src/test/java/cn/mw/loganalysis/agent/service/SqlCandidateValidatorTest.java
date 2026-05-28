@@ -242,6 +242,32 @@ class SqlCandidateValidatorTest {
         assertThat(result.reason()).contains("单条");
     }
 
+    @Test
+    void shouldRejectSqlWithLineComment() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT message FROM syslog_logs -- LIMIT 1")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("注释");
+    }
+
+    @Test
+    void shouldRejectSqlWithBlockComment() {
+        givenCurrentTableSchema();
+
+        SqlCandidateValidationResult result = validator.validate(
+                context,
+                candidate("SELECT message FROM syslog_logs /* LIMIT 1 */")
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("注释");
+    }
+
     private void givenCurrentTableSchema() {
         when(dynamicLogQueryService.getTableName("sink-1")).thenReturn("syslog_logs");
         when(dynamicLogQueryService.getTableSchema("sink-1")).thenReturn(List.of(
