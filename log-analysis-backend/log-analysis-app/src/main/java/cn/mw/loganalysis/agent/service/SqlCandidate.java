@@ -14,4 +14,8 @@ record SqlCandidate(String source,
                     double confidence,
                     long generationTimeMs,
                     Map<String, Object> metadata) {
+
+    SqlCandidate {
+        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+    }
 }
