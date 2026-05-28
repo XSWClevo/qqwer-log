@@ -68,59 +68,33 @@ public class AiQueryService {
     }
 
     /**
+     * 只调用 AI service 生成 SQL，不执行 SQL。
+     */
+    public AiQueryResponse generateSqlOnly(AiQueryRequest request) {
+        long startTime = System.currentTimeMillis();
+        log.info("生成AI SQL候选: {}, datasourceId: {}", request.getQuery(), request.getDatasourceId());
+        try {
+            if (request.getDatasourceIds() != null && !request.getDatasourceIds().isEmpty()) {
+                return buildErrorResponse("候选竞争暂不支持多数据源 SQL 生成", startTime);
+            }
+            return generateSingleDatasourceSql(request, startTime);
+        } catch (Exception e) {
+            log.error("AI SQL候选生成失败", e);
+            return buildErrorResponse("SQL生成失败: " + e.getMessage(), startTime);
+        }
+    }
+
+    /**
      * 执行单数据源查询（原有逻辑）
      */
     private AiQueryResponse executeSingleDatasourceQuery(AiQueryRequest request, long startTime) {
-        // 1. 获取表结构信息
+        AiQueryResponse generated = generateSingleDatasourceSql(request, startTime);
+        if (!Boolean.TRUE.equals(generated.getSuccess())) {
+            return generated;
+        }
         String datasourceId = request.getDatasourceId();
-        String tableName;
-        String datasourceType;
-        List<FieldInfo> tableSchema;
-
-        if (StringUtils.hasText(datasourceId)) {
-            // 使用指定的数据源
-            tableSchema = dynamicLogQueryService.getTableSchema(datasourceId);
-            if (tableSchema == null || tableSchema.isEmpty()) {
-                return buildErrorResponse("无法获取数据源表结构", startTime);
-            }
-
-            // 从数据源配置中获取表名和类型
-            tableName = dynamicLogQueryService.getTableName(datasourceId);
-            datasourceType = dynamicLogQueryService.getDatasourceType(datasourceId);
-
-            log.info("使用数据源: {}, 表名: {}, 类型: {}", datasourceId, tableName, datasourceType);
-        } else {
-            // 使用默认的syslog表
-            tableName = "syslog";
-            datasourceType = "clickhouse";
-            tableSchema = getDefaultSyslogSchema();
-            log.info("使用默认syslog表");
-        }
-
-        // 2. 调用Python AI服务生成SQL
-        Map<String, Object> aiRequest = new HashMap<>();
-        aiRequest.put("query", request.getQuery());
-        aiRequest.put("table_name", tableName);
-        aiRequest.put("table_schema", tableSchema);
-        aiRequest.put("datasource_type", datasourceType);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(aiRequest, headers);
-
-        String url = aiServiceUrl + "/text-to-sql";
-        log.debug("调用AI服务: {}", url);
-
-        ResponseEntity<Map> aiResponse = restTemplate.postForEntity(url, entity, Map.class);
-        Map<String, Object> aiResult = aiResponse.getBody();
-
-        if (aiResult == null || !Boolean.TRUE.equals(aiResult.get("success"))) {
-            String error = aiResult != null ? (String) aiResult.get("error") : "AI服务返回空结果";
-            return buildErrorResponse("SQL生成失败: " + error, startTime);
-        }
-
-        String sql = (String) aiResult.get("sql");
-        Double sqlGenerationTime = ((Number) aiResult.get("execution_time")).doubleValue();
+        String sql = generated.getSql();
+        Double sqlGenerationTime = generated.getSqlGenerationTime();
 
         log.info("SQL生成成功，耗时: {}秒", sqlGenerationTime);
         log.debug("生成的SQL: {}", sql);
@@ -152,6 +126,69 @@ public class AiQueryService {
                 .sqlExecutionTime(sqlExecutionTime)
                 .totalExecutionTime(totalTime)
                 .build();
+    }
+
+    /**
+     * 单数据源 SQL 生成公共逻辑。
+     */
+    private AiQueryResponse generateSingleDatasourceSql(AiQueryRequest request, long startTime) {
+        String datasourceId = request.getDatasourceId();
+        String tableName;
+        String datasourceType;
+        List<FieldInfo> tableSchema;
+
+        if (StringUtils.hasText(datasourceId)) {
+            tableSchema = dynamicLogQueryService.getTableSchema(datasourceId);
+            if (tableSchema == null || tableSchema.isEmpty()) {
+                return buildErrorResponse("无法获取数据源表结构", startTime);
+            }
+            tableName = dynamicLogQueryService.getTableName(datasourceId);
+            datasourceType = dynamicLogQueryService.getDatasourceType(datasourceId);
+            log.info("使用数据源: {}, 表名: {}, 类型: {}", datasourceId, tableName, datasourceType);
+        } else {
+            tableName = "syslog";
+            datasourceType = "clickhouse";
+            tableSchema = getDefaultSyslogSchema();
+            log.info("使用默认syslog表");
+        }
+
+        Map<String, Object> aiResult = requestAiSql(request.getQuery(), tableName, tableSchema, datasourceType);
+        if (aiResult == null || !Boolean.TRUE.equals(aiResult.get("success"))) {
+            String error = aiResult != null ? (String) aiResult.get("error") : "AI服务返回空结果";
+            return buildErrorResponse("SQL生成失败: " + error, startTime);
+        }
+
+        return AiQueryResponse.builder()
+                .success(true)
+                .sql((String) aiResult.get("sql"))
+                .error(null)
+                .sqlGenerationTime(((Number) aiResult.get("execution_time")).doubleValue())
+                .totalExecutionTime((System.currentTimeMillis() - startTime) / 1000.0)
+                .build();
+    }
+
+    /**
+     * 调用 Python AI service 的 /text-to-sql 接口。
+     */
+    private Map<String, Object> requestAiSql(String query,
+                                             String tableName,
+                                             List<FieldInfo> tableSchema,
+                                             String datasourceType) {
+        Map<String, Object> aiRequest = new HashMap<>();
+        aiRequest.put("query", query);
+        aiRequest.put("table_name", tableName);
+        aiRequest.put("table_schema", tableSchema);
+        aiRequest.put("datasource_type", datasourceType);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(aiRequest, headers);
+
+        String url = aiServiceUrl + "/text-to-sql";
+        log.debug("调用AI服务: {}", url);
+
+        ResponseEntity<Map> aiResponse = restTemplate.postForEntity(url, entity, Map.class);
+        return aiResponse.getBody();
     }
 
     /**

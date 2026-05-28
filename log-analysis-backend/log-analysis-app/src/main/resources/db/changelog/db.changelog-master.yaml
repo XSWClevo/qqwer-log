@@ -21,3 +21,5 @@ databaseChangeLog:
       file: db/changelog/changes/20260526-alert-monitor-state-datasource-key.sql
   - include:
       file: db/changelog/changes/20260526-trusted-log-sources-demo-ips.sql
+  - include:
+      file: db/changelog/changes/20260528-agent-sql-query-examples.sql
