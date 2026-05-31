@@ -357,7 +357,7 @@ Expected: BUILD SUCCESS
 - [ ] **Step 4: 用浏览器实测两类数据集**
 
 Run:
-`open http://localhost:5173/dashboard`
+`open http://localhost:5173/`
 
 Expected:
 - `syslog_logs` 有完整趋势和排行
@@ -405,6 +405,10 @@ Expected:
 
 - `regex_logs` 缺少 `hostname/appname` 时，首页使用替代视图
 - 日志体积为近似估算值，不等同于 ClickHouse 物理存储占用
+- `timestamp` 缺失时后端不执行时间范围聚合 SQL，直接返回数据集级空状态
+- `severity` 缺失时前端保留总量、EPS、体积等可展示指标，趋势和级别类视图局部降级
+- 前端最终视觉采用工作台式科技指挥中心：紧凑 Hero、可点击指标矩阵、指标下钻面板、能力驱动 Insight Board 和事件流
+- 当前仓库没有前端单测脚手架，前端验证以 `npm --prefix log-analysis-frontend run build` 和浏览器验收为主
 ```
 
 - [ ] **Step 5: 提交收尾**

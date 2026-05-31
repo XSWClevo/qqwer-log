@@ -28,7 +28,7 @@
         </div>
 
         <div class="topbar-group">
-          <el-button plain @click="fetchAllData(timeRange)">立即刷新</el-button>
+          <el-button :icon="Refresh" plain @click="fetchAllData(timeRange)">立即刷新</el-button>
         </div>
       </section>
 
@@ -97,6 +97,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Refresh } from '@element-plus/icons-vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DatasetContextBar from './components/DatasetContextBar.vue'
 import EmptyDatasetState from './components/EmptyDatasetState.vue'
@@ -202,12 +203,12 @@ onUnmounted(() => {
 .dashboard-page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   min-height: 100%;
-  padding: 20px;
+  padding: 18px;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--macos-blue) 10%, transparent), transparent 30%),
-    radial-gradient(circle at 88% 10%, color-mix(in srgb, #14b8a6 10%, transparent), transparent 26%),
+    linear-gradient(90deg, color-mix(in srgb, var(--macos-blue) 7%, transparent), transparent 34%),
+    linear-gradient(270deg, color-mix(in srgb, #14b8a6 6%, transparent), transparent 28%),
     linear-gradient(180deg, color-mix(in srgb, var(--macos-bg-secondary) 94%, transparent), var(--macos-bg-primary));
 }
 
@@ -215,9 +216,9 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 16px;
+  padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--macos-border) 76%, transparent);
-  border-radius: 18px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--macos-card-bg) 90%, transparent);
   backdrop-filter: blur(14px);
 }

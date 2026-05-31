@@ -54,14 +54,14 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr);
   gap: 18px;
-  padding: 24px;
+  padding: 18px;
   border: 1px solid color-mix(in srgb, var(--macos-border) 72%, transparent);
-  border-radius: 28px;
+  border-radius: 8px;
   background:
-    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--macos-blue) 24%, transparent), transparent 34%),
-    radial-gradient(circle at 100% 12%, color-mix(in srgb, #14b8a6 18%, transparent), transparent 28%),
+    linear-gradient(90deg, color-mix(in srgb, var(--macos-blue) 16%, transparent), transparent 36%),
+    linear-gradient(270deg, color-mix(in srgb, #14b8a6 12%, transparent), transparent 28%),
     linear-gradient(135deg, color-mix(in srgb, var(--macos-card-bg) 90%, transparent), color-mix(in srgb, var(--macos-bg-secondary) 96%, transparent));
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.10);
   overflow: hidden;
 }
 
@@ -72,9 +72,9 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
 
   h1 {
     margin: 0;
-    font-size: clamp(30px, 4vw, 44px);
-    line-height: 1.04;
-    letter-spacing: -0.04em;
+    font-size: 34px;
+    line-height: 1.12;
+    letter-spacing: 0;
     color: var(--macos-text-primary);
   }
 
@@ -92,7 +92,7 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 88%, transparent);
 }
@@ -100,7 +100,7 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
 .eyebrow-dot {
   width: 10px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: 2px;
   background: linear-gradient(135deg, var(--macos-blue), #14b8a6);
   box-shadow: 0 0 18px color-mix(in srgb, var(--macos-blue) 56%, transparent);
 }
@@ -116,8 +116,8 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-radius: 999px;
+  padding: 8px 10px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--macos-card-bg) 84%, transparent);
   color: var(--macos-text-secondary);
   font-size: 12px;
@@ -141,9 +141,9 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
   justify-content: space-between;
   gap: 8px;
   min-height: 120px;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid color-mix(in srgb, var(--macos-border) 66%, transparent);
-  border-radius: 20px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--macos-card-bg) 88%, transparent);
   backdrop-filter: blur(16px);
 
@@ -163,7 +163,7 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
 
 .matrix-label {
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 92%, transparent);
 }
@@ -181,7 +181,7 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
 @media (max-width: 720px) {
   .hero-shell {
     padding: 18px;
-    border-radius: 22px;
+    border-radius: 8px;
   }
 
   .hero-matrix {

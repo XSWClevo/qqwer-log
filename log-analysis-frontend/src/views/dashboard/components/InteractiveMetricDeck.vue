@@ -41,28 +41,28 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 152px;
-  padding: 16px;
+  min-height: 136px;
+  padding: 14px;
   border: 1px solid color-mix(in srgb, var(--macos-border) 72%, transparent);
-  border-radius: 20px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--macos-card-bg) 90%, transparent);
   text-align: left;
   cursor: pointer;
   transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
 
   &:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.10);
   }
 
   &.active {
     border-color: color-mix(in srgb, var(--macos-blue) 62%, transparent);
-    box-shadow: 0 18px 40px color-mix(in srgb, var(--macos-blue) 20%, transparent);
-    transform: translateY(-3px);
+    box-shadow: inset 0 2px 0 color-mix(in srgb, var(--macos-blue) 48%, transparent), 0 12px 28px color-mix(in srgb, var(--macos-blue) 16%, transparent);
+    transform: translateY(-2px);
   }
 
   strong {
-    font-size: 24px;
+    font-size: 22px;
     line-height: 1.1;
     color: var(--macos-text-primary);
   }
@@ -77,7 +77,7 @@ defineEmits<{
 
 .metric-label {
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 88%, transparent);
 }
@@ -85,8 +85,8 @@ defineEmits<{
 .metric-chip {
   align-self: flex-start;
   margin-top: auto;
-  padding: 6px 10px;
-  border-radius: 999px;
+  padding: 5px 8px;
+  border-radius: 6px;
   font-size: 11px;
   color: var(--macos-text-primary);
   background: color-mix(in srgb, var(--macos-bg-secondary) 92%, transparent);

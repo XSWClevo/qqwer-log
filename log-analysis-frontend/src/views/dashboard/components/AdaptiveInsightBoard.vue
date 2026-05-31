@@ -129,8 +129,8 @@ const resolveProps = (tile: DashboardInsightTile) => {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--macos-bg-secondary) 88%, transparent);
 
   strong {
@@ -155,8 +155,8 @@ const resolveProps = (tile: DashboardInsightTile) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--macos-bg-secondary) 88%, transparent);
 
   p {

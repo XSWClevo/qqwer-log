@@ -111,9 +111,9 @@ const formatViewLabel = (view: string) => {
 .drilldown-shell {
   display: grid;
   gap: 18px;
-  padding: 18px 20px;
+  padding: 16px;
   border: 1px solid color-mix(in srgb, var(--macos-border) 72%, transparent);
-  border-radius: 24px;
+  border-radius: 8px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--macos-card-bg) 90%, transparent), color-mix(in srgb, var(--macos-bg-secondary) 96%, transparent));
 }
@@ -126,7 +126,7 @@ const formatViewLabel = (view: string) => {
 
   h3 {
     margin: 8px 0 0;
-    font-size: 22px;
+    font-size: 20px;
     color: var(--macos-text-primary);
   }
 
@@ -140,7 +140,7 @@ const formatViewLabel = (view: string) => {
 
 .drilldown-eyebrow {
   font-size: 12px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 92%, transparent);
 }
@@ -152,7 +152,7 @@ const formatViewLabel = (view: string) => {
   gap: 6px;
 
   strong {
-    font-size: 30px;
+    font-size: 28px;
     color: var(--macos-text-primary);
     line-height: 1;
   }
@@ -174,16 +174,16 @@ const formatViewLabel = (view: string) => {
   display: flex;
   align-items: end;
   gap: 10px;
-  min-height: 180px;
-  padding: 18px;
-  border-radius: 20px;
+  min-height: 160px;
+  padding: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--macos-bg-secondary) 88%, transparent);
 }
 
 .signal-bar {
   flex: 1;
   min-width: 16px;
-  border-radius: 999px 999px 8px 8px;
+  border-radius: 4px 4px 2px 2px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--macos-blue) 88%, #14b8a6 12%), color-mix(in srgb, #14b8a6 72%, transparent));
   box-shadow: 0 10px 24px color-mix(in srgb, var(--macos-blue) 18%, transparent);
 }
@@ -194,15 +194,15 @@ const formatViewLabel = (view: string) => {
 }
 
 .side-block {
-  padding: 16px;
-  border-radius: 18px;
+  padding: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--macos-bg-secondary) 90%, transparent);
 
   span {
     display: block;
     margin-bottom: 12px;
     font-size: 12px;
-    letter-spacing: 0.08em;
+    letter-spacing: 0;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--macos-text-secondary) 92%, transparent);
   }
@@ -223,7 +223,7 @@ const formatViewLabel = (view: string) => {
 
   em {
     padding: 8px 10px;
-    border-radius: 999px;
+    border-radius: 6px;
     font-style: normal;
     font-size: 12px;
     color: var(--macos-text-primary);
