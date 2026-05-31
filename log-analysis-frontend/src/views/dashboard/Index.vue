@@ -1,20 +1,17 @@
 <template>
   <AppLayout>
-    <div class="dashboard-container">
-      <!-- Top Bar -->
-      <div class="top-bar">
-        <div class="top-bar-left">
-          <h1 class="page-title">日志监控大屏</h1>
-        </div>
-        <div class="top-bar-right">
+    <div class="dashboard-page">
+      <section class="topbar">
+        <div class="topbar-group">
           <el-select v-model="timeRange" class="time-selector" @change="handleTimeRangeChange">
             <el-option label="最近 1 小时" value="1h" />
             <el-option label="最近 6 小时" value="6h" />
             <el-option label="最近 24 小时" value="24h" />
             <el-option label="最近 7 天" value="7d" />
           </el-select>
-          <div class="auto-refresh">
-            <span class="refresh-label">自动刷新</span>
+
+          <div class="refresh-controls">
+            <span>自动刷新</span>
             <el-switch v-model="autoRefresh" @change="handleAutoRefreshChange" />
             <el-select
               v-if="autoRefresh"
@@ -28,134 +25,132 @@
               <el-option label="60s" :value="60000" />
             </el-select>
           </div>
-          <el-dropdown @command="handleCommand">
-            <span class="user-info">
-              <el-icon><User /></el-icon>
-              <span>{{ userInfo }}</span>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
         </div>
-      </div>
 
-    <!-- Main Content -->
-    <div class="dashboard-content">
-      <!-- First Row: 核心指标卡片 -->
-      <el-row :gutter="16" class="dashboard-row">
-        <el-col :xs="24" :sm="12" :lg="6">
-          <MachineStatusCard :data="machineStatus" :loading="loading" />
-        </el-col>
-        <el-col :xs="24" :sm="12" :lg="6">
-          <LogPipelineCard :data="logPipeline" :loading="loading" />
-        </el-col>
-        <el-col :xs="24" :sm="12" :lg="6">
-          <CoreOverviewCard :data="coreOverview" :loading="loading" />
-        </el-col>
-        <el-col :xs="24" :sm="12" :lg="6">
-          <DatabaseStatusCard :data="databaseStatus" :loading="loading" />
-        </el-col>
-      </el-row>
+        <div class="topbar-group">
+          <el-button plain @click="fetchAllData(timeRange)">立即刷新</el-button>
+        </div>
+      </section>
 
-      <!-- Second Row: 趋势与分布 -->
-      <el-row :gutter="16" class="dashboard-row">
-        <el-col :xs="24" :lg="16">
-          <LogTrendChart :data="logTrend" :loading="loading" @drill-down="handleDrillDown" />
-        </el-col>
-        <el-col :xs="24" :lg="8">
-          <LevelDistributionChart :data="levelDistribution" :loading="loading" />
-        </el-col>
-      </el-row>
+      <CommandCenterHero
+        :dataset-context="workspace.datasetContext"
+        :platform-metrics="workspace.platformMetrics"
+        :last-updated-label="workspace.lastUpdatedLabel"
+      />
 
-      <!-- Third Row: 热点排行 -->
-      <el-row :gutter="16" class="dashboard-row">
-        <el-col :xs="24" :md="8">
-          <TopHostsChart :data="topHosts" :loading="loading" />
-        </el-col>
-        <el-col :xs="24" :md="8">
-          <TopAppsChart :data="topApps" :loading="loading" />
-        </el-col>
-        <el-col :xs="24" :md="8">
-          <TopExceptionsCard :data="topExceptions" :loading="loading" />
-        </el-col>
-      </el-row>
+      <DatasetContextBar
+        :dataset-context="workspace.datasetContext"
+        :available-datasets="workspace.availableDatasets"
+        :last-updated-label="workspace.lastUpdatedLabel"
+        :selected-datasource-id="selectedDatasourceId"
+        @dataset-change="handleDatasetChange"
+      />
 
-      <!-- Fourth Row: 实时数据流 -->
-      <el-row :gutter="16" class="dashboard-row">
-        <el-col :span="24">
-          <RealtimeLogsTable :data="realtimeLogs" :loading="loading" @row-click="handleLogRowClick" />
-        </el-col>
-      </el-row>
-    </div>
+      <section v-if="workspace.warnings.length" class="warning-stack">
+        <el-alert
+          v-for="(warning, index) in workspace.warnings"
+          :key="`${warning.scope || 'warning'}-${index}`"
+          :title="warning.message"
+          :type="warning.level === 'error' ? 'error' : 'warning'"
+          :closable="false"
+          show-icon
+        />
+      </section>
 
-      <!-- Log Detail Dialog -->
+      <InteractiveMetricDeck
+        :metrics="workspace.logMetrics.length ? workspace.logMetrics : workspace.platformMetrics"
+        :selected-metric-key="selectedMetricKey"
+        @metric-select="handleMetricSelect"
+      />
+
+      <MetricDrilldownPanel
+        :metric="selectedMetric"
+        :drilldown="selectedMetricDrilldown"
+        :selected-metric-key="selectedMetricKey"
+        :workspace="workspace"
+      />
+
+      <EmptyDatasetState
+        v-if="workspace.emptyState"
+        :title="workspace.emptyState.title"
+        :description="workspace.emptyState.description"
+        :action-label="workspace.emptyState.actionLabel"
+        :action-route="workspace.emptyState.actionRoute"
+      />
+
+      <AdaptiveInsightBoard
+        v-else
+        :views="insightTiles"
+        :workspace="workspace"
+      />
+
+      <RealtimeLogsTable
+        :data="workspace.recentLogs.items"
+        :loading="loading"
+        @row-click="handleLogRowClick"
+      />
+
       <LogDetailDialog v-model:visible="logDetailVisible" :log="selectedLog" />
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/store/auth'
-import { User } from '@element-plus/icons-vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import MachineStatusCard from './components/MachineStatusCard.vue'
-import LogPipelineCard from './components/LogPipelineCard.vue'
-import CoreOverviewCard from './components/CoreOverviewCard.vue'
-import DatabaseStatusCard from './components/DatabaseStatusCard.vue'
-import LogTrendChart from './components/LogTrendChart.vue'
-import LevelDistributionChart from './components/LevelDistributionChart.vue'
-import TopHostsChart from './components/TopHostsChart.vue'
-import TopAppsChart from './components/TopAppsChart.vue'
-import TopExceptionsCard from './components/TopExceptionsCard.vue'
+import DatasetContextBar from './components/DatasetContextBar.vue'
+import EmptyDatasetState from './components/EmptyDatasetState.vue'
 import RealtimeLogsTable from './components/RealtimeLogsTable.vue'
 import LogDetailDialog from './components/LogDetailDialog.vue'
+import CommandCenterHero from './components/CommandCenterHero.vue'
+import InteractiveMetricDeck from './components/InteractiveMetricDeck.vue'
+import MetricDrilldownPanel from './components/MetricDrilldownPanel.vue'
+import AdaptiveInsightBoard from './components/AdaptiveInsightBoard.vue'
 import { useDashboardData } from './composables/useDashboardData'
-import type { LogRecord } from './types'
+import { buildDashboardLayout } from './composables/useDashboardCapabilityLayout'
+import type { DashboardMetricCard, LogRecord } from './types'
 
-const router = useRouter()
-const authStore = useAuthStore()
-
-// 状态
 const timeRange = ref('1h')
 const autoRefresh = ref(true)
-const refreshInterval = ref(10000) // 默认 10 秒
-let refreshTimer: ReturnType<typeof setInterval> | null = null
-
-// 日志详情弹窗
+const refreshInterval = ref(10000)
 const logDetailVisible = ref(false)
 const selectedLog = ref<LogRecord | null>(null)
+const selectedMetricKey = ref('total-logs')
+let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-// 使用组合式函数获取数据
-const {
-  loading,
-  machineStatus,
-  logPipeline,
-  coreOverview,
-  databaseStatus,
-  logTrend,
-  levelDistribution,
-  topHosts,
-  topApps,
-  topExceptions,
-  realtimeLogs,
-  fetchAllData
-} = useDashboardData()
+const { loading, selectedDatasourceId, workspace, fetchAllData } = useDashboardData()
 
-// 用户信息
-const userInfo = computed(() => authStore.user?.username || '用户')
+const metricPool = computed(() => (workspace.value.logMetrics.length ? workspace.value.logMetrics : workspace.value.platformMetrics))
+const selectedMetric = computed<DashboardMetricCard | undefined>(() => (
+  metricPool.value.find(item => item.key === selectedMetricKey.value) || metricPool.value[0]
+))
+const selectedMetricDrilldown = computed(() => (
+  workspace.value.metricDrilldowns.find(item => item.metricKey === selectedMetricKey.value) || workspace.value.metricDrilldowns[0]
+))
+const insightTiles = computed(() => buildDashboardLayout(workspace.value))
 
-// 事件处理
+watch(metricPool, metrics => {
+  if (!metrics.length) {
+    selectedMetricKey.value = ''
+    return
+  }
+  if (!metrics.some(item => item.key === selectedMetricKey.value)) {
+    const firstMetric = metrics[0]
+    selectedMetricKey.value = firstMetric ? firstMetric.key : ''
+  }
+}, { immediate: true })
+
 const handleTimeRangeChange = () => {
   fetchAllData(timeRange.value)
 }
 
-const handleAutoRefreshChange = (val: boolean) => {
-  if (val) {
+const handleDatasetChange = (datasourceId: string) => {
+  selectedDatasourceId.value = datasourceId
+  fetchAllData(timeRange.value, datasourceId)
+}
+
+const handleAutoRefreshChange = (value: boolean) => {
+  if (value) {
     startAutoRefresh()
   } else {
     stopAutoRefresh()
@@ -168,16 +163,8 @@ const handleIntervalChange = () => {
   }
 }
 
-const handleCommand = async (command: string) => {
-  if (command === 'logout') {
-    await authStore.logout()
-    router.push('/login')
-  }
-}
-
-const handleDrillDown = (params: { time: string; level: string }) => {
-  console.log('Drill down:', params)
-  // 可跳转到日志搜索页面并带上筛选条件
+const handleMetricSelect = (metricKey: string) => {
+  selectedMetricKey.value = metricKey
 }
 
 const handleLogRowClick = (log: LogRecord) => {
@@ -185,7 +172,6 @@ const handleLogRowClick = (log: LogRecord) => {
   logDetailVisible.value = true
 }
 
-// 自动刷新
 const startAutoRefresh = () => {
   stopAutoRefresh()
   refreshTimer = setInterval(() => {
@@ -200,7 +186,6 @@ const stopAutoRefresh = () => {
   }
 }
 
-// 生命周期
 onMounted(() => {
   fetchAllData(timeRange.value)
   if (autoRefresh.value) {
@@ -214,119 +199,58 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
-.dashboard-container {
-  min-height: 100vh;
-  background: var(--macos-bg-secondary);
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 100%;
+  padding: 20px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--macos-blue) 10%, transparent), transparent 30%),
+    radial-gradient(circle at 88% 10%, color-mix(in srgb, #14b8a6 10%, transparent), transparent 26%),
+    linear-gradient(180deg, color-mix(in srgb, var(--macos-bg-secondary) 94%, transparent), var(--macos-bg-primary));
 }
 
-.top-bar {
+.topbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  background: var(--macos-glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  padding: 0 24px;
-  height: 64px;
-  box-shadow: var(--macos-shadow-sm);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  border-bottom: 1px solid var(--macos-border);
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--macos-border) 76%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--macos-card-bg) 90%, transparent);
+  backdrop-filter: blur(14px);
 }
 
-.top-bar-left {
-  .page-title {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--macos-text-primary);
-  }
-}
-
-.top-bar-right {
+.topbar-group,
+.refresh-controls {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .time-selector {
-  width: 140px;
+  width: 160px;
 }
 
-.auto-refresh {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  
-  .refresh-label {
-    font-size: 14px;
-    color: var(--macos-text-secondary);
-  }
-  
-  .interval-selector {
-    width: 72px;
-  }
+.interval-selector {
+  width: 112px;
 }
 
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 8px 14px;
-  border-radius: 8px;
-  background: var(--macos-bg-primary);
-  border: 1px solid var(--macos-border);
-  transition: all 0.2s ease;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--macos-text-primary);
-
-  &:hover {
-    background: var(--macos-bg-secondary);
-    border-color: var(--macos-blue);
-    box-shadow: var(--macos-shadow-sm);
-  }
-
-  :deep(.el-icon) {
-    font-size: 18px;
-    color: var(--macos-blue);
-  }
+.warning-stack {
+  display: grid;
+  gap: 10px;
 }
 
-.dashboard-content {
-  padding: 20px;
-}
-
-.dashboard-row {
-  margin-bottom: 16px;
-  
-  &:last-child {
-    margin-bottom: 0;
+@media (max-width: 960px) {
+  .dashboard-page {
+    padding: 16px;
   }
-}
 
-// 响应式调整
-@media (max-width: 768px) {
-  .top-bar {
+  .topbar {
     flex-direction: column;
-    height: auto;
-    padding: 12px 16px;
-    gap: 12px;
-  }
-  
-  .top-bar-right {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  
-  .dashboard-content {
-    padding: 12px;
-  }
-  
-  .dashboard-row {
-    margin-bottom: 12px;
+    align-items: stretch;
   }
 }
 </style>

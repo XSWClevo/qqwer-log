@@ -56,7 +56,7 @@ export interface ExceptionItem {
 export interface LogRecord {
   id: string
   timestamp: string
-  severity: 'INFO' | 'WARN' | 'ERROR' | 'FATAL' | 'CRITICAL'
+  severity: 'INFO' | 'WARN' | 'WARNING' | 'ERROR' | 'FATAL' | 'CRITICAL' | 'UNKNOWN'
   hostname: string
   appname: string
   message: string
@@ -66,6 +66,16 @@ export interface LogRecord {
 
 export type DashboardViewStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 export type DashboardTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+export type DashboardCapabilityView =
+  | 'trend'
+  | 'severity'
+  | 'hosts'
+  | 'apps'
+  | 'errors'
+  | 'recent-logs'
+  | 'warnings'
+  | 'dataset'
+export type DashboardInsightEmphasis = 'hero' | 'feature' | 'support'
 
 export interface DashboardMetricCard {
   key: string
@@ -75,20 +85,31 @@ export interface DashboardMetricCard {
   footnote?: string
   badge?: string
   tone?: DashboardTone
+  delta?: string
+  contextValue?: string
+  capabilityKey?: DashboardCapabilityView
 }
 
 export interface DashboardCapability {
   key: string
+  label: string
   supported: boolean
+  view: DashboardCapabilityView
+  priority: number
+  status: 'ready' | 'fallback' | 'missing'
   reason?: string
-  fallbackView?: string
+  fallbackView?: DashboardCapabilityView
 }
 
 export interface DashboardMetricDrilldown {
   metricKey: string
-  title?: string
-  description?: string
+  title: string
+  description: string
   unit?: string
+  tone?: DashboardTone
+  highlights: string[]
+  relatedViews: DashboardCapabilityView[]
+  status: 'ready' | 'fallback'
 }
 
 export interface DashboardStorageVolume {
@@ -126,6 +147,17 @@ export interface DashboardWarning {
   message: string
 }
 
+export interface DashboardInsightTile {
+  key: string
+  title: string
+  description: string
+  view: DashboardCapabilityView
+  status: DashboardViewStatus
+  capabilityKey: string
+  emphasis: DashboardInsightEmphasis
+  emptyText?: string
+}
+
 export interface DashboardEmptyState {
   title: string
   description: string
@@ -143,9 +175,9 @@ export interface DashboardWorkspaceData {
   status: DashboardViewStatus
   datasetContext: DashboardDatasetContext | null
   availableDatasets: DashboardDatasetContext[]
-  capabilities?: DashboardCapability[]
-  metricDrilldowns?: DashboardMetricDrilldown[]
-  logKpis?: DashboardLogKpis | null
+  capabilities: DashboardCapability[]
+  metricDrilldowns: DashboardMetricDrilldown[]
+  logKpis: DashboardLogKpis | null
   platformMetrics: DashboardMetricCard[]
   logMetrics: DashboardMetricCard[]
   logTrend: DashboardPanelState<LogTrendItem>
