@@ -39,6 +39,11 @@ import java.util.stream.Collectors;
 public class DashboardService {
 
     private final DashboardMapper dashboardMapper;
+    private final DashboardDatasetDiscoveryService datasetDiscoveryService;
+    private final DashboardDatasetProbeService datasetProbeService;
+    private final DashboardDatasetSelector datasetSelector;
+    private final DashboardPlatformHealthService platformHealthService;
+    private final DashboardLogDatasetService logDatasetService;
     
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final SystemInfo systemInfo = new SystemInfo();
@@ -513,6 +518,39 @@ public class DashboardService {
                     .replicaCount(1).shardCount(1).totalRows(0L).totalPartitions(0)
                     .lastUpdateTime(LocalDateTime.now().format(FORMATTER)).build();
         }
+    }
+
+    /**
+     * 组装 Dashboard 首页总览。
+     * 这里只负责编排，不直接关心数据集发现细节或具体 SQL 拼接。
+     */
+    public DashboardOverviewDTO getOverview(DashboardQueryRequest request) {
+        List<DashboardWarningDTO> warnings = new ArrayList<>();
+        List<DashboardDatasetCandidateDTO> candidates = datasetDiscoveryService.discoverCandidates();
+        List<DashboardDatasetProbeResult> probes = datasetProbeService.probeCandidates(candidates);
+        LocalDateTime now = LocalDateTime.now();
+        List<DashboardDatasetContextDTO> availableDatasets = datasetSelector.toContexts(probes, now);
+        DashboardDatasetContextDTO datasetContext = datasetSelector.select(probes, request.getDatasourceId(), now);
+        PlatformHealthDTO platformHealth = platformHealthService.getPlatformHealth(warnings);
+        DashboardLogDatasetSnapshot snapshot = logDatasetService.buildSnapshot(datasetContext, request, warnings);
+
+        return DashboardOverviewDTO.builder()
+                .datasetContext(datasetContext)
+                .availableDatasets(availableDatasets)
+                .platformHealth(platformHealth)
+                .logKpis(snapshot.getLogKpis())
+                .logTrend(snapshot.getLogTrend())
+                .severityDistribution(snapshot.getSeverityDistribution())
+                .topHosts(snapshot.getTopHosts())
+                .topApps(snapshot.getTopApps())
+                .topErrorMessages(snapshot.getTopErrorMessages())
+                .recentHighRiskLogs(snapshot.getRecentHighRiskLogs())
+                .emptyState(snapshot.getEmptyState())
+                .warnings(warnings)
+                .traceId(UUID.randomUUID().toString().replace("-", "").substring(0, 16))
+                .capabilities(snapshot.getCapabilities())
+                .metricDrilldowns(snapshot.getMetricDrilldowns())
+                .build();
     }
 
     // ==================== 异步方法 ====================

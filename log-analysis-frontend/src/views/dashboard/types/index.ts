@@ -1,4 +1,4 @@
-// Dashboard 类型定义
+// Legacy types kept for existing dashboard child components that may still be reused.
 
 export interface MachineStatus {
   cpuUsage: number
@@ -44,6 +44,7 @@ export interface LevelDistribution {
 export interface TopItem {
   name: string
   count: number
+  meta?: string
 }
 
 export interface ExceptionItem {
@@ -55,7 +56,7 @@ export interface ExceptionItem {
 export interface LogRecord {
   id: string
   timestamp: string
-  severity: 'INFO' | 'WARN' | 'ERROR' | 'FATAL'
+  severity: 'INFO' | 'WARN' | 'ERROR' | 'FATAL' | 'CRITICAL'
   hostname: string
   appname: string
   message: string
@@ -63,15 +64,97 @@ export interface LogRecord {
   jsonData?: Record<string, unknown>
 }
 
-export interface DashboardData {
-  machineStatus: MachineStatus
-  logPipeline: LogPipeline
-  coreOverview: CoreOverview
-  databaseStatus: DatabaseStatus
-  logTrend: LogTrendItem[]
-  levelDistribution: LevelDistribution[]
-  topHosts: TopItem[]
-  topApps: TopItem[]
-  topExceptions: ExceptionItem[]
-  realtimeLogs: LogRecord[]
+export type DashboardViewStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+export type DashboardTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+
+export interface DashboardMetricCard {
+  key: string
+  label: string
+  value: string
+  hint?: string
+  footnote?: string
+  badge?: string
+  tone?: DashboardTone
+}
+
+export interface DashboardCapability {
+  key: string
+  supported: boolean
+  reason?: string
+  fallbackView?: string
+}
+
+export interface DashboardMetricDrilldown {
+  metricKey: string
+  title?: string
+  description?: string
+  unit?: string
+}
+
+export interface DashboardStorageVolume {
+  value?: number
+  unit?: string
+  displayValue?: string
+}
+
+export interface DashboardLogKpis {
+  totalLogs?: number
+  currentEps?: number
+  errorCount?: number
+  criticalCount?: number
+  errorRate?: number
+  activeHostCount?: number
+  activeAppCount?: number
+  storageVolume?: DashboardStorageVolume | null
+}
+
+export interface DashboardDatasetContext {
+  datasourceId?: string
+  datasourceName: string
+  databaseName?: string
+  tableName?: string
+  source?: string
+  status?: string
+  totalRows?: number
+  latestLogTime?: string
+  hasData?: boolean
+}
+
+export interface DashboardWarning {
+  scope?: string
+  level?: 'info' | 'warning' | 'error'
+  message: string
+}
+
+export interface DashboardEmptyState {
+  title: string
+  description: string
+  actionLabel?: string
+  actionRoute?: string
+}
+
+export interface DashboardPanelState<T> {
+  status: DashboardViewStatus
+  items: T[]
+  emptyText?: string
+}
+
+export interface DashboardWorkspaceData {
+  status: DashboardViewStatus
+  datasetContext: DashboardDatasetContext | null
+  availableDatasets: DashboardDatasetContext[]
+  capabilities?: DashboardCapability[]
+  metricDrilldowns?: DashboardMetricDrilldown[]
+  logKpis?: DashboardLogKpis | null
+  platformMetrics: DashboardMetricCard[]
+  logMetrics: DashboardMetricCard[]
+  logTrend: DashboardPanelState<LogTrendItem>
+  severityDistribution: DashboardPanelState<LevelDistribution>
+  topHosts: DashboardPanelState<TopItem>
+  topApps: DashboardPanelState<TopItem>
+  topErrors: DashboardPanelState<TopItem>
+  recentLogs: DashboardPanelState<LogRecord>
+  warnings: DashboardWarning[]
+  emptyState: DashboardEmptyState | null
+  lastUpdatedLabel: string
 }
