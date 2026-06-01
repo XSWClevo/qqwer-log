@@ -49,7 +49,7 @@ chmod 777 ${LOG_DIR} ${DATA_DIR} ${CONFIG_DIR}
 ARCH=$(uname -m)
 case "$ARCH" in
     aarch64|arm64) ARCH="arm64" ;;
-    x86_64|amd64) ARCH="x86_64" ;;
+    x86_64|amd64) ARCH="amd64" ;;
 esac
 
 # 下载安装包
@@ -126,6 +126,8 @@ if [ "${OS_TYPE}" = "darwin" ]; then
     <key>ProgramArguments</key>
     <array>
         <string>${BIN_DIR}/vector-agent</string>
+        <string>-config</string>
+        <string>${INSTALL_DIR}/agent.yaml</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -167,7 +169,7 @@ Before=vector.service
 
 [Service]
 Type=simple
-ExecStart=${BIN_DIR}/vector-agent -config ${CONFIG_DIR}/agent.yaml
+ExecStart=${BIN_DIR}/vector-agent -config ${INSTALL_DIR}/agent.yaml
 Restart=on-failure
 RestartSec=10s
 
@@ -189,8 +191,10 @@ else
     systemctl start vector-agent
     sleep 2
     systemctl start vector
-    AGENT_STATUS=$(systemctl is-active vector-agent 2>/dev/null || echo "unknown")
-    VECTOR_STATUS=$(systemctl is-active vector 2>/dev/null || echo "unknown")
+    AGENT_STATUS=$(systemctl is-active vector-agent 2>/dev/null || true)
+    VECTOR_STATUS=$(systemctl is-active vector 2>/dev/null || true)
+    [ -n "${AGENT_STATUS}" ] || AGENT_STATUS="unknown"
+    [ -n "${VECTOR_STATUS}" ] || VECTOR_STATUS="unknown"
 fi
 
 echo ""
@@ -198,7 +202,30 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  安装完成！${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "配置文件: ${CONFIG_DIR}/agent.yaml"
+echo "配置文件: ${INSTALL_DIR}/agent.yaml"
+echo ""
+if [ "${OS_TYPE}" = "darwin" ]; then
+    echo "macOS 常用命令:"
+    echo "  sudo launchctl list | grep vector"
+    echo "  tail -f ${LOG_DIR}/agent.log"
+else
+    echo "服务状态:"
+    echo "  Vector Agent: ${AGENT_STATUS}"
+    echo "  Vector: ${VECTOR_STATUS}"
+    echo ""
+    echo "常用命令:"
+    echo "  systemctl status vector-agent"
+    echo "  journalctl -u vector-agent -f"
+fi
+echo ""
+echo -e "${GREEN}Agent 已启动，正在向服务器注册...${NC}"
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}  安装完成！${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "配置文件: ${INSTALL_DIR}/agent.yaml"
 echo ""
 if [ "${OS_TYPE}" = "darwin" ]; then
     echo "macOS 常用命令:"

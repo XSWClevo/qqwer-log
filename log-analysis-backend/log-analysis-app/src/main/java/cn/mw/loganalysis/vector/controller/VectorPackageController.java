@@ -9,6 +9,7 @@ import cn.mw.loganalysis.vector.service.VectorMachineService;
 import cn.mw.loganalysis.vector.service.VectorPackageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -171,8 +172,8 @@ public class VectorPackageController {
         }
         
         // 获取目标版本的安装包
-        String osType = machine.getOsType() != null ? machine.getOsType() : "linux";
-        String arch = "arm64";  // TODO: 从机器信息获取
+        String osType = StringUtils.defaultIfBlank(machine.getOsType(), "linux");
+        String arch = packageService.defaultArchForOs(osType);  // TODO: 从机器信息获取真实架构
         
         VectorPackage pkg;
         if (targetVersion != null && !targetVersion.isEmpty()) {

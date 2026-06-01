@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -115,13 +117,26 @@ func main() {
 func setupLogger(level string) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	// 确保日志目录存在
-	if err := os.MkdirAll(config.LogDir, 0755); err == nil {
-		logFile := config.LogDir + "/agent.log"
-		f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err == nil {
-			// 同时输出到控制台和文件
-			log.SetOutput(f)
-		}
+	writer, err := newLogWriter(config.LogDir, os.Stdout)
+	if err != nil {
+		log.Printf("初始化日志文件失败，回退到 stdout: %v", err)
+		log.SetOutput(os.Stdout)
+		return
 	}
+
+	log.SetOutput(writer)
+}
+
+func newLogWriter(logDir string, stdout io.Writer) (io.Writer, error) {
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, err
+	}
+
+	logPath := filepath.Join(logDir, "agent.log")
+	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	return io.MultiWriter(stdout, logFile), nil
 }

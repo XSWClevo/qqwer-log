@@ -84,13 +84,13 @@
           <el-form-item label="操作系统" required>
             <el-select v-model="uploadForm.osType" style="width: 100%">
               <el-option label="macOS" value="darwin" />
-              <el-option label="Linux" value="linux" disabled />
+              <el-option label="Linux" value="linux" />
             </el-select>
           </el-form-item>
           <el-form-item label="CPU架构">
             <el-select v-model="uploadForm.arch" style="width: 100%">
               <el-option label="arm64 (Apple Silicon)" value="arm64" />
-              <el-option label="amd64 (x86_64)" value="amd64" disabled />
+              <el-option label="amd64 (x86_64)" value="amd64" />
             </el-select>
           </el-form-item>
           <el-form-item label="更新日志">

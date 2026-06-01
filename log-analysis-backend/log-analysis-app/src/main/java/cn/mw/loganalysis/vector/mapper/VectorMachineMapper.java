@@ -65,6 +65,18 @@ public interface VectorMachineMapper extends BaseMapper<VectorMachine> {
     }
 
     /**
+     * 根据 IP 地址查询机器
+     */
+    default VectorMachine selectByIpAddress(String ipAddress) {
+        if (!StringUtils.hasText(ipAddress)) {
+            return null;
+        }
+        LambdaQueryWrapper<VectorMachine> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(VectorMachine::getIpAddress, ipAddress);
+        return selectOne(wrapper);
+    }
+
+    /**
      * 根据 Token 查询机器
      */
     default VectorMachine selectByToken(String token) {

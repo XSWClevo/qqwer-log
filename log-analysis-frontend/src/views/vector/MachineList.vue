@@ -637,10 +637,14 @@ const fetchLatestVersions = async () => {
   }
 }
 
+const getDefaultArchForOs = (osType?: string) => {
+  return osType === 'darwin' ? 'arm64' : 'amd64'
+}
+
 // 获取机器对应的最新 Agent 版本
 const getLatestAgentVersion = (machine: VectorMachine) => {
   const osType = machine.osType || 'linux'
-  const arch = 'amd64'  // 默认架构
+  const arch = getDefaultArchForOs(osType)
   return latestAgentVersion.value[`${osType}-${arch}`] || '-'
 }
 
@@ -873,8 +877,8 @@ const sendUpgradeCommand = async (machine: VectorMachine, _commandType: string) 
     const pkgData: any = await request.get('/api/vector/packages/latest', {
       params: {
         packageType,
-        osType: machine.osType || 'darwin',
-        arch: 'arm64'
+        osType: machine.osType || 'linux',
+        arch: getDefaultArchForOs(machine.osType)
       }
     })
     

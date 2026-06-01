@@ -2,6 +2,7 @@ package collector
 
 import (
 	"log"
+	"net"
 	"os"
 	"runtime"
 	"time"
@@ -11,7 +12,7 @@ import (
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/net"
+	gopsutilnet "github.com/shirou/gopsutil/v3/net"
 )
 
 // SystemInfo 系统信息
@@ -93,8 +94,7 @@ func (c *MetricsCollector) CollectSystemInfo() SystemInfo {
 
 	cpuCores := runtime.NumCPU()
 
-	// 获取IP地址（简化处理）
-	ipAddress := "127.0.0.1"
+	ipAddress := detectPrimaryIPAddress()
 
 	return SystemInfo{
 		Hostname:      hostname,
@@ -104,6 +104,74 @@ func (c *MetricsCollector) CollectSystemInfo() SystemInfo {
 		CPUCores:      cpuCores,
 		TotalMemoryMB: totalMemoryMB,
 	}
+}
+
+func detectPrimaryIPAddress() string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "127.0.0.1"
+	}
+
+	candidates := make([]net.IP, 0)
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addresses, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addresses {
+			var ip net.IP
+			switch value := addr.(type) {
+			case *net.IPNet:
+				ip = value.IP
+			case *net.IPAddr:
+				ip = value.IP
+			}
+
+			if ip == nil {
+				continue
+			}
+
+			candidates = append(candidates, ip)
+		}
+	}
+
+	return selectPreferredIPAddress(candidates)
+}
+
+func selectPreferredIPAddress(candidates []net.IP) string {
+	loopbackIPv4 := ""
+
+	for _, ip := range candidates {
+		if ip == nil {
+			continue
+		}
+
+		ipv4 := ip.To4()
+		if ipv4 == nil {
+			continue
+		}
+
+		ipText := ipv4.String()
+		if ipv4.IsLoopback() {
+			if loopbackIPv4 == "" {
+				loopbackIPv4 = ipText
+			}
+			continue
+		}
+
+		return ipText
+	}
+
+	if loopbackIPv4 != "" {
+		return loopbackIPv4
+	}
+
+	return "127.0.0.1"
 }
 
 // Collect 采集指标
@@ -131,7 +199,7 @@ func (c *MetricsCollector) Collect() Metrics {
 	}
 
 	// 4. 网络接口指标
-	if netStats, err := net.IOCounters(true); err == nil {
+	if netStats, err := gopsutilnet.IOCounters(true); err == nil {
 		for _, stat := range netStats {
 			// 过滤掉 lo 回环接口和虚拟接口
 			if stat.Name == "lo" || stat.Name == "lo0" {

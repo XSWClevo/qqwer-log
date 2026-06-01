@@ -2,10 +2,12 @@ package cn.mw.loganalysis.vector.service;
 
 import cn.mw.loganalysis.vector.entity.VectorPackage;
 import cn.mw.loganalysis.vector.mapper.VectorPackageMapper;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,6 +18,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -33,12 +36,15 @@ public class VectorPackageService {
      */
     public VectorPackage uploadPackage(MultipartFile file, String packageType, String version, 
                                         String osType, String arch, String changelog, String uploadedBy) throws IOException {
+        String normalizedOsType = normalizeOsType(osType);
+        String normalizedArch = normalizeArch(arch);
+
         // 创建存储目录
-        Path storageDir = Paths.get(storagePath, packageType, osType, arch);
+        Path storageDir = Paths.get(storagePath, packageType, normalizedOsType, normalizedArch);
         Files.createDirectories(storageDir);
         
         // 保存文件
-        String fileName = String.format("%s-%s-%s-%s", packageType, version, osType, arch);
+        String fileName = String.format("%s-%s-%s-%s", packageType, version, normalizedOsType, normalizedArch);
         if (file.getOriginalFilename() != null && file.getOriginalFilename().contains(".")) {
             fileName += file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf("."));
         }
@@ -55,19 +61,19 @@ public class VectorPackageService {
         String checksum = calculateSHA256(filePath);
         
         // 将同类型的其他版本设为非最新
-        LambdaUpdateWrapper<VectorPackage> updateWrapper = new LambdaUpdateWrapper<>();
-        updateWrapper.eq(VectorPackage::getPackageType, packageType)
-                     .eq(VectorPackage::getOsType, osType)
-                     .eq(VectorPackage::getArch, arch)
-                     .set(VectorPackage::getIsLatest, false);
+        UpdateWrapper<VectorPackage> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("package_type", packageType)
+                     .in("os_type", getOsTypeAliases(normalizedOsType))
+                     .in("arch", getArchAliases(normalizedArch))
+                     .set("is_latest", false);
         packageMapper.update(null, updateWrapper);
         
         // 创建记录
         VectorPackage pkg = new VectorPackage();
         pkg.setPackageType(packageType);
         pkg.setVersion(version);
-        pkg.setOsType(osType);
-        pkg.setArch(arch);
+        pkg.setOsType(normalizedOsType);
+        pkg.setArch(normalizedArch);
         pkg.setFileName(fileName);
         pkg.setFileSize(file.getSize());
         pkg.setChecksum(checksum);
@@ -79,7 +85,7 @@ public class VectorPackageService {
         
         packageMapper.insert(pkg);
         log.info("上传安装包: type={}, version={}, os={}, arch={}, path={}", 
-                packageType, version, osType, arch, filePath.toAbsolutePath());
+                packageType, version, normalizedOsType, normalizedArch, filePath.toAbsolutePath());
         
         return pkg;
     }
@@ -88,24 +94,33 @@ public class VectorPackageService {
      * 获取最新版本
      */
     public VectorPackage getLatestPackage(String packageType, String osType, String arch) {
-        LambdaQueryWrapper<VectorPackage> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(VectorPackage::getPackageType, packageType)
-               .eq(VectorPackage::getOsType, osType)
-               .eq(VectorPackage::getArch, arch)
-               .eq(VectorPackage::getIsLatest, true);
-        
-        return packageMapper.selectOne(wrapper);
+        String normalizedOsType = normalizeOsType(osType);
+        String normalizedArch = normalizeArch(arch);
+
+        QueryWrapper<VectorPackage> wrapper = new QueryWrapper<>();
+        wrapper.eq("package_type", packageType)
+               .in("os_type", getOsTypeAliases(normalizedOsType))
+               .in("arch", getArchAliases(normalizedArch))
+               .eq("is_latest", true)
+               .orderByDesc("created_at");
+
+        List<VectorPackage> packages = packageMapper.selectList(wrapper);
+        if (CollectionUtils.isEmpty(packages)) {
+            return null;
+        }
+
+        return packages.get(0);
     }
     
     /**
      * 获取所有版本
      */
     public List<VectorPackage> getAllPackages(String packageType) {
-        LambdaQueryWrapper<VectorPackage> wrapper = new LambdaQueryWrapper<>();
-        if (packageType != null && !packageType.isEmpty()) {
-            wrapper.eq(VectorPackage::getPackageType, packageType);
+        QueryWrapper<VectorPackage> wrapper = new QueryWrapper<>();
+        if (StringUtils.isNotBlank(packageType)) {
+            wrapper.eq("package_type", packageType);
         }
-        wrapper.orderByDesc(VectorPackage::getCreatedAt);
+        wrapper.orderByDesc("created_at");
         
         return packageMapper.selectList(wrapper);
     }
@@ -161,5 +176,62 @@ public class VectorPackageService {
         } catch (Exception e) {
             throw new IOException("计算校验和失败", e);
         }
+    }
+
+    String normalizeOsType(String osType) {
+        String normalized = StringUtils.trimToEmpty(StringUtils.lowerCase(osType));
+        if (StringUtils.isBlank(normalized)) {
+            return "linux";
+        }
+        if (StringUtils.equalsAny(normalized, "macos", "mac", "osx")) {
+            return "darwin";
+        }
+        return normalized;
+    }
+
+    String normalizeArch(String arch) {
+        String normalized = StringUtils.trimToEmpty(StringUtils.lowerCase(arch));
+        if (StringUtils.isBlank(normalized)) {
+            return "amd64";
+        }
+        if (StringUtils.equalsAny(normalized, "x86_64", "x64")) {
+            return "amd64";
+        }
+        if (StringUtils.equals(normalized, "aarch64")) {
+            return "arm64";
+        }
+        return normalized;
+    }
+
+    public String defaultArchForOs(String osType) {
+        String normalizedOsType = normalizeOsType(osType);
+        if (StringUtils.equals(normalizedOsType, "darwin")) {
+            return "arm64";
+        }
+        return "amd64";
+    }
+
+    private List<String> getOsTypeAliases(String osType) {
+        List<String> aliases = new ArrayList<>();
+        aliases.add(osType);
+        if (StringUtils.equals(osType, "darwin")) {
+            aliases.add("macos");
+            aliases.add("mac");
+            aliases.add("osx");
+        }
+        return aliases;
+    }
+
+    private List<String> getArchAliases(String arch) {
+        List<String> aliases = new ArrayList<>();
+        aliases.add(arch);
+        if (StringUtils.equals(arch, "amd64")) {
+            aliases.add("x86_64");
+            aliases.add("x64");
+        }
+        if (StringUtils.equals(arch, "arm64")) {
+            aliases.add("aarch64");
+        }
+        return aliases;
     }
 }

@@ -30,6 +30,10 @@ echo ""
 
 # 检查系统目录中是否已存在 vector
 check_system_vector() {
+    if [ "${VECTOR_SKIP_SYSTEM_VECTOR:-0}" = "1" ]; then
+        return 1
+    fi
+
     if [ -f "${SYSTEM_BIN_DIR}/vector" ] && [ -x "${SYSTEM_BIN_DIR}/vector" ]; then
         local existing_version=$(${SYSTEM_BIN_DIR}/vector --version 2>&1 | head -1 || echo "unknown")
         echo -e "${BLUE}检测到系统已安装 Vector: ${existing_version}${NC}"
@@ -83,6 +87,8 @@ detect_platform() {
         amd64) arch="x86_64" ;;
     esac
 
+    VECTOR_PATTERNS=()
+
     # 构建 Vector 文件名模式（用于匹配 GitHub assets）
     case "$os" in
         darwin)
@@ -93,18 +99,23 @@ detect_platform() {
                 echo -e "${YELLOW}建议使用 Rosetta 2 运行 arm64 版本，或使用 Homebrew 安装${NC}"
                 echo ""
                 # 尝试使用 arm64 版本
-                VECTOR_PATTERN="arm64-apple-darwin.tar.gz"
+                VECTOR_PATTERNS=("arm64-apple-darwin.tar.gz")
             else
-                VECTOR_PATTERN="${arch}-apple-darwin.tar.gz"
+                VECTOR_PATTERNS=("${arch}-apple-darwin.tar.gz")
             fi
             ;;
         linux)
-            # Linux: vector-0.52.0-aarch64-unknown-linux-musl.tar.gz
-            # 注意：Vector 使用 aarch64 而不是 arm64
+            # Linux: 优先使用 glibc 版本，兼容 Ubuntu；如缺失再回退 musl
             if [ "$arch" = "arm64" ]; then
-                VECTOR_PATTERN="aarch64-unknown-linux-musl.tar.gz"
+                VECTOR_PATTERNS=(
+                    "aarch64-unknown-linux-gnu.tar.gz"
+                    "aarch64-unknown-linux-musl.tar.gz"
+                )
             else
-                VECTOR_PATTERN="${arch}-unknown-linux-musl.tar.gz"
+                VECTOR_PATTERNS=(
+                    "${arch}-unknown-linux-gnu.tar.gz"
+                    "${arch}-unknown-linux-musl.tar.gz"
+                )
             fi
             ;;
         *)
@@ -115,19 +126,19 @@ detect_platform() {
     esac
 
     echo "  -> 目标平台: ${os}/${arch}"
-    echo "  -> 匹配模式: *${VECTOR_PATTERN}"
+    echo "  -> 匹配模式: *${VECTOR_PATTERNS[*]}"
     echo ""
 
     PLATFORM_OS="$os"
     PLATFORM_ARCH="$arch"
 }
 
-# 获取最新版本号和下载链接
+# 获取最新稳定版本号
 get_latest_release() {
     echo -e "${YELLOW}获取 Vector 最新版本信息...${NC}"
 
-    # 从 GitHub API 获取最新 release
-    local api_url="https://api.github.com/repos/vectordotdev/vector/releases/latest"
+    # 从 GitHub API 获取 release 列表，跳过 vdev 等开发版 tag
+    local api_url="https://api.github.com/repos/vectordotdev/vector/releases?per_page=20"
     local release_json=$(curl -s "$api_url")
 
     if [ -z "$release_json" ]; then
@@ -135,34 +146,39 @@ get_latest_release() {
         exit 1
     fi
 
-    # 解析版本号
-    local version=$(echo "$release_json" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/' | head -1)
+    # 解析第一个稳定 tag，例如 v0.55.0
+    local version=$(echo "$release_json" \
+        | grep '"tag_name":' \
+        | sed -E 's/.*"tag_name": "v([0-9][^"]*)".*/\1/' \
+        | grep -E '^[0-9]+' \
+        | head -1)
 
     if [ -z "$version" ]; then
-        echo -e "${RED}无法解析版本号${NC}"
+        echo -e "${RED}无法解析稳定版本号${NC}"
         exit 1
     fi
 
     echo "  -> 最新版本: v${version}"
 
-    # 查找匹配的下载链接
-    # 使用 grep 过滤出包含 browser_download_url 的行，然后匹配我们的模式
-    local download_url=$(echo "$release_json" | grep '"browser_download_url":' | grep "${VECTOR_PATTERN}" | sed -E 's/.*"browser_download_url": "([^"]+)".*/\1/' | head -1)
-
-    if [ -z "$download_url" ]; then
-        echo -e "${RED}未找到匹配的下载链接${NC}"
-        echo "  匹配模式: *${VECTOR_PATTERN}"
-        echo ""
-        echo "可用的下载文件:"
-        echo "$release_json" | grep '"browser_download_url":' | sed -E 's/.*"browser_download_url": "([^"]+)".*/\1/' | sed 's|.*/||'
-        exit 1
-    fi
-
-    echo "  -> 下载链接: ${download_url}"
-    echo ""
-
     VECTOR_VERSION="$version"
-    DOWNLOAD_URL="$download_url"
+}
+
+resolve_download_url() {
+    local pattern=""
+    for pattern in "${VECTOR_PATTERNS[@]}"; do
+        local candidate="https://github.com/vectordotdev/vector/releases/download/v${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${pattern}"
+        if curl -fsSLI "$candidate" >/dev/null 2>&1; then
+            DOWNLOAD_URL="$candidate"
+            echo "  -> 下载链接: ${DOWNLOAD_URL}"
+            echo ""
+            return 0
+        fi
+    done
+
+    echo -e "${RED}未找到匹配的下载链接${NC}"
+    echo "  版本: v${VECTOR_VERSION}"
+    echo "  匹配模式: *${VECTOR_PATTERNS[*]}"
+    exit 1
 }
 
 # 下载 Vector
@@ -217,6 +233,7 @@ download_vector() {
     mkdir -p "$BIN_DIR"
     cp "$vector_bin" "$BIN_DIR/vector"
     chmod +x "$BIN_DIR/vector"
+    printf '%s\n' "${VECTOR_VERSION}" > "$BIN_DIR/vector.version"
 
     echo -e "${GREEN}  -> 已安装到: ${BIN_DIR}/vector${NC}"
     echo ""
@@ -249,11 +266,9 @@ main() {
         get_latest_release
     else
         echo -e "${YELLOW}使用指定版本: v${VECTOR_VERSION}${NC}"
-        # 构建下载链接
-        DOWNLOAD_URL="https://github.com/vectordotdev/vector/releases/download/v${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${VECTOR_PATTERN}"
-        echo "  -> 下载链接: ${DOWNLOAD_URL}"
-        echo ""
     fi
+
+    resolve_download_url
 
     # 4. 下载
     download_vector

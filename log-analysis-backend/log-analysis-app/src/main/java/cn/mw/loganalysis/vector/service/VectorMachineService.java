@@ -99,6 +99,22 @@ public class VectorMachineService extends ServiceImpl<VectorMachineMapper, Vecto
             return machine;
         }
 
+        // 根据 IP 查找（同一台机器重装或 token 变化时兜底复用）
+        machine = vectorMachineMapper.selectByIpAddress(request.getIpAddress());
+        if (machine != null) {
+            machine.setName(request.getHostname());
+            machine.setHostname(request.getHostname());
+            machine.setAgentToken(token);
+            machine.setAgentVersion(request.getAgentVersion());
+            machine.setVectorVersion(request.getVectorVersion());
+            machine.setOsType(request.getOsType());
+            machine.setStatus(MachineStatus.ONLINE.getCode());
+            machine.setLastHeartbeat(LocalDateTime.now());
+            vectorMachineMapper.updateById(machine);
+            log.info("Agent 按 IP 复用机器重新注册: {}", machine.getName());
+            return machine;
+        }
+
         // 创建新机器
         machine = new VectorMachine();
         machine.setName(request.getHostname());

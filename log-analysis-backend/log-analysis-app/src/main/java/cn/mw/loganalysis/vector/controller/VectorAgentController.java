@@ -252,7 +252,7 @@ public class VectorAgentController {
     @GetMapping("/download")
     public ResponseEntity<org.springframework.core.io.Resource> downloadBundle(
             @RequestParam(defaultValue = "linux") String os,
-            @RequestParam(defaultValue = "arm64") String arch) {
+            @RequestParam(defaultValue = "amd64") String arch) {
         try {
             // 优先从包管理系统获取最新上传的包
             VectorPackage latestPkg = packageService.getLatestPackage("vector-agent-bundle", os, arch);
