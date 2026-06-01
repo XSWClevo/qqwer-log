@@ -21,7 +21,7 @@ interface BreadcrumbItem {
 
 // 路由到面包屑的映射
 const routeMap: Record<string, { title: string; parent?: string }> = {
-  '/': { title: '监控大屏' },
+  '/': { title: 'Dashboard' },
   '/log-search': { title: '日志搜索' },
   '/agent': { title: '智能助手' },
   '/trend-analysis': { title: '趋势分析', parent: '日志分析' },

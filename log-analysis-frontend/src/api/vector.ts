@@ -6,7 +6,6 @@ import request from '@/utils/request'
 import type {
   VectorHost,
   VectorConfig,
-  VectorDeployment,
   VectorMetrics,
   RegisterRequest,
   RegisterResponse,
@@ -19,7 +18,6 @@ import type {
   HostQueryParams,
   ConfigQueryParams,
   MetricsQueryParams,
-  DeploymentTask,
   VectorConfigTemplate
 } from '@/types/vector'
 
@@ -683,7 +681,9 @@ export const vrlApi = {
    * 执行 VRL 表达式解析日志
    */
   execute(data: VrlExecuteRequest): Promise<VrlExecuteResponse> {
-    return request.post('/api/vector/vrl/execute', data)
+    return request
+      .post('/api/vector/vrl/execute', data)
+      .then(res => unwrapApiResult<VrlExecuteResponse>(res))
   }
 }
 

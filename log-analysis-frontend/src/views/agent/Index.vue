@@ -1,137 +1,52 @@
 <template>
   <AppLayout>
     <div class="agent-page">
-      <section class="hero-shell" :class="{ collapsed: heroCollapsed }">
-        <div v-show="!heroCollapsed" class="hero-copy">
-          <div class="hero-eyebrow">Smart Agent Workspace</div>
-          <h1>智能助手</h1>
-          <p>
-            让日志查询从"先想筛选条件"变成"先说问题"。当前页面支持历史对话保存、会话切换和删除；如果数据源是
-            ClickHouse，还会优先走自然语言统计查询和图表结果展示。
-          </p>
-        </div>
-
-        <div v-show="!heroCollapsed" class="hero-metrics">
-          <div class="metric-card">
-            <span class="metric-label">历史会话</span>
-            <strong>{{ conversations.length }}</strong>
-            <small>按当前登录用户保存</small>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">当前数据源</span>
-            <strong>{{ selectedDatasource?.name || '未选择' }}</strong>
-            <small>{{ selectedDatasource?.vectorType || '请选择可查询数据源' }}</small>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">当前状态</span>
-            <strong>{{ currentConversationState }}</strong>
-            <small>{{ currentConversationSubtitle }}</small>
-          </div>
-        </div>
-
-        <div class="hero-toggle" @click="heroCollapsed = !heroCollapsed">
-          <el-icon><component :is="heroCollapsed ? ArrowDown : ArrowUp" /></el-icon>
-          <span>{{ heroCollapsed ? '展开工作台概览' : '收起' }}</span>
-        </div>
-      </section>
-      <div class="workspace-grid">
-        <aside class="left-rail">
-          <el-card shadow="never" class="panel-card datasource-card">
-            <template #header>
-              <div class="panel-header">
-                <div class="panel-title">
-                  <el-icon><Connection /></el-icon>
-                  <span>数据源</span>
-                </div>
-              </div>
-            </template>
-
-            <el-select
-              v-model="selectedDatasourceId"
-              class="full-width"
-              filterable
-              placeholder="选择可查询数据源"
-              :loading="datasourceLoading"
-            >
-              <el-option
-                v-for="item in datasources"
-                :key="item.id"
-                :label="itemLabel(item)"
-                :value="item.id"
-              />
-            </el-select>
-
-            <div v-if="selectedDatasource" class="datasource-summary">
-              <div class="summary-row">
-                <span>组件</span>
-                <strong>{{ selectedDatasource.name }}</strong>
-              </div>
-              <div class="summary-row">
-                <span>类型</span>
-                <el-tag size="small" effect="plain">{{ selectedDatasource.vectorType }}</el-tag>
-              </div>
-              <div v-if="selectedTableName" class="summary-row">
-                <span>表 / 索引</span>
-                <strong>{{ selectedTableName }}</strong>
-              </div>
+      <div class="copilot-workspace">
+        <aside class="copilot-sidebar">
+          <div class="assistant-brand">
+            <div class="assistant-mark">AI</div>
+            <div>
+              <span>Log Copilot</span>
+              <strong>智能助手</strong>
             </div>
-          </el-card>
+          </div>
 
-          <el-card shadow="never" class="panel-card session-card">
-            <template #header>
-              <div class="panel-header">
-                <div class="panel-title">
-                  <el-icon><Document /></el-icon>
-                  <span>会话控制</span>
-                </div>
-              </div>
-            </template>
-
-            <div class="session-control">
-              <div class="session-status">
-                <span>{{ currentConversationState }}</span>
-                <strong>{{ currentConversationTitle }}</strong>
-                <small>{{ currentConversationSubtitle }}</small>
-              </div>
-
-              <div class="session-actions">
-                <el-button type="primary" plain @click="startNewConversation(true)">
-                  <el-icon><Plus /></el-icon>
-                  新建对话
-                </el-button>
-                <el-button plain :loading="historyLoading" @click="refreshConversationList">
-                  <el-icon><RefreshRight /></el-icon>
-                  刷新列表
-                </el-button>
-              </div>
-
-              <div class="streaming-toggle wide">
-                <div>
-                  <span>流式返回</span>
-                  <small>开启后可以看到工具调用和增量回答。</small>
-                </div>
-                <el-switch
-                  v-model="streamingEnabled"
-                  size="small"
-                  inline-prompt
-                  active-text="开"
-                  inactive-text="关"
-                  :disabled="sending"
-                />
-              </div>
+          <section class="side-section">
+            <div class="side-section-title">
+              <el-icon><Document /></el-icon>
+              <span>会话</span>
             </div>
-          </el-card>
+            <div class="session-actions">
+              <el-button type="primary" plain @click="startNewConversation(true)">
+                <el-icon><Plus /></el-icon>
+                新建
+              </el-button>
+              <el-button plain :loading="historyLoading" @click="refreshConversationList">
+                <el-icon><RefreshRight /></el-icon>
+                刷新
+              </el-button>
+            </div>
+            <div class="conversation-list">
+              <button
+                v-for="conversation in conversations.slice(0, 8)"
+                :key="conversation.sessionId"
+                type="button"
+                class="conversation-item"
+                :class="{ active: conversation.sessionId === selectedConversationId }"
+                @click="openConversation(conversation)"
+              >
+                <strong>{{ formatConversationLabel(conversation) }}</strong>
+                <span>{{ formatConversationTime(conversation.lastMessageAt || conversation.updatedAt) }}</span>
+              </button>
+              <div v-if="!conversations.length" class="empty-side-note">暂无历史会话</div>
+            </div>
+          </section>
 
-          <el-card shadow="never" class="panel-card">
-            <template #header>
-              <div class="panel-header">
-                <div class="panel-title">
-                  <el-icon><MagicStick /></el-icon>
-                  <span>快速提问</span>
-                </div>
-              </div>
-            </template>
-
+          <section class="side-section">
+            <div class="side-section-title">
+              <el-icon><MagicStick /></el-icon>
+              <span>快捷提问</span>
+            </div>
             <div class="prompt-grid">
               <button
                 v-for="prompt in quickPrompts"
@@ -143,67 +58,54 @@
                 {{ prompt }}
               </button>
             </div>
-          </el-card>
-
-          <el-card shadow="never" class="panel-card">
-            <template #header>
-              <div class="panel-header">
-                <div class="panel-title">
-                  <el-icon><InfoFilled /></el-icon>
-                  <span>使用说明</span>
-                </div>
-              </div>
-            </template>
-
-            <ul class="usage-list">
-              <li>历史记录由后端保存，刷新页面后仍可继续之前的会话。</li>
-              <li>切换数据源时会自动开始新对话，避免不同数据源上下文串联。</li>
-              <li>ClickHouse 数据源下，统计类问题会优先走自然语言统计查询。</li>
-            </ul>
-          </el-card>
+          </section>
         </aside>
 
-        <section class="chat-panel">
-          <el-card shadow="never" class="chat-card">
-            <div class="chat-toolbar">
-              <div class="chat-toolbar-main">
-                <div class="chat-eyebrow">当前会话</div>
-                <h2>{{ currentConversationTitle }}</h2>
-                <p class="chat-toolbar-subtitle">{{ currentConversationSubtitle }}</p>
-                <div class="toolbar-tags">
-                  <el-tag size="small" type="success" effect="dark">
-                    {{ currentConversationState }}
-                  </el-tag>
-                  <el-tag v-if="selectedDatasource" size="small" effect="plain">
-                    {{ selectedDatasource.name }}
-                  </el-tag>
-                  <el-tag v-if="selectedDatasource?.vectorType" size="small" effect="plain">
-                    {{ selectedDatasource.vectorType }}
-                  </el-tag>
-                  <el-tag v-if="selectedTableName" size="small" effect="plain">
-                    {{ selectedTableName }}
-                  </el-tag>
-                </div>
-              </div>
-
-              <div class="chat-toolbar-actions">
-                <el-button plain @click="startNewConversation()">
-                  <el-icon><Plus /></el-icon>
-                  新建对话
-                </el-button>
-                <el-button
-                  v-if="selectedConversationId"
-                  plain
-                  type="danger"
-                  :loading="deletingSessionId === selectedConversationId"
-                  @click="handleDeleteConversation(selectedConversationId)"
-                >
-                  <el-icon><Delete /></el-icon>
-                  删除历史
-                </el-button>
-              </div>
+        <main class="copilot-main">
+          <header class="copilot-header">
+            <div class="chat-toolbar-main">
+              <div class="chat-eyebrow">自动识别意图</div>
+              <h2>{{ currentConversationTitle }}</h2>
+              <p class="chat-toolbar-subtitle">{{ currentConversationSubtitle }}</p>
             </div>
+            <div class="chat-toolbar-actions">
+              <el-button plain @click="startNewConversation()">
+                <el-icon><Plus /></el-icon>
+                新建对话
+              </el-button>
+              <el-button
+                v-if="selectedConversationId"
+                plain
+                type="danger"
+                :loading="deletingSessionId === selectedConversationId"
+                @click="handleDeleteConversation(selectedConversationId)"
+              >
+                <el-icon><Delete /></el-icon>
+                删除历史
+              </el-button>
+            </div>
+          </header>
 
+          <section class="context-strip">
+            <div class="context-chip" :class="{ empty: !selectedDatasource }">
+              <span>查询数据源</span>
+              <strong>{{ selectedDatasource?.name || '按意图补齐' }}</strong>
+            </div>
+            <div class="context-chip">
+              <span>会话状态</span>
+              <strong>{{ currentConversationState }}</strong>
+            </div>
+            <div class="context-chip" :class="{ empty: !selectedTableName }">
+              <span>表 / 索引</span>
+              <strong>{{ selectedTableName || '未绑定' }}</strong>
+            </div>
+            <div class="context-chip">
+              <span>执行方式</span>
+              <strong>{{ streamingEnabled ? '流式返回' : '普通返回' }}</strong>
+            </div>
+          </section>
+
+          <section class="chat-surface">
             <div
               v-loading="conversationLoading"
               class="advanced-chat-frame"
@@ -213,8 +115,8 @@
                 ref="advancedChatRef"
                 :height="chatWindowHeight"
                 current-user-id="current-user"
-                :rooms="chatRooms"
-                :messages="chatMessages"
+                :rooms="chatRoomsJson"
+                :messages="chatMessagesJson"
                 :room-id="currentRoomId"
                 :loading-rooms="historyLoading"
                 :rooms-loaded="!historyLoading"
@@ -227,13 +129,13 @@
                 :show-reaction-emojis="false"
                 :show-footer="false"
                 :show-send-icon="false"
-                :message-actions="[]"
-                :message-selection-actions="[]"
-                :room-actions="chatRoomActions"
-                :text-messages="chatTextMessages"
-                :text-formatting="{ disabled: true }"
-                :link-options="{ disabled: true }"
-                :styles="chatThemeStyles"
+                :message-actions="emptyChatActionsJson"
+                :message-selection-actions="emptyChatActionsJson"
+                :room-actions="chatRoomActionsJson"
+                :text-messages="chatTextMessagesJson"
+                :text-formatting="chatTextFormattingJson"
+                :link-options="chatLinkOptionsJson"
+                :styles="chatThemeStylesJson"
                 responsive-breakpoint="1080"
                 @send-message="handleChatSendMessage"
                 @fetch-messages="handleChatFetchMessages"
@@ -799,13 +701,77 @@
                 type="primary"
                 native-type="submit"
                 :loading="sending"
-                :disabled="!chatDraft.trim() || !selectedDatasourceId"
+                :disabled="!chatDraft.trim()"
               >
                 发送
               </el-button>
             </form>
-          </el-card>
-        </section>
+          </section>
+        </main>
+
+        <aside class="context-drawer">
+          <section class="drawer-section">
+            <div class="drawer-heading">
+              <el-icon><Connection /></el-icon>
+              <span>任务上下文</span>
+            </div>
+            <el-select
+              v-model="selectedDatasourceId"
+              class="full-width"
+              clearable
+              filterable
+              placeholder="查询类任务按需选择数据源"
+              :loading="datasourceLoading"
+            >
+              <el-option
+                v-for="item in datasources"
+                :key="item.id"
+                :label="itemLabel(item)"
+                :value="item.id"
+              />
+            </el-select>
+
+            <div class="context-detail-list">
+              <div>
+                <span>查询数据源</span>
+                <strong>{{ selectedDatasource?.name || '未绑定' }}</strong>
+              </div>
+              <div>
+                <span>类型</span>
+                <strong>{{ selectedDatasource?.vectorType || '按意图确认' }}</strong>
+              </div>
+              <div>
+                <span>表 / 索引</span>
+                <strong>{{ selectedTableName || '未绑定' }}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="drawer-section">
+            <div class="drawer-heading">
+              <el-icon><MagicStick /></el-icon>
+              <span>意图规则</span>
+            </div>
+            <div class="intent-rule-list">
+              <div>
+                <span>查询日志</span>
+                <strong>需要数据源</strong>
+              </div>
+              <div>
+                <span>创建解析</span>
+                <strong>先识别日志样本</strong>
+              </div>
+              <div>
+                <span>确认入库</span>
+                <strong>再确认 Sink / 表名</strong>
+              </div>
+              <div>
+                <span>部署 Vector</span>
+                <strong>最后选择主机</strong>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
   </AppLayout>
@@ -815,13 +781,10 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowDown,
-  ArrowUp,
   Connection,
   Cpu,
   Delete,
   Document,
-  InfoFilled,
   Loading,
   MagicStick,
   Message,
@@ -831,6 +794,7 @@ import {
 } from '@element-plus/icons-vue'
 import * as yaml from 'js-yaml'
 import { register } from 'vue-advanced-chat'
+import { useDark } from '@vueuse/core'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AiQueryResultCard from '@/components/ai-query-result/AiQueryResultCard.vue'
 import TimeSeriesChart from '@/components/ai-query-result/TimeSeriesChart.vue'
@@ -854,6 +818,13 @@ import {
 import { configComponentApi, vectorDeploymentApi, vectorMachineApi, type ConfigComponent } from '@/api/vector'
 
 register()
+
+const isDark = useDark({
+  selector: 'html',
+  attribute: 'class',
+  valueDark: 'dark',
+  valueLight: 'light'
+})
 
 interface ChatEntry {
   id: string
@@ -945,8 +916,8 @@ const quickPrompts = [
   '根据这条日志样本生成 Vector 组件'
 ]
 const STREAMING_PREFERENCE_KEY = 'agent-streaming-enabled'
-// vue-advanced-chat 需要显式像素高度，否则 Shadow DOM 会按消息内容撑开宿主元素。
-const chatWindowHeight = '640px'
+// vue-advanced-chat 需要显式高度，否则 Shadow DOM 会按消息内容撑开宿主元素。
+const chatWindowHeight = 'clamp(520px, calc(100vh - 320px), 760px)'
 
 const readStreamingPreference = () => {
   if (typeof window === 'undefined') {
@@ -956,7 +927,6 @@ const readStreamingPreference = () => {
   return stored == null ? true : stored !== 'false'
 }
 
-const heroCollapsed = ref(true)
 const datasourceLoading = ref(false)
 const historyLoading = ref(false)
 const conversationLoading = ref(false)
@@ -977,7 +947,6 @@ const selectedDatasourceId = ref('')
 const selectedConversationId = ref('')
 const sessionId = ref('')
 const streamingEnabled = ref(readStreamingPreference())
-const suppressDatasourceReset = ref(false)
 
 const createSessionId = () => `agent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
@@ -985,7 +954,7 @@ const buildWelcomeEntry = (): ChatEntry => ({
   id: `assistant-welcome-${Date.now()}`,
   role: 'assistant',
   system: true,
-  content: '我现在能帮你读取字段结构、查询日志列表、查看日志趋势；如果当前数据源是 ClickHouse，还可以做自然语言统计查询，或根据日志样本生成 Source/Remap/Sink 组件与部署预览。确认创建后，我会再让你选择 Vector 主机部署。',
+  content: '我可以查询日志、查看字段结构和趋势，也可以根据日志样本创建 Vector 解析组件。你不需要先选择数据源；查询类任务缺数据源时我会追问，创建组件会按流程补齐存储目标、日志来源和部署主机。',
   createdAt: new Date().toISOString(),
   suggestions: quickPrompts
 })
@@ -1039,6 +1008,8 @@ const chatUsers: ChatRoomUser[] = [
 const chatRoomActions = [
   { name: 'deleteConversation', title: '删除会话' }
 ]
+const chatRoomActionsJson = JSON.stringify(chatRoomActions)
+const emptyChatActionsJson = JSON.stringify([])
 
 const chatTextMessages = {
   ROOMS_EMPTY: '暂无历史会话',
@@ -1055,7 +1026,10 @@ const chatTextMessages = {
   CANCEL_SELECT_MESSAGE: '取消选择'
 }
 
-const chatThemeStyles = {
+const chatTextFormattingJson = JSON.stringify({ disabled: true })
+const chatLinkOptionsJson = JSON.stringify({ disabled: true })
+
+const lightChatThemeStyles = {
   general: {
     color: '#0f172a',
     colorButtonClear: '#0f766e',
@@ -1070,7 +1044,7 @@ const chatThemeStyles = {
   },
   container: {
     border: '1px solid rgba(148, 163, 184, 0.16)',
-    borderRadius: '22px',
+    borderRadius: '8px',
     boxShadow: '0 22px 60px rgba(15, 23, 42, 0.08)'
   },
   header: {
@@ -1121,6 +1095,78 @@ const chatThemeStyles = {
   }
 }
 
+const darkChatThemeStyles = {
+  general: {
+    color: '#f5f5f7',
+    colorButtonClear: '#30d158',
+    colorButton: '#ffffff',
+    backgroundColorButton: '#0a84ff',
+    backgroundInput: '#1e1e1e',
+    colorPlaceholder: '#6e6e73',
+    colorCaret: '#30d158',
+    colorSpinner: '#30d158',
+    borderStyle: '1px solid rgba(255, 255, 255, 0.1)',
+    backgroundScrollIcon: '#2c2c2e'
+  },
+  container: {
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '8px',
+    boxShadow: '0 22px 60px rgba(0, 0, 0, 0.32)'
+  },
+  header: {
+    background: '#1e1e1e',
+    colorRoomName: '#f5f5f7',
+    colorRoomInfo: '#98989d',
+    position: 'relative',
+    width: '100%'
+  },
+  footer: {
+    background: '#141414',
+    borderStyleInput: '1px solid rgba(255, 255, 255, 0.12)',
+    borderInputSelected: '#30d158',
+    backgroundReply: 'rgba(48, 209, 88, 0.12)',
+    backgroundTagActive: 'rgba(48, 209, 88, 0.18)',
+    backgroundTag: '#2c2c2e'
+  },
+  content: {
+    background: '#141414'
+  },
+  sidemenu: {
+    background: '#1e1e1e',
+    backgroundHover: '#2c2c2e',
+    backgroundActive: 'rgba(48, 209, 88, 0.14)',
+    colorActive: '#30d158',
+    borderColorSearch: 'rgba(255, 255, 255, 0.1)'
+  },
+  message: {
+    background: '#2c2c2e',
+    backgroundMe: 'rgba(10, 132, 255, 0.28)',
+    color: '#f5f5f7',
+    colorStarted: '#6e6e73',
+    colorUsername: '#98989d',
+    colorTimestamp: '#6e6e73',
+    backgroundDate: 'rgba(10, 132, 255, 0.16)',
+    colorDate: '#8ec8ff',
+    backgroundSystem: 'rgba(48, 209, 88, 0.12)',
+    colorSystem: '#30d158'
+  },
+  room: {
+    colorUsername: '#f5f5f7',
+    colorMessage: '#98989d',
+    colorTimestamp: '#6e6e73',
+    colorStateOnline: '#30d158',
+    colorStateOffline: '#6e6e73',
+    backgroundCounterBadge: '#30d158',
+    colorCounterBadge: '#07130a'
+  }
+}
+
+// vue-advanced-chat 使用 Shadow DOM，需要通过 styles prop 同步暗色 token。
+const chatThemeStyles = computed(() => (isDark.value ? darkChatThemeStyles : lightChatThemeStyles))
+
+const chatTextMessagesJson = JSON.stringify(chatTextMessages)
+const chatThemeStylesJson = computed(() => JSON.stringify(chatThemeStyles.value))
+
 const chatRooms = computed<ChatRoom[]>(() => {
   const draftRoom: ChatRoom = {
     roomId: sessionId.value,
@@ -1129,7 +1175,7 @@ const chatRooms = computed<ChatRoom[]>(() => {
     users: chatUsers,
     index: Number.MAX_SAFE_INTEGER,
     lastMessage: {
-      content: selectedDatasource.value ? `当前数据源：${selectedDatasource.value.name}` : '选择数据源后开始提问',
+      content: selectedDatasource.value ? `当前数据源：${selectedDatasource.value.name}` : '上下文将按意图补齐',
       senderId: 'assistant',
       username: '日志助手',
       timestamp: '草稿'
@@ -1174,6 +1220,9 @@ const chatMessages = computed<ChatMessage[]>(() => messages.value.map((entry) =>
     disableReactions: true
   }
 }))
+
+const chatRoomsJson = computed(() => JSON.stringify(chatRooms.value))
+const chatMessagesJson = computed(() => JSON.stringify(chatMessages.value))
 
 const unwrapResult = <T>(response: ApiResult<T> | T) => {
   if (response && typeof response === 'object' && 'data' in (response as ApiResult<T>)) {
@@ -1741,8 +1790,8 @@ const loadDatasources = async () => {
         : []
 
     datasources.value = data
-    if (!selectedDatasourceId.value && datasources.value[0]) {
-      selectedDatasourceId.value = datasources.value[0].id
+    if (selectedDatasourceId.value && !datasources.value.some(item => item.id === selectedDatasourceId.value)) {
+      selectedDatasourceId.value = ''
     }
   } catch (error: any) {
     ElMessage.error(error?.message || '加载可查询数据源失败')
@@ -1995,7 +2044,6 @@ const openConversation = async (conversation: AgentConversationSummary) => {
   }
 
   conversationLoading.value = true
-  suppressDatasourceReset.value = true
 
   try {
     const detail = unwrapResult<AgentConversationDetail>(
@@ -2012,7 +2060,6 @@ const openConversation = async (conversation: AgentConversationSummary) => {
     ElMessage.error(error?.message || '加载历史对话失败')
   } finally {
     await nextTick()
-    suppressDatasourceReset.value = false
     conversationLoading.value = false
   }
 }
@@ -2113,10 +2160,7 @@ const handleCommitVectorPlan = async (entry: ChatEntry) => {
       ElMessage.success('Vector 组件创建成功')
       await loadDatasources()
       if (response.result?.sinkComponentId) {
-        suppressDatasourceReset.value = true
         selectedDatasourceId.value = response.result.sinkComponentId
-        await nextTick()
-        suppressDatasourceReset.value = false
       }
       if (response.result?.visualConfigId || response.result?.deployment?.visualConfigId) {
         void loadVectorMachines()
@@ -2143,10 +2187,6 @@ const handleSend = async (content: string) => {
     ElMessage.warning('请输入问题')
     return
   }
-  if (!selectedDatasourceId.value) {
-    ElMessage.warning('请先选择一个可查询数据源')
-    return
-  }
 
   sending.value = true
 
@@ -2169,9 +2209,11 @@ const handleSend = async (content: string) => {
   try {
     const payload = {
         message: normalizedContent,
-        datasourceId: selectedDatasourceId.value,
         sessionId: sessionId.value
       }
+    if (selectedDatasourceId.value) {
+      Object.assign(payload, { datasourceId: selectedDatasourceId.value })
+    }
 
     let response: AgentChatResponse
     if (streamingEnabled.value) {
@@ -2220,17 +2262,6 @@ watch(streamingEnabled, (value) => {
   window.localStorage.setItem(STREAMING_PREFERENCE_KEY, String(value))
 })
 
-watch(selectedDatasourceId, (value, oldValue) => {
-  if (!value || !oldValue || value === oldValue || suppressDatasourceReset.value) {
-    return
-  }
-
-  const hasConversationContent = messages.value.some(entry => entry.role === 'user')
-  startNewConversation()
-  if (hasConversationContent) {
-    ElMessage.info('已切换数据源，开始新对话')
-  }
-})
 </script>
 
 <style scoped lang="scss">
@@ -2240,6 +2271,25 @@ watch(selectedDatasourceId, (value, oldValue) => {
   --agent-border: rgba(94, 116, 146, 0.12);
   --agent-card: rgba(255, 255, 255, 0.92);
   --agent-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
+  --copilot-panel: rgba(253, 254, 251, 0.94);
+  --copilot-panel-strong: #fbfdf9;
+  --copilot-panel-soft: #f8faf6;
+  --copilot-panel-hover: #f2f7ee;
+  --copilot-panel-warning: #fffaf0;
+  --copilot-border: rgba(92, 112, 88, 0.16);
+  --copilot-border-soft: rgba(92, 112, 88, 0.12);
+  --copilot-text: #263326;
+  --copilot-heading: #17201a;
+  --copilot-muted: #6f7a6a;
+  --copilot-muted-strong: #7b8578;
+  --copilot-accent: #4d7c0f;
+  --copilot-accent-border: rgba(77, 124, 15, 0.2);
+  --copilot-chat-bg:
+    linear-gradient(180deg, rgba(253, 254, 251, 0.98), rgba(247, 250, 244, 0.94)),
+    var(--macos-bg-secondary);
+  --copilot-composer-bg: #fbfdf9;
+  --copilot-input-bg: rgba(255, 255, 255, 0.88);
+  --copilot-shadow: 0 16px 36px rgba(23, 32, 26, 0.06);
   padding: clamp(12px, 1.4vw, 20px);
   height: 100%;
   min-height: 100%;
@@ -2265,6 +2315,25 @@ html.dark .agent-page {
   --agent-border: rgba(255, 255, 255, 0.08);
   --agent-card: rgba(30, 30, 30, 0.9);
   --agent-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  --copilot-panel: rgba(30, 30, 30, 0.9);
+  --copilot-panel-strong: #1e1e1e;
+  --copilot-panel-soft: #242426;
+  --copilot-panel-hover: #2c2c2e;
+  --copilot-panel-warning: rgba(255, 159, 10, 0.1);
+  --copilot-border: var(--macos-border);
+  --copilot-border-soft: rgba(255, 255, 255, 0.08);
+  --copilot-text: var(--macos-text-primary);
+  --copilot-heading: var(--macos-text-primary);
+  --copilot-muted: var(--macos-text-secondary);
+  --copilot-muted-strong: var(--macos-text-tertiary);
+  --copilot-accent: #30d158;
+  --copilot-accent-border: rgba(48, 209, 88, 0.24);
+  --copilot-chat-bg:
+    linear-gradient(180deg, rgba(30, 30, 30, 0.96), rgba(20, 20, 20, 0.94)),
+    var(--macos-bg-secondary);
+  --copilot-composer-bg: #1e1e1e;
+  --copilot-input-bg: #141414;
+  --copilot-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
 
   .message-bubble {
     &.assistant {
@@ -2285,6 +2354,67 @@ html.dark .agent-page {
   .result-panel {
     background: var(--macos-bg-tertiary);
     border-color: var(--macos-border);
+  }
+
+  .vector-orchestration-card,
+  .vector-orchestration-card.preview,
+  .vector-orchestration-card.commit {
+    background:
+      radial-gradient(circle at 8% 0%, rgba(48, 209, 88, 0.08), transparent 28%),
+      linear-gradient(180deg, rgba(30, 30, 30, 0.96), rgba(20, 20, 20, 0.9));
+    border-color: var(--macos-border);
+  }
+
+  .flow-step,
+  .requirement-card,
+  .source-option-card,
+  .source-config-grid div,
+  .vector-plan-meta div {
+    background: var(--macos-bg-tertiary);
+    border-color: var(--macos-border);
+  }
+
+  .flow-step.done,
+  .requirement-card.fulfilled,
+  .source-option-card.active {
+    background: rgba(48, 209, 88, 0.1);
+    border-color: rgba(48, 209, 88, 0.24);
+  }
+
+  .flow-step.active,
+  .requirement-card.missing {
+    background: rgba(255, 159, 10, 0.1);
+    border-color: rgba(255, 159, 10, 0.28);
+  }
+
+  .vector-card-kicker,
+  .reply-example,
+  .source-config-preview {
+    background: rgba(48, 209, 88, 0.1);
+    border-color: rgba(48, 209, 88, 0.22);
+  }
+
+  .source-config-preview.compact {
+    background: rgba(10, 132, 255, 0.12);
+    border-color: rgba(10, 132, 255, 0.22);
+  }
+
+  .source-field-chips span {
+    color: var(--macos-text-secondary);
+    background: #1e1e1e;
+    border-color: var(--macos-border);
+  }
+
+  .source-field-chips span.missing {
+    color: #ffd60a;
+    background: rgba(255, 159, 10, 0.12);
+    border-color: rgba(255, 159, 10, 0.28);
+  }
+
+  .deploy-panel {
+    background:
+      radial-gradient(circle at left top, rgba(48, 209, 88, 0.14), transparent 36%),
+      rgba(30, 30, 30, 0.86);
   }
 
   .markdown-body {
@@ -3634,6 +3764,360 @@ html.dark .agent-page {
   }
 
   .vector-requirement-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.copilot-workspace {
+  display: grid;
+  grid-template-columns: minmax(218px, 236px) minmax(0, 1fr) minmax(260px, 280px);
+  gap: 12px;
+  width: 100%;
+  min-height: calc(100vh - 104px);
+  align-items: stretch;
+}
+
+.copilot-sidebar,
+.context-drawer,
+.chat-card {
+  min-width: 0;
+  border: 1px solid var(--copilot-border);
+  border-radius: 8px;
+  background: var(--copilot-panel);
+  box-shadow: var(--copilot-shadow);
+}
+
+.copilot-sidebar,
+.context-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.assistant-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px 12px;
+  border-bottom: 1px solid var(--copilot-border-soft);
+
+  span,
+  strong {
+    display: block;
+  }
+
+  span {
+    color: var(--copilot-muted);
+    font-size: 12px;
+  }
+
+  strong {
+    margin-top: 2px;
+    color: var(--copilot-heading);
+    font-size: 16px;
+  }
+}
+
+.assistant-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #20351b;
+  background: linear-gradient(135deg, #d9f99d, #a7f3d0);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.side-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.side-section-title,
+.drawer-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--copilot-text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.session-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.conversation-list,
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.conversation-item {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px;
+  background: transparent;
+  color: var(--copilot-text);
+  text-align: left;
+  cursor: pointer;
+
+  strong,
+  span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  span {
+    margin-top: 4px;
+    color: var(--copilot-muted-strong);
+    font-size: 11px;
+  }
+
+  &:hover,
+  &.active {
+    border-color: var(--copilot-accent-border);
+    background: var(--copilot-panel-hover);
+  }
+}
+
+.empty-side-note {
+  padding: 10px;
+  color: var(--copilot-muted-strong);
+  font-size: 12px;
+}
+
+.copilot-sidebar .prompt-grid {
+  gap: 8px;
+}
+
+.copilot-sidebar .prompt-chip {
+  width: 100%;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--copilot-panel-soft);
+  text-align: left;
+  box-shadow: inset 0 0 0 1px var(--copilot-border-soft);
+}
+
+.copilot-main {
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-card {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--copilot-chat-bg);
+}
+
+.copilot-header {
+  flex-shrink: 0;
+}
+
+.context-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px 0 14px;
+}
+
+.context-chip {
+  min-width: 0;
+  border: 1px solid var(--copilot-border-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--copilot-panel-strong);
+
+  span,
+  strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    color: var(--copilot-muted);
+    font-size: 11px;
+  }
+
+  strong {
+    margin-top: 4px;
+    color: var(--copilot-text);
+    font-size: 13px;
+  }
+
+  &.empty {
+    border-color: rgba(217, 119, 6, 0.28);
+    background: var(--copilot-panel-warning);
+  }
+}
+
+.chat-surface {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-toolbar {
+  padding-bottom: 12px;
+  border-bottom-color: var(--copilot-border-soft);
+}
+
+.chat-toolbar-main h2 {
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.chat-eyebrow {
+  color: var(--copilot-accent);
+  letter-spacing: 0.06em;
+}
+
+.advanced-chat-frame {
+  border-radius: 8px;
+}
+
+.advanced-chat-frame vue-advanced-chat {
+  border-radius: 8px;
+}
+
+.agent-composer {
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--copilot-composer-bg);
+  border-color: var(--copilot-border-soft);
+
+  :deep(.el-textarea__inner) {
+    border-radius: 8px;
+    background: var(--copilot-input-bg);
+    color: var(--agent-ink);
+  }
+
+  .el-button {
+    border-radius: 8px;
+  }
+}
+
+.context-drawer {
+  color: var(--copilot-text);
+}
+
+.drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--copilot-border-soft);
+
+  &:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+}
+
+.context-detail-list,
+.intent-rule-list {
+  display: grid;
+  gap: 8px;
+
+  div {
+    min-width: 0;
+    border: 1px solid var(--copilot-border-soft);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--copilot-panel-strong);
+  }
+
+  span,
+  strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    color: var(--copilot-muted);
+    font-size: 11px;
+  }
+
+  strong {
+    margin-top: 5px;
+    color: var(--copilot-text);
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .copilot-workspace {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  }
+
+  .context-drawer {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .copilot-workspace {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .context-drawer {
+    display: flex;
+  }
+
+  .context-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .copilot-sidebar {
+    order: 2;
+  }
+
+  .context-drawer {
+    order: 3;
+  }
+}
+
+@media (max-width: 640px) {
+  .context-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-toolbar-actions,
+  .session-actions,
+  .agent-composer {
     grid-template-columns: 1fr;
   }
 }

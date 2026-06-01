@@ -65,7 +65,7 @@ const activeIndex = ref(0)
 const inputRef = ref<HTMLInputElement>()
 
 const items: PaletteItem[] = [
-  { title: '监控大屏', path: '/', icon: DataBoard, group: '监控' },
+  { title: 'Dashboard', path: '/', icon: DataBoard, group: '监控', keywords: ['dashboard', 'overview'] },
   { title: '日志搜索', path: '/log-search', icon: Search, group: '日志', keywords: ['search', 'log'] },
   { title: '智能助手', path: '/agent', icon: MagicStick, group: 'AI', keywords: ['ai', 'chat', 'agent'] },
   { title: '趋势分析', path: '/trend-analysis', icon: TrendCharts, group: '分析' },

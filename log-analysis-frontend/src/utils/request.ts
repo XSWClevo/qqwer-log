@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
-import { clearStoredAuthTokens, isLikelyJwtToken, readStoredJwtToken } from '@/utils/jwt'
+import { clearStoredAuthTokens, isUsableJwtToken, readStoredJwtToken } from '@/utils/jwt'
 
 interface RetryableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean
@@ -9,12 +9,26 @@ interface RetryableRequestConfig extends InternalAxiosRequestConfig {
 
 let refreshTokenPromise: Promise<string> | null = null
 
-export const resolveApiUrl = (path: string) => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+const normalizeBaseUrl = (value?: string) => String(value || '').replace(/\/$/, '')
+
+const joinApiUrl = (baseUrl: string, path: string) => {
   if (!baseUrl) {
     return path
   }
-  return `${String(baseUrl).replace(/\/$/, '')}${path}`
+
+  if (path.startsWith(`${baseUrl}/`)) {
+    return path
+  }
+
+  if (baseUrl === '/api' && path.startsWith('/api/')) {
+    return path
+  }
+
+  return `${baseUrl}${path}`
+}
+
+export const resolveApiUrl = (path: string) => {
+  return joinApiUrl(normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL), path)
 }
 
 const isAuthEndpoint = (url?: string) => {
@@ -45,7 +59,7 @@ export const refreshAccessToken = async () => {
     headers: { 'Content-Type': 'application/json' }
   }).then((response) => {
     const payload = response.data?.data
-    if (!isLikelyJwtToken(payload?.accessToken) || !isLikelyJwtToken(payload?.refreshToken)) {
+    if (!isUsableJwtToken(payload?.accessToken) || !isUsableJwtToken(payload?.refreshToken)) {
       throw new Error('刷新令牌响应无效')
     }
 
@@ -61,7 +75,6 @@ export const refreshAccessToken = async () => {
 
 // 创建axios实例
 const service: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
   timeout: 60000, // 60秒，适配AI查询等长时间操作
   headers: {
     'Content-Type': 'application/json'
@@ -71,9 +84,13 @@ const service: AxiosInstance = axios.create({
 // 请求拦截器
 service.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    if (config.url) {
+      config.url = resolveApiUrl(config.url)
+    }
+
     // 从localStorage获取token
     const token = localStorage.getItem('accessToken')
-    if (isLikelyJwtToken(token) && config.headers) {
+    if (isUsableJwtToken(token) && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
     } else if (token) {
       clearStoredAuthTokens()

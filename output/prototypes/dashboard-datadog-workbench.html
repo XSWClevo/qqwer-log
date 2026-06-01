@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard Prototype - Datadog Workbench</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --ink: #182230;
+      --muted: #667085;
+      --faint: #98a2b3;
+      --line: #d9e2ec;
+      --blue: #1976ff;
+      --cyan: #12b8a6;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --green: #16a34a;
+      --shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+      font-family: Inter, "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 22% 12%, rgba(25, 118, 255, 0.10), transparent 26%),
+        radial-gradient(circle at 92% 20%, rgba(18, 184, 166, 0.09), transparent 28%),
+        var(--bg);
+      color: var(--ink);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      padding: 20px 14px;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      font-weight: 750;
+    }
+
+    .mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--blue), var(--cyan));
+    }
+
+    .nav-label {
+      margin: 22px 8px 8px;
+      color: var(--faint);
+      font-size: 12px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 38px;
+      padding: 0 10px;
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .nav-item.active {
+      color: #fff;
+      background: var(--blue);
+      box-shadow: 0 10px 24px rgba(25, 118, 255, 0.22);
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 18px 20px 28px;
+      overflow: hidden;
+    }
+
+    .toolbar,
+    .context-strip,
+    .widget,
+    .query-bar {
+      border: 1px solid rgba(217, 226, 236, 0.9);
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: var(--shadow);
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 12px;
+      border-radius: 14px;
+    }
+
+    .toolbar-left,
+    .toolbar-right,
+    .chip-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .select,
+    .button,
+    .chip {
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .button.primary {
+      color: #fff;
+      border-color: var(--blue);
+      background: var(--blue);
+    }
+
+    .page-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .page-title h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .page-title p {
+      margin: 8px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .status-pill {
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px;
+      border-radius: 999px;
+      color: #067647;
+      background: #dcfae6;
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 99px;
+      background: currentColor;
+    }
+
+    .context-strip {
+      display: grid;
+      grid-template-columns: 1.2fr repeat(4, minmax(120px, 1fr));
+      gap: 10px;
+      padding: 12px;
+      border-radius: 14px;
+    }
+
+    .context-main,
+    .context-cell {
+      min-width: 0;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--panel-soft);
+    }
+
+    .label {
+      color: var(--faint);
+      font-size: 12px;
+    }
+
+    .value {
+      margin-top: 6px;
+      overflow: hidden;
+      font-size: 15px;
+      font-weight: 720;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .widget {
+      min-height: 180px;
+      padding: 14px;
+      border-radius: 14px;
+    }
+
+    .span-3 { grid-column: span 3; min-height: 132px; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+
+    .widget-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .widget h2 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .widget-desc {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .metric strong {
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .delta {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      color: #067647;
+      background: #dcfae6;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .delta.warn {
+      color: #b54708;
+      background: #fef0c7;
+    }
+
+    .chart {
+      position: relative;
+      height: 210px;
+      overflow: hidden;
+      border-radius: 12px;
+      background:
+        linear-gradient(#eef2f7 1px, transparent 1px) 0 0 / 100% 25%,
+        linear-gradient(90deg, #eef2f7 1px, transparent 1px) 0 0 / 8.33% 100%,
+        #fbfdff;
+    }
+
+    .line {
+      position: absolute;
+      inset: 22px 18px 34px;
+      clip-path: polygon(0 72%, 8% 66%, 16% 70%, 25% 42%, 33% 48%, 42% 38%, 50% 56%, 58% 50%, 67% 30%, 75% 34%, 84% 20%, 92% 26%, 100% 18%, 100% 100%, 0 100%);
+      background: linear-gradient(180deg, rgba(25, 118, 255, 0.36), rgba(25, 118, 255, 0.04));
+      border-top: 3px solid var(--blue);
+    }
+
+    .bar-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      height: 210px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #fbfdff;
+    }
+
+    .bar {
+      flex: 1;
+      min-width: 0;
+      border-radius: 8px 8px 3px 3px;
+      background: linear-gradient(180deg, var(--cyan), rgba(18, 184, 166, 0.45));
+    }
+
+    .severity {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 18px;
+      align-items: center;
+    }
+
+    .donut {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: conic-gradient(var(--blue) 0 72%, var(--amber) 72% 88%, var(--red) 88% 93%, #d0d5dd 93% 100%);
+      display: grid;
+      place-items: center;
+    }
+
+    .donut::after {
+      content: "11.9K";
+      display: grid;
+      place-items: center;
+      width: 94px;
+      height: 94px;
+      border-radius: 50%;
+      background: #fff;
+      font-weight: 800;
+    }
+
+    .legend {
+      display: grid;
+      gap: 10px;
+    }
+
+    .legend-row,
+    .rank-row,
+    .log-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 9px 10px;
+      border-radius: 10px;
+      background: var(--panel-soft);
+      font-size: 13px;
+    }
+
+    .rank-list,
+    .log-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .rank-name {
+      overflow: hidden;
+      color: var(--ink);
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rank-meta,
+    .log-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .log-row {
+      align-items: flex-start;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 6px;
+      color: #fff;
+      background: var(--red);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .badge.warn { background: var(--amber); }
+    .badge.info { background: var(--blue); }
+
+    .mini-actions {
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    @media (max-width: 1100px) {
+      .shell { grid-template-columns: 76px minmax(0, 1fr); }
+      .sidebar span:not(.mark) { display: none; }
+      .context-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .span-3, .span-4, .span-5, .span-7, .span-8 { grid-column: span 12; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="mark"></span><span>qqwer</span></div>
+      <div class="nav-label">监控</div>
+      <div class="nav-item active">▣ <span>监控大屏</span></div>
+      <div class="nav-item">✦ <span>智能助手</span></div>
+      <div class="nav-item">⚑ <span>告警管理</span></div>
+      <div class="nav-label">日志</div>
+      <div class="nav-item">⌕ <span>日志搜索</span></div>
+      <div class="nav-item">▥ <span>日志分析</span></div>
+      <div class="nav-label">配置</div>
+      <div class="nav-item">⛓ <span>Vector 管理</span></div>
+      <div class="nav-item">▤ <span>数据源管理</span></div>
+    </aside>
+
+    <main class="main">
+      <section class="toolbar">
+        <div class="toolbar-left">
+          <div class="select">数据集: syslog_logs ▾</div>
+          <div class="select">最近 1 小时 ▾</div>
+          <div class="select">主机: 全部 ▾</div>
+          <div class="select">级别: 全部 ▾</div>
+        </div>
+        <div class="toolbar-right">
+          <div class="chip">自动刷新 10s</div>
+          <div class="button">保存视图</div>
+          <div class="button primary">立即刷新</div>
+        </div>
+      </section>
+
+      <section class="page-title">
+        <div>
+          <h1>日志监控工作台</h1>
+          <p>按数据集、时间窗和字段能力动态组织指标。核心路径是发现异常、解释趋势、下钻到日志，而不是展示固定大屏。</p>
+        </div>
+        <div class="status-pill"><span class="status-dot"></span> 数据可信，4 个可查询数据集</div>
+      </section>
+
+      <section class="context-strip">
+        <div class="context-main">
+          <div class="label">当前数据集</div>
+          <div class="value">syslog_logs · default.syslog_logs</div>
+        </div>
+        <div class="context-cell"><div class="label">字段能力</div><div class="value">timestamp / severity / host / app</div></div>
+        <div class="context-cell"><div class="label">最近日志</div><div class="value">2026-05-31 17:53:26</div></div>
+        <div class="context-cell"><div class="label">写入速率</div><div class="value">0.0/s</div></div>
+        <div class="context-cell"><div class="label">存储估算</div><div class="value">2.7 GB</div></div>
+      </section>
+
+      <section class="grid">
+        <article class="widget span-3">
+          <div class="widget-head">
+            <div><h2>日志总量</h2><div class="widget-desc">当前时间范围</div></div>
+            <span class="delta">稳定</span>
+          </div>
+          <div class="metric"><strong>11,935</strong><span>相比上一小时 +3.2%</span></div>
+        </article>
+        <article class="widget span-3">
+          <div class="widget-head">
+            <div><h2>错误率</h2><div class="widget-desc">ERROR / FATAL</div></div>
+            <span class="delta">0.00%</span>
+          </div>
+          <div class="metric"><strong>0</strong><span>无高危日志命中</span></div>
+        </article>
+        <article class="widget span-3">
+          <div class="widget-head">
+            <div><h2>活跃范围</h2><div class="widget-desc">主机与应用</div></div>
+            <span class="delta warn">需关注</span>
+          </div>
+          <div class="metric"><strong>2 / 12</strong><span>2 台主机，12 个应用</span></div>
+        </article>
+        <article class="widget span-3">
+          <div class="widget-head">
+            <div><h2>Vector 链路</h2><div class="widget-desc">Agent 与 pipeline</div></div>
+            <span class="delta">健康</span>
+          </div>
+          <div class="metric"><strong>1 / 1</strong><span>组件错误 0</span></div>
+        </article>
+
+        <article class="widget span-8">
+          <div class="widget-head">
+            <div><h2>日志趋势</h2><div class="widget-desc">点击图表区间后联动下方日志样本</div></div>
+            <span class="mini-actions">查看 SQL · 放大</span>
+          </div>
+          <div class="chart"><div class="line"></div></div>
+        </article>
+
+        <article class="widget span-4">
+          <div class="widget-head">
+            <div><h2>级别分布</h2><div class="widget-desc">按 severity 统计</div></div>
+            <span class="mini-actions">下钻</span>
+          </div>
+          <div class="severity">
+            <div class="donut"></div>
+            <div class="legend">
+              <div class="legend-row"><span>INFO</span><strong>8,355</strong></div>
+              <div class="legend-row"><span>WARN</span><strong>3,580</strong></div>
+              <div class="legend-row"><span>ERROR</span><strong>0</strong></div>
+              <div class="legend-row"><span>未知</span><strong>0</strong></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="widget span-7">
+          <div class="widget-head">
+            <div><h2>吞吐与写入延迟</h2><div class="widget-desc">Vector 输出速率与 ClickHouse 接收侧估算</div></div>
+            <span class="mini-actions">切换指标</span>
+          </div>
+          <div class="bar-chart">
+            <div class="bar" style="height: 38%"></div><div class="bar" style="height: 52%"></div>
+            <div class="bar" style="height: 48%"></div><div class="bar" style="height: 66%"></div>
+            <div class="bar" style="height: 44%"></div><div class="bar" style="height: 74%"></div>
+            <div class="bar" style="height: 57%"></div><div class="bar" style="height: 82%"></div>
+            <div class="bar" style="height: 62%"></div><div class="bar" style="height: 71%"></div>
+            <div class="bar" style="height: 48%"></div><div class="bar" style="height: 69%"></div>
+          </div>
+        </article>
+
+        <article class="widget span-5">
+          <div class="widget-head">
+            <div><h2>Top 主机与应用</h2><div class="widget-desc">当前窗口最活跃来源</div></div>
+            <span class="mini-actions">按主机/应用切换</span>
+          </div>
+          <div class="rank-list">
+            <div class="rank-row"><div><div class="rank-name">vector-user.biz</div><div class="rank-meta">host · su</div></div><strong>8,355</strong></div>
+            <div class="rank-row"><div><div class="rank-name">attack-simulator.local</div><div class="rank-meta">host · nginx</div></div><strong>3,580</strong></div>
+            <div class="rank-row"><div><div class="rank-name">app.services.text_to_sql</div><div class="rank-meta">application</div></div><strong>510</strong></div>
+            <div class="rank-row"><div><div class="rank-name">sshd</div><div class="rank-meta">application</div></div><strong>425</strong></div>
+          </div>
+        </article>
+
+        <article class="widget span-12">
+          <div class="widget-head">
+            <div><h2>日志样本</h2><div class="widget-desc">与当前筛选、图表刷选和异常状态联动</div></div>
+            <span class="mini-actions">打开日志搜索</span>
+          </div>
+          <div class="log-list">
+            <div class="log-row"><span class="badge warn">WARN</span><div><strong>sudo 权限变更事件</strong><div class="log-meta">2026-05-31 17:53:26 · vector-user.biz · sudo</div></div><span>查看上下文</span></div>
+            <div class="log-row"><span class="badge info">INFO</span><div><strong>TextToSQL 服务初始化成功</strong><div class="log-meta">2026-05-26 20:04:03 · app.services.text_to_sql</div></div><span>生成解析规则</span></div>
+            <div class="log-row"><span class="badge warn">WARN</span><div><strong>nginx 请求峰值超过最近均值</strong><div class="log-meta">2026-05-31 17:51:12 · attack-simulator.local · nginx</div></div><span>查看趋势</span></div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

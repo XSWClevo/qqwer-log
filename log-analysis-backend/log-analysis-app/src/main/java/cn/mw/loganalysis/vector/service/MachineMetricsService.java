@@ -3,12 +3,16 @@ package cn.mw.loganalysis.vector.service;
 import cn.mw.loganalysis.vector.dto.AgentMetricsRequest;
 import cn.mw.loganalysis.vector.dto.MachineMetricsDTO;
 import cn.mw.loganalysis.vector.entity.MachineMetrics;
+import cn.mw.loganalysis.vector.entity.VectorPipelineMetric;
 import cn.mw.loganalysis.vector.mapper.MachineMetricsMapper;
+import cn.mw.loganalysis.vector.mapper.VectorPipelineMetricMapper;
 import com.baomidou.dynamic.datasource.annotation.DS;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -27,7 +31,19 @@ import java.util.stream.Collectors;
 public class MachineMetricsService {
 
     private final MachineMetricsMapper metricsMapper;
+    private final VectorPipelineMetricMapper pipelineMetricMapper;
     private final ObjectMapper objectMapper;
+    private static final Set<String> INTERNAL_COMPONENTS = Set.of(
+            "internal_metrics",
+            "blackhole",
+            "internal_logs",
+            "_vector_internal_metrics_file",
+            "vector_internal_metrics_file",
+            "metrics_file",
+            "_vector_file_logs",
+            "_vector_log_remap",
+            "_vector_log_sink"
+    );
 
     /**
      * 内存中的历史缓存（用于快速查询最近数据）
@@ -40,8 +56,11 @@ public class MachineMetricsService {
      */
     private static final int MEMORY_CACHE_SIZE = 30;
 
-    public MachineMetricsService(MachineMetricsMapper metricsMapper, ObjectMapper objectMapper) {
+    public MachineMetricsService(MachineMetricsMapper metricsMapper,
+                                 VectorPipelineMetricMapper pipelineMetricMapper,
+                                 ObjectMapper objectMapper) {
         this.metricsMapper = metricsMapper;
+        this.pipelineMetricMapper = pipelineMetricMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -116,8 +135,51 @@ public class MachineMetricsService {
             log.error("写入 ClickHouse 失败: machineId={}", machineId, e);
         }
 
+        recordPipelineMetrics(machineId, request);
+
         log.debug("记录机器 {} 的指标: cpu={}%, mem={}%",
                 machineId, point.getCpuUsagePercent(), point.getMemoryUsagePercent());
+    }
+
+    private void recordPipelineMetrics(String machineId, AgentMetricsRequest request) {
+        if (MapUtils.isEmpty(request.getComponentMetrics())) {
+            return;
+        }
+
+        LocalDateTime recordedAt = request.getCollectedAt() != null ? request.getCollectedAt() : LocalDateTime.now();
+        request.getComponentMetrics().forEach((componentName, componentMetrics) -> {
+            if (StringUtils.isBlank(componentName)
+                    || INTERNAL_COMPONENTS.contains(componentName)
+                    || componentMetrics == null) {
+                return;
+            }
+
+            try {
+                long events = nonNegative(componentMetrics.getEventsProcessed());
+                long bytes = nonNegative(componentMetrics.getBytesProcessed());
+
+                VectorPipelineMetric metric = new VectorPipelineMetric();
+                metric.setMachineId(machineId);
+                metric.setSourceName(componentName);
+                metric.setEventsIn(events);
+                metric.setEventsOut(events);
+                metric.setBytesIn(bytes);
+                metric.setBytesOut(bytes);
+                metric.setErrors(toInt(componentMetrics.getErrors()));
+                metric.setRecordedAt(recordedAt);
+                pipelineMetricMapper.insert(metric);
+            } catch (Exception ex) {
+                log.error("写入 Vector pipeline 指标失败: machineId={}, component={}", machineId, componentName, ex);
+            }
+        });
+    }
+
+    private long nonNegative(Long value) {
+        return value == null ? 0L : Math.max(0L, value);
+    }
+
+    private int toInt(Long value) {
+        return Math.toIntExact(Math.min(Integer.MAX_VALUE, nonNegative(value)));
     }
 
     /**

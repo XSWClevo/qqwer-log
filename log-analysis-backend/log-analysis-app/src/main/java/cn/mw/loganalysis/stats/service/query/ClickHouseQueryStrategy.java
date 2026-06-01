@@ -708,6 +708,14 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
             }
         }
 
+        return executeRawSQLViaJdbc(sql, connectionConfig);
+    }
+
+    /**
+     * 直接通过 JDBC 执行原始 SQL。
+     * Dashboard 首页这类高频固定查询不应为每条 SQL 启动一次 MCP 进程。
+     */
+    public Object executeRawSQLViaJdbc(String sql, DatasourceConnectionConfig connectionConfig) {
         String jdbcUrl = buildJdbcUrl(connectionConfig);
         String username = connectionConfig.getUsername() != null ? connectionConfig.getUsername() : "default";
         String password = connectionConfig.getPassword() != null ? connectionConfig.getPassword() : "";
@@ -719,28 +727,25 @@ public class ClickHouseQueryStrategy implements LogQueryStrategy {
             ResultSetMetaData metaData = rs.getMetaData();
             int columnCount = metaData.getColumnCount();
 
-            // 如果只有一列一行，返回单个值
-            if (columnCount == 1 && rs.next()) {
-                Object value = rs.getObject(1);
-                if (!rs.next()) {
-                    return value;
-                }
-                // 如果有多行，重新查询并返回列表
-                rs.beforeFirst();
-            }
-
-            // 返回结果列表
             List<Map<String, Object>> results = new ArrayList<>();
+            boolean singleColumn = columnCount == 1;
+            Object singleValue = null;
             while (rs.next()) {
                 Map<String, Object> row = new HashMap<>();
                 for (int i = 1; i <= columnCount; i++) {
                     String columnName = metaData.getColumnName(i);
                     Object value = rs.getObject(i);
                     row.put(columnName, value);
+                    if (singleColumn && results.isEmpty()) {
+                        singleValue = value;
+                    }
                 }
                 results.add(row);
             }
 
+            if (singleColumn && results.size() == 1) {
+                return singleValue;
+            }
             return results;
 
         } catch (Exception e) {

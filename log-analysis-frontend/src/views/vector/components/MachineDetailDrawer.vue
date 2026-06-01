@@ -233,7 +233,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onUnmounted, nextTick, computed } from 'vue'
-import { vectorMachineApi, type MachineDetail, type MetricsPoint, type NetworkInterfaceInfo } from '@/api/vector'
+import { vectorMachineApi, type MachineDetail, type MetricsPoint } from '@/api/vector'
 import { Download, Upload, Warning, TrendCharts, Grid, Refresh } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
@@ -441,7 +441,7 @@ const renderChart = () => {
   const memData = metricsHistory.value.map(p => Number(p.memoryUsagePercent?.toFixed(2)) || 0)
   const diskData = metricsHistory.value.map(p => Number(p.diskUsagePercent?.toFixed(2)) || 0)
   
-  const option: echarts.EChartsOption = {
+  const option: echarts.EChartsCoreOption = {
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => {
@@ -505,7 +505,7 @@ const renderNetworkChart = () => {
   const recvData = networkHistory.value.map(p => Number((p.totalRecv / 1024 / 1024 / 1024).toFixed(2))) // GB
   const sentData = networkHistory.value.map(p => Number((p.totalSent / 1024 / 1024 / 1024).toFixed(2))) // GB
   
-  const option: echarts.EChartsOption = {
+  const option: echarts.EChartsCoreOption = {
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => {

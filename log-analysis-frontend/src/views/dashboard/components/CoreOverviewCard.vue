@@ -83,7 +83,9 @@ const formatNumber = (num: number) => {
 .rate-distribution { display: flex; flex-direction: column; gap: 10px; }
 .rate-item {
   .rate-bar {
-    height: 6px; border-radius: 3px; margin-bottom: 4px; transition: width 0.3s ease;
+    height: 6px;
+    margin-bottom: 4px;
+    border-radius: 3px;
     &.info { background: #1890FF; }
     &.warn { background: #FAAD14; }
     &.error { background: #FF4D4F; }

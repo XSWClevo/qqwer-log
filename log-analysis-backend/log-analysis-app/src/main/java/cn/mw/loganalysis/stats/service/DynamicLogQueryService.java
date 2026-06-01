@@ -4,6 +4,7 @@ import cn.mw.loganalysis.stats.dto.LogContextRequest;
 import cn.mw.loganalysis.stats.dto.LogQueryRequest;
 import cn.mw.loganalysis.stats.dto.StatsQueryRequest;
 import cn.mw.loganalysis.stats.service.query.DatasourceConnectionConfig;
+import cn.mw.loganalysis.stats.service.query.ClickHouseQueryStrategy;
 import cn.mw.loganalysis.stats.service.query.FieldInfo;
 import cn.mw.loganalysis.stats.service.query.LogQueryStrategy;
 import cn.mw.loganalysis.vector.entity.ConfigComponent;
@@ -94,6 +95,14 @@ public class DynamicLogQueryService {
      * 公开的获取数据源配置方法（供 DatasourceManagementService 使用）
      */
     public DatasourceConnectionConfig getDatasourceConfigPublic(String datasourceId) {
+        return getDatasourceConfig(datasourceId);
+    }
+
+    /**
+     * 获取 queryable 数据源的连接配置。
+     * 供 Dashboard 等只读场景复用，避免重复解析 YAML。
+     */
+    public DatasourceConnectionConfig getQueryableDatasourceConfig(String datasourceId) {
         return getDatasourceConfig(datasourceId);
     }
 
@@ -448,6 +457,21 @@ public class DynamicLogQueryService {
             LogQueryStrategy strategy = getStrategy("clickhouse");
             return strategy.executeRawSQL(sql, defaultConfig);
         }
+    }
+
+    /**
+     * 直接通过底层驱动执行原始 SQL，绕过 MCP。
+     * 用于 Dashboard 首页等固定聚合场景，避免多条短查询反复拉起 MCP 进程。
+     */
+    public Object executeRawSQLJdbc(String datasourceId, String sql) {
+        DatasourceConnectionConfig config = StringUtils.isNotBlank(datasourceId)
+                ? getDatasourceConfig(datasourceId)
+                : buildDefaultClickHouseConfig();
+        LogQueryStrategy strategy = getStrategy(config.getType());
+        if (strategy instanceof ClickHouseQueryStrategy clickHouseQueryStrategy) {
+            return clickHouseQueryStrategy.executeRawSQLViaJdbc(sql, config);
+        }
+        return strategy.executeRawSQL(sql, config);
     }
 
     private DatasourceConnectionConfig buildDefaultClickHouseConfig() {

@@ -328,7 +328,7 @@ import { ref, computed, watch, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection, Document, List, Plus, Delete, Check, SuccessFilled, CircleCloseFilled, Search, View } from '@element-plus/icons-vue'
 import * as yaml from 'js-yaml'
-import { configComponentApi, vrlApi, type ConfigComponent, type TableSchema, type ColumnDefinition } from '@/api/vector'
+import { configComponentApi, vrlApi, type ConfigComponent, type TableSchema } from '@/api/vector'
 
 const props = defineProps<{
   modelValue: boolean
@@ -549,10 +549,9 @@ const parseLogSample = async () => {
       regexPattern: parseConfig.regexPattern,
       grokPattern: parseConfig.grokPattern
     })
-    const data = res.data || res
-    if (data.success && data.fields) {
+    if (res.success && res.fields) {
       // 将解析结果转换为列定义
-      tableSchema.value.columns = data.fields.map((f: any) => ({
+      tableSchema.value.columns = res.fields.map((f: any) => ({
         name: f.name,
         type: mapFieldTypeToDbType(f.type, props.component?.vectorType || 'clickhouse'),
         nullable: true,
@@ -561,9 +560,9 @@ const parseLogSample = async () => {
       }))
       // 添加常用的系统字段
       addSystemFields()
-      ElMessage.success(`解析成功，共 ${data.fields.length} 个字段`)
+      ElMessage.success(`解析成功，共 ${res.fields.length} 个字段`)
     } else {
-      parseError.value = data.error || '解析失败'
+      parseError.value = res.error || '解析失败'
     }
   } catch (e: any) {
     parseError.value = e.message || '请求失败'

@@ -83,12 +83,23 @@ EOF
 cat > ${CONFIG_DIR}/vector.yaml <<EOF
 data_dir: "${DATA_DIR}"
 
+api:
+  enabled: true
+  address: "127.0.0.1:8686"
+
 sources:
   internal_metrics:
     type: internal_metrics
-    scrape_interval_secs: 60
+    scrape_interval_secs: 10
 
 sinks:
+  _vector_internal_metrics_file:
+    type: file
+    inputs:
+      - internal_metrics
+    path: "${DATA_DIR}/internal-metrics-%Y-%m-%d.log"
+    encoding:
+      codec: json
   blackhole:
     type: blackhole
     inputs:

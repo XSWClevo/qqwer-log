@@ -89,6 +89,16 @@ public class ConfigComponentService {
     }
 
     /**
+     * 获取可查询的 ClickHouse Sink。
+     * Dashboard 和智能助手都应只消费这类显式可查询的数据集。
+     */
+    public List<ConfigComponent> getQueryableClickHouseSinks() {
+        return getQueryableDataSources().stream()
+                .filter(component -> StringUtils.equalsIgnoreCase(component.getVectorType(), "clickhouse"))
+                .toList();
+    }
+
+    /**
      * 更新组件的可查询状态
      */
     @Transactional(rollbackFor = Exception.class)

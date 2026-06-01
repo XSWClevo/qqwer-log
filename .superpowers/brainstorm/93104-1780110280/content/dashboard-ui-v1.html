@@ -1,0 +1,660 @@
+<style>
+  .hero {
+    display: grid;
+    grid-template-columns: 1.35fr 0.95fr;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+
+  .hero-panel {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 28px;
+    background:
+      radial-gradient(circle at top left, rgba(14, 165, 233, 0.16), transparent 38%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 252, 0.96));
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+    padding: 28px;
+  }
+
+  .hero-panel.secondary {
+    background:
+      linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.94)),
+      radial-gradient(circle at top right, rgba(59, 130, 246, 0.28), transparent 40%);
+    color: #f8fafc;
+    border-color: rgba(148, 163, 184, 0.16);
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #0f766e;
+    margin-bottom: 10px;
+  }
+
+  .secondary .eyebrow {
+    color: #93c5fd;
+  }
+
+  .hero h1 {
+    margin: 0 0 12px;
+    font-size: 38px;
+    line-height: 1.06;
+    color: #0f172a;
+  }
+
+  .secondary h3,
+  .secondary p,
+  .secondary .chip strong,
+  .secondary .chip span {
+    color: #f8fafc;
+  }
+
+  .hero p {
+    margin: 0;
+    color: #475569;
+    line-height: 1.75;
+    font-size: 14px;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 22px;
+  }
+
+  .mock-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #0f766e, #0ea5e9);
+    color: white;
+    font-weight: 700;
+    font-size: 13px;
+    box-shadow: 0 12px 28px rgba(14, 116, 144, 0.22);
+  }
+
+  .mock-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #0f172a;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .toolbar-strip {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+  }
+
+  .token {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.74);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    font-size: 12px;
+    color: #334155;
+  }
+
+  .token .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #22c55e;
+  }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .chip {
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .chip span {
+    font-size: 12px;
+    color: rgba(248, 250, 252, 0.72);
+  }
+
+  .chip strong {
+    font-size: 16px;
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 10px;
+  }
+
+  .kpi-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .kpi-card {
+    padding: 18px;
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,250,252,0.98));
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+  }
+
+  .kpi-card.warning {
+    background: linear-gradient(180deg, rgba(255,247,237,0.98), rgba(255,251,235,0.98));
+  }
+
+  .kpi-card.danger {
+    background: linear-gradient(180deg, rgba(254,242,242,0.98), rgba(255,245,245,0.98));
+  }
+
+  .kpi-card h3 {
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  .kpi-card strong {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 30px;
+    color: #0f172a;
+    line-height: 1;
+  }
+
+  .kpi-card p {
+    margin: 0;
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.6;
+  }
+
+  .panel {
+    border-radius: 24px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255,255,255,0.92);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+    padding: 20px;
+  }
+
+  .panel h3 {
+    margin: 0;
+    font-size: 17px;
+    color: #0f172a;
+  }
+
+  .panel p {
+    margin: 8px 0 0;
+    font-size: 13px;
+    color: #64748b;
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 18px;
+  }
+
+  .panel-tag {
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0369a1;
+    background: rgba(14, 165, 233, 0.10);
+  }
+
+  .trend {
+    grid-column: span 7;
+    min-height: 320px;
+  }
+
+  .dataset {
+    grid-column: span 5;
+    min-height: 320px;
+  }
+
+  .list-panel {
+    grid-column: span 4;
+    min-height: 280px;
+  }
+
+  .wide-panel {
+    grid-column: span 8;
+    min-height: 280px;
+  }
+
+  .mock-chart {
+    margin-top: 18px;
+    height: 220px;
+    border-radius: 18px;
+    background:
+      linear-gradient(180deg, rgba(14,165,233,0.08), rgba(255,255,255,0)),
+      repeating-linear-gradient(
+        to right,
+        rgba(148,163,184,0.14) 0,
+        rgba(148,163,184,0.14) 1px,
+        transparent 1px,
+        transparent 56px
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        rgba(148,163,184,0.14) 0,
+        rgba(148,163,184,0.14) 1px,
+        transparent 1px,
+        transparent 44px
+      );
+    position: relative;
+    overflow: hidden;
+  }
+
+  .mock-chart svg {
+    position: absolute;
+    inset: 18px 18px 18px 18px;
+    width: calc(100% - 36px);
+    height: calc(100% - 36px);
+  }
+
+  .dataset-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .dataset-card {
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98));
+  }
+
+  .dataset-card.active {
+    border-color: rgba(14, 165, 233, 0.38);
+    box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.14);
+  }
+
+  .dataset-card h4 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    color: #0f172a;
+  }
+
+  .dataset-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .meta-pill {
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid rgba(15,23,42,0.06);
+  }
+
+  .rank-list, .log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .rank-item, .log-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: #f8fafc;
+    border: 1px solid rgba(15,23,42,0.06);
+  }
+
+  .rank-item strong, .log-item strong {
+    display: block;
+    font-size: 14px;
+    color: #0f172a;
+    margin-bottom: 6px;
+  }
+
+  .rank-item span, .log-item span {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .rank-item em, .log-item em {
+    font-style: normal;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+  }
+
+  .log-item {
+    align-items: flex-start;
+  }
+
+  .empty-band {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 18px 20px;
+    border-radius: 22px;
+    border: 1px dashed rgba(14, 116, 144, 0.34);
+    background: linear-gradient(180deg, rgba(240, 249, 255, 0.95), rgba(248, 250, 252, 0.95));
+    margin-top: 18px;
+  }
+
+  .empty-band h4 {
+    margin: 0 0 8px;
+    font-size: 16px;
+    color: #0f172a;
+  }
+
+  .empty-band p {
+    margin: 0;
+    color: #475569;
+    font-size: 13px;
+  }
+
+  .options {
+    margin-top: 26px;
+  }
+
+  @media (max-width: 1100px) {
+    .hero {
+      grid-template-columns: 1fr;
+    }
+
+    .kpi-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .trend, .dataset, .list-panel, .wide-panel {
+      grid-column: 1 / -1;
+    }
+  }
+</style>
+
+<h2>Dashboard 新 UI 草图</h2>
+<p class="subtitle">方向：Copilot 工作台 + 驾驶舱概览。上半部分先看平台与数据集状态，下半部分进入趋势、Top 排行与异常流；同时把“空数据”处理成明确引导，而不是整页像坏掉。</p>
+
+<div class="hero">
+  <div class="hero-panel">
+    <div class="eyebrow">Log Operations Workspace</div>
+    <h1>日志平台总览，不再只是空卡片和旧式大屏。</h1>
+    <p>这版首页把“平台是否健康”、“当前看的是哪个可查询数据集”、“最近哪里在出问题”放到同一个工作区里。对真实有数据、无数据、无 queryable 数据集三种状态，都会给出不同反馈。</p>
+    <div class="hero-actions">
+      <div class="mock-primary">创建日志解析</div>
+      <div class="mock-secondary">跳转日志搜索</div>
+    </div>
+    <div class="toolbar-strip">
+      <div class="token"><span class="dot"></span>最近 1 小时</div>
+      <div class="token"><span class="dot"></span>自动刷新 10s</div>
+      <div class="token"><span class="dot"></span>当前数据集: nginx_access_logs</div>
+      <div class="token"><span class="dot"></span>可查询 Sink: 3</div>
+    </div>
+  </div>
+
+  <div class="hero-panel secondary">
+    <div class="eyebrow">Context</div>
+    <h3 style="margin:0 0 10px;font-size:28px;">当前数据集卡</h3>
+    <p>右上角不再只是“有没有表”，而是把当前查询目标、最近日志时间、是否可写入、是否有数据、异常提示一次交代清楚。</p>
+    <div class="status-grid">
+      <div class="chip">
+        <span>数据集</span>
+        <strong>nginx_access_logs</strong>
+      </div>
+      <div class="chip">
+        <span>最近日志</span>
+        <strong>1 分钟前</strong>
+      </div>
+      <div class="chip">
+        <span>写入状态</span>
+        <strong>Healthy</strong>
+      </div>
+      <div class="chip">
+        <span>空状态策略</span>
+        <strong>给出下一步动作</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="board">
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <h3>在线 Vector 主机</h3>
+      <strong>12 / 14</strong>
+      <p>最近 5 分钟在线率稳定，2 台离线主机需要关注。</p>
+    </div>
+    <div class="kpi-card">
+      <h3>当前数据集 EPS</h3>
+      <strong>3.8k/s</strong>
+      <p>显示真实写入速率，而不是伪造 backlog 指标。</p>
+    </div>
+    <div class="kpi-card warning">
+      <h3>5 分钟组件错误</h3>
+      <strong>6</strong>
+      <p>聚焦真实组件异常，支持直接跳转组件详情。</p>
+    </div>
+    <div class="kpi-card danger">
+      <h3>高危日志</h3>
+      <strong>124</strong>
+      <p>按当前数据集统计 CRITICAL/FATAL 级别日志。</p>
+    </div>
+    <div class="kpi-card">
+      <h3>活跃主机</h3>
+      <strong>86</strong>
+      <p>展示业务覆盖面，而不是只盯平台宿主机。</p>
+    </div>
+    <div class="kpi-card">
+      <h3>可查询数据集</h3>
+      <strong>3</strong>
+      <p>如果是 0，就触发引导态，不让用户猜为什么空。</p>
+    </div>
+  </div>
+
+  <section class="panel trend">
+    <div class="panel-header">
+      <div>
+        <h3>日志趋势</h3>
+        <p>按 INFO / WARN / ERROR / CRITICAL 分层，支持 drill-down 到日志搜索。</p>
+      </div>
+      <div class="panel-tag">Trend</div>
+    </div>
+    <div class="mock-chart">
+      <svg viewBox="0 0 620 220" preserveAspectRatio="none">
+        <polyline fill="none" stroke="#38bdf8" stroke-width="4" points="10,150 90,128 170,138 250,118 330,108 410,92 490,96 570,72"/>
+        <polyline fill="none" stroke="#f59e0b" stroke-width="4" points="10,168 90,164 170,152 250,142 330,148 410,126 490,134 570,118"/>
+        <polyline fill="none" stroke="#ef4444" stroke-width="4" points="10,188 90,184 170,190 250,170 330,162 410,140 490,126 570,88"/>
+      </svg>
+    </div>
+  </section>
+
+  <section class="panel dataset">
+    <div class="panel-header">
+      <div>
+        <h3>数据集上下文</h3>
+        <p>不是简单显示一个表名，而是把当前候选与可用性放在一起。</p>
+      </div>
+      <div class="panel-tag">Dataset</div>
+    </div>
+    <div class="dataset-stack">
+      <div class="dataset-card active">
+        <h4>nginx_access_logs</h4>
+        <div class="dataset-meta">
+          <div class="meta-pill">default.nginx_access_logs</div>
+          <div class="meta-pill">最近 1 分钟有数据</div>
+          <div class="meta-pill">queryable sink</div>
+          <div class="meta-pill">建议作为默认数据集</div>
+        </div>
+      </div>
+      <div class="dataset-card">
+        <h4>syslog_logs</h4>
+        <div class="dataset-meta">
+          <div class="meta-pill">表存在但最近无数据</div>
+          <div class="meta-pill">用于回退展示</div>
+        </div>
+      </div>
+      <div class="empty-band">
+        <div>
+          <h4>如果这里没有候选数据集</h4>
+          <p>直接显示“暂无可统计日志数据集”，并给出“前往组件库开启 queryable / 创建日志解析”的动作按钮，不再让整页像坏掉。</p>
+        </div>
+        <div class="mock-primary">前往组件库</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel list-panel">
+    <div class="panel-header">
+      <div>
+        <h3>Top 主机</h3>
+        <p>最活跃的日志来源主机。</p>
+      </div>
+      <div class="panel-tag">Top</div>
+    </div>
+    <div class="rank-list">
+      <div class="rank-item">
+        <div>
+          <strong>edge-gw-01</strong>
+          <span>最近 5 分钟错误率上升</span>
+        </div>
+        <em>18.2k</em>
+      </div>
+      <div class="rank-item">
+        <div>
+          <strong>web-02</strong>
+          <span>请求量高但状态稳定</span>
+        </div>
+        <em>12.4k</em>
+      </div>
+      <div class="rank-item">
+        <div>
+          <strong>api-03</strong>
+          <span>应用异常波动</span>
+        </div>
+        <em>8.7k</em>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel list-panel">
+    <div class="panel-header">
+      <div>
+        <h3>Top 应用</h3>
+        <p>最值得继续分析的应用服务。</p>
+      </div>
+      <div class="panel-tag">Apps</div>
+    </div>
+    <div class="rank-list">
+      <div class="rank-item">
+        <div>
+          <strong>nginx</strong>
+          <span>入口流量主来源</span>
+        </div>
+        <em>21.1k</em>
+      </div>
+      <div class="rank-item">
+        <div>
+          <strong>gateway</strong>
+          <span>包含 4xx / 5xx 峰值</span>
+        </div>
+        <em>14.9k</em>
+      </div>
+      <div class="rank-item">
+        <div>
+          <strong>auth-service</strong>
+          <span>重复异常命中</span>
+        </div>
+        <em>6.3k</em>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel wide-panel">
+    <div class="panel-header">
+      <div>
+        <h3>最近高危日志 / 操作建议</h3>
+        <p>列表和动作放在一起，用户一眼知道“发生了什么”和“下一步点哪里”。</p>
+      </div>
+      <div class="panel-tag">Actionable</div>
+    </div>
+    <div class="log-list">
+      <div class="log-item">
+        <div>
+          <strong>[CRITICAL] gateway upstream timeout</strong>
+          <span>host=edge-gw-01 · app=gateway · 1 分钟前</span>
+        </div>
+        <em>查看上下文</em>
+      </div>
+      <div class="log-item">
+        <div>
+          <strong>[ERROR] auth token verify failed</strong>
+          <span>host=api-03 · app=auth-service · 2 分钟前</span>
+        </div>
+        <em>跳转日志搜索</em>
+      </div>
+      <div class="log-item">
+        <div>
+          <strong>[WARN] file source lagging</strong>
+          <span>Vector 组件告警 · 建议检查部署主机</span>
+        </div>
+        <em>打开组件</em>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="continue" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>按这个方向继续</h3>
+      <p>保留“Copilot 工作台 + 驾驶舱概览”的混合布局，下一步直接实现到首页。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="more-dashboard" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>再偏驾驶舱一些</h3>
+      <p>减少解释和动作，增加更强的态势感与图表密度。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="more-workbench" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>再偏工作台一些</h3>
+      <p>减少排行榜，增加空状态引导、推荐动作和快捷跳转。</p>
+    </div>
+  </div>
+</div>

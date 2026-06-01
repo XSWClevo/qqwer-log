@@ -55,6 +55,11 @@ defineEmits<{
     box-shadow: 0 12px 24px rgba(15, 23, 42, 0.10);
   }
 
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--macos-blue) 72%, transparent);
+    outline-offset: 2px;
+  }
+
   &.active {
     border-color: color-mix(in srgb, var(--macos-blue) 62%, transparent);
     box-shadow: inset 0 2px 0 color-mix(in srgb, var(--macos-blue) 48%, transparent), 0 12px 28px color-mix(in srgb, var(--macos-blue) 16%, transparent);
@@ -78,7 +83,6 @@ defineEmits<{
 .metric-label {
   font-size: 12px;
   letter-spacing: 0;
-  text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 88%, transparent);
 }
 
@@ -106,6 +110,17 @@ defineEmits<{
 @media (max-width: 720px) {
   .metric-deck {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-card {
+    transition: none;
+
+    &:hover,
+    &.active {
+      transform: none;
+    }
   }
 }
 </style>

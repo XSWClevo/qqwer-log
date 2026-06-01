@@ -117,20 +117,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Filter, Remove, Timer } from '@element-plus/icons-vue'
-import type { LogItem } from '@/types/log'
+import type { LogEntry } from '@/types/log'
 import { ElMessage } from 'element-plus'
-
-interface Props {
-  modelValue: boolean
-}
 
 const emit = defineEmits(['update:modelValue', 'addFilter', 'excludeFilter', 'viewContext'])
 
 const visible = ref(false)
-const log = ref<LogItem | null>(null)
+const log = ref<LogEntry | null>(null)
 
 // 打开详情
-const open = (logItem: LogItem) => {
+const open = (logItem: LogEntry) => {
   log.value = logItem
   visible.value = true
 }

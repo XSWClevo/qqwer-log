@@ -50,6 +50,12 @@ public class DashboardQueryRequest implements Serializable {
     private Integer pageSize = 20;
 
     /**
+     * 指定要查看的数据集。
+     * 为空时由后端按默认策略选择。
+     */
+    private String datasourceId;
+
+    /**
      * 实体类型 (host / app)，用于 getTopEntities
      */
     private String entityType;

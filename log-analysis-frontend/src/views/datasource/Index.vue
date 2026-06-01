@@ -272,6 +272,8 @@ import {
   type CreateDatasourceRequest
 } from '@/api/datasource'
 
+type DatasourceFormData = CreateDatasourceRequest & { status: string }
+
 // 搜索和筛选
 const searchKeyword = ref('')
 const filterType = ref('')
@@ -295,7 +297,7 @@ const formRef = ref<FormInstance>()
 const submitting = ref(false)
 const testing = ref(false)
 
-const formData = reactive<CreateDatasourceRequest>({
+const formData = reactive<DatasourceFormData>({
   name: '',
   type: '',
   host: '',
@@ -304,7 +306,8 @@ const formData = reactive<CreateDatasourceRequest>({
   username: '',
   password: '',
   sslEnabled: false,
-  description: ''
+  description: '',
+  status: 'active'
 })
 
 const formRules: FormRules = {

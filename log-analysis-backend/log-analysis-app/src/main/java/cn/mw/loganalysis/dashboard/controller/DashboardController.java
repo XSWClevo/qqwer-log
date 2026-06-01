@@ -3,6 +3,7 @@ package cn.mw.loganalysis.dashboard.controller;
 import cn.mw.loganalysis.common.response.Result;
 import cn.mw.loganalysis.dashboard.dto.*;
 import cn.mw.loganalysis.dashboard.service.DashboardService;
+import cn.mw.loganalysis.dashboard.service.VectorDashboardService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ import java.util.concurrent.Executor;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final VectorDashboardService vectorDashboardService;
     @Qualifier("dashboardTaskExecutor")
     @Autowired
     private Executor dashboardExecutor;
@@ -213,7 +215,7 @@ public class DashboardController {
 
     /**
      * 获取 Dashboard 概览数据 (聚合多个接口)
-     * 一次请求获取所有仪表盘数据，减少前端请求次数
+     * 首页统一消费这个新结构，避免前端继续拼装多个旧 syslog 接口。
      */
     @PostMapping("/overview")
     public Result<DashboardOverviewDTO> getDashboardOverview(@Valid @RequestBody DashboardQueryRequest request) {
@@ -221,55 +223,28 @@ public class DashboardController {
         log.info("[{}] Fetching dashboard overview: {} to {}", traceId, request.getStartTime(), request.getEndTime());
         
         try {
-            String startTime = request.getStartTime();
-            String endTime = request.getEndTime();
-
-            // 使用 supplyAsync + 线程池并行执行所有查询
-            // 不使用 @Async 是因为 @DS 动态数据源注解在异步线程中需要显式切换
-            CompletableFuture<SystemMetricsDTO> metricsFuture = CompletableFuture.supplyAsync(
-                    dashboardService::getSystemMetrics, dashboardExecutor);
-            CompletableFuture<LogTrendDTO> trendFuture = CompletableFuture.supplyAsync(
-                    () -> dashboardService.getLogTrend(startTime, endTime, request.getGranularity()), dashboardExecutor);
-            CompletableFuture<TopEntityDTO> topHostsFuture = CompletableFuture.supplyAsync(
-                    () -> dashboardService.getTopEntities("host", startTime, endTime), dashboardExecutor);
-            CompletableFuture<TopEntityDTO> topAppsFuture = CompletableFuture.supplyAsync(
-                    () -> dashboardService.getTopEntities("app", startTime, endTime), dashboardExecutor);
-            CompletableFuture<RecurringExceptionDTO> exceptionsFuture = CompletableFuture.supplyAsync(
-                    () -> dashboardService.getRecurringExceptions(startTime, endTime), dashboardExecutor);
-            CompletableFuture<AlertLogDTO> alertLogsFuture = CompletableFuture.supplyAsync(
-                    () -> dashboardService.getLatestAlertLogs(startTime, endTime, request.getPageNum(), request.getPageSize()), dashboardExecutor);
-            CompletableFuture<LogPipelineDTO> pipelineFuture = CompletableFuture.supplyAsync(
-                    () -> dashboardService.getLogPipeline(startTime, endTime), dashboardExecutor);
-            CompletableFuture<CoreOverviewDTO> coreOverviewFuture = CompletableFuture.supplyAsync(
-                    dashboardService::getCoreOverview, dashboardExecutor);
-            CompletableFuture<DatabaseStatusDTO> dbStatusFuture = CompletableFuture.supplyAsync(
-                    dashboardService::getDatabaseStatus, dashboardExecutor);
-
-            // 等待所有并行任务完成
-            CompletableFuture.allOf(
-                    metricsFuture, trendFuture, topHostsFuture, topAppsFuture,
-                    exceptionsFuture, alertLogsFuture, pipelineFuture,
-                    coreOverviewFuture, dbStatusFuture
-            ).join();
-
-            // 组装结果
-            DashboardOverviewDTO overview = DashboardOverviewDTO.builder()
-                    .systemMetrics(metricsFuture.join())
-                    .logTrend(trendFuture.join())
-                    .logPipeline(pipelineFuture.join())
-                    .coreOverview(coreOverviewFuture.join())
-                    .databaseStatus(dbStatusFuture.join())
-                    .topHosts(topHostsFuture.join())
-                    .topApps(topAppsFuture.join())
-                    .recurringExceptions(exceptionsFuture.join())
-                    .alertLogs(alertLogsFuture.join())
-                    .traceId(traceId)
-                    .build();
-
-            return Result.success(overview);
+            return Result.success(dashboardService.getOverview(request));
         } catch (Exception e) {
             log.error("[{}] Failed to fetch dashboard overview", traceId, e);
             return Result.error("获取仪表盘概览失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取 Vector 主机监控概览。
+     */
+    @GetMapping("/vector-overview")
+    public Result<VectorDashboardOverviewDTO> getVectorDashboardOverview(
+            @RequestParam(defaultValue = "1h") String range,
+            @RequestParam(required = false) String hostId) {
+        String traceId = generateTraceId();
+        log.info("[{}] Fetching vector dashboard overview: range={}, hostId={}", traceId, range, hostId);
+
+        try {
+            return Result.success(vectorDashboardService.getOverview(range, hostId));
+        } catch (Exception e) {
+            log.error("[{}] Failed to fetch vector dashboard overview", traceId, e);
+            return Result.error("获取 Vector 主机概览失败: " + e.getMessage());
         }
     }
 

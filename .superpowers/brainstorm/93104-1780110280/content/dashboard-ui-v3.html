@@ -1,0 +1,546 @@
+<style>
+  .page-shell {
+    background:
+      radial-gradient(circle at top left, rgba(14, 165, 233, 0.08), transparent 26%),
+      radial-gradient(circle at top right, rgba(16, 185, 129, 0.07), transparent 22%),
+      linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    border-radius: 28px;
+    padding: 22px;
+    border: 1px solid rgba(15, 23, 42, 0.04);
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .title-block h1 {
+    margin: 0;
+    font-size: 28px;
+    line-height: 1.1;
+    color: #0f172a;
+  }
+
+  .title-block p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: #64748b;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    color: #334155;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .chip.active {
+    background: #0f172a;
+    color: #f8fafc;
+    border-color: #0f172a;
+  }
+
+  .chip.success::before,
+  .chip.warning::before,
+  .chip.info::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    display: inline-block;
+  }
+
+  .chip.success::before { background: #22c55e; }
+  .chip.warning::before { background: #f59e0b; }
+  .chip.info::before { background: #0ea5e9; }
+
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: #0f172a;
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .kpi {
+    padding: 16px 16px 14px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(15, 23, 42, 0.05);
+  }
+
+  .kpi h3 {
+    margin: 0 0 12px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+  }
+
+  .kpi strong {
+    display: block;
+    font-size: 28px;
+    line-height: 1;
+    color: #0f172a;
+    margin-bottom: 8px;
+  }
+
+  .kpi span {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .kpi.warn strong { color: #d97706; }
+  .kpi.danger strong { color: #dc2626; }
+  .kpi.brand strong { color: #0284c7; }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1.7fr 0.9fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .surface {
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(15, 23, 42, 0.05);
+    padding: 18px;
+  }
+
+  .surface-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .surface-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #0f172a;
+  }
+
+  .surface-header .badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+    background: #f1f5f9;
+    padding: 6px 9px;
+    border-radius: 999px;
+  }
+
+  .trend-chart {
+    height: 300px;
+    border-radius: 18px;
+    background:
+      linear-gradient(180deg, rgba(14, 165, 233, 0.05), rgba(255,255,255,0)),
+      repeating-linear-gradient(to right, rgba(148,163,184,0.12) 0, rgba(148,163,184,0.12) 1px, transparent 1px, transparent 62px),
+      repeating-linear-gradient(to bottom, rgba(148,163,184,0.12) 0, rgba(148,163,184,0.12) 1px, transparent 1px, transparent 44px);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .trend-chart svg {
+    position: absolute;
+    inset: 18px;
+    width: calc(100% - 36px);
+    height: calc(100% - 36px);
+  }
+
+  .dataset-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dataset-card {
+    padding: 14px 14px 12px;
+    border-radius: 18px;
+    background: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.05);
+  }
+
+  .dataset-card.active {
+    background: linear-gradient(135deg, rgba(14,165,233,0.10), rgba(59,130,246,0.08));
+    border-color: rgba(14,165,233,0.20);
+  }
+
+  .dataset-card h4 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #0f172a;
+  }
+
+  .dataset-card .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .pill {
+    font-size: 11px;
+    color: #475569;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: white;
+    border: 1px solid rgba(15, 23, 42, 0.05);
+  }
+
+  .empty-inline {
+    border-radius: 16px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border: 1px dashed rgba(148, 163, 184, 0.36);
+    color: #475569;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .list-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.04);
+  }
+
+  .list-item strong {
+    display: block;
+    font-size: 13px;
+    color: #0f172a;
+    margin-bottom: 4px;
+  }
+
+  .list-item span {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .list-item em {
+    font-style: normal;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+  }
+
+  .list-item.alert {
+    background: linear-gradient(180deg, #fff7ed 0%, #fff 100%);
+  }
+
+  .list-item.critical {
+    background: linear-gradient(180deg, #fff1f2 0%, #fff 100%);
+  }
+
+  .legend-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #64748b;
+  }
+
+  .legend::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    display: inline-block;
+  }
+
+  .legend.info::before { background: #0ea5e9; }
+  .legend.warn::before { background: #f59e0b; }
+  .legend.error::before { background: #ef4444; }
+
+  .options { margin-top: 22px; }
+
+  @media (max-width: 1100px) {
+    .kpi-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .main-grid,
+    .bottom-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<h2>Dashboard 新 UI 草图 v3</h2>
+<p class="subtitle">参考方向：Vercel 的轻量概览、Linear 的留白和 Datadog 的信息组织。核心目标是去掉“黑框大卡片感”，让首页更像成熟产品控制台。</p>
+
+<div class="page-shell">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="title-block">
+        <h1>Dashboard</h1>
+        <p>平台状态、当前数据集、关键趋势</p>
+      </div>
+      <div class="toolbar">
+        <div class="chip active">最近 1 小时</div>
+        <div class="chip success">自动刷新 10s</div>
+        <div class="chip info">nginx_access_logs</div>
+        <div class="chip">3 个可查询数据集</div>
+      </div>
+    </div>
+    <div class="cta">创建日志解析</div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi brand">
+      <h3>在线主机</h3>
+      <strong>12 / 14</strong>
+      <span>2 台离线</span>
+    </div>
+    <div class="kpi brand">
+      <h3>当前 EPS</h3>
+      <strong>3.8k/s</strong>
+      <span>稳定写入</span>
+    </div>
+    <div class="kpi warn">
+      <h3>组件错误</h3>
+      <strong>6</strong>
+      <span>最近 5 分钟</span>
+    </div>
+    <div class="kpi danger">
+      <h3>高危日志</h3>
+      <strong>124</strong>
+      <span>需要处理</span>
+    </div>
+    <div class="kpi">
+      <h3>活跃主机</h3>
+      <strong>86</strong>
+      <span>当前数据集</span>
+    </div>
+    <div class="kpi">
+      <h3>可查询数据集</h3>
+      <strong>3</strong>
+      <span>全部可用</span>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <section class="surface">
+      <div class="surface-header">
+        <h3>日志趋势</h3>
+        <div class="badge">Trend</div>
+      </div>
+      <div class="trend-chart">
+        <svg viewBox="0 0 620 220" preserveAspectRatio="none">
+          <polyline fill="none" stroke="#0ea5e9" stroke-width="4" points="10,150 90,124 170,136 250,118 330,104 410,92 490,98 570,72"/>
+          <polyline fill="none" stroke="#f59e0b" stroke-width="4" points="10,170 90,160 170,152 250,144 330,146 410,128 490,136 570,118"/>
+          <polyline fill="none" stroke="#ef4444" stroke-width="4" points="10,194 90,186 170,190 250,168 330,160 410,144 490,124 570,84"/>
+        </svg>
+      </div>
+      <div class="legend-row">
+        <div class="legend info">INFO</div>
+        <div class="legend warn">WARN</div>
+        <div class="legend error">ERROR</div>
+      </div>
+    </section>
+
+    <section class="surface">
+      <div class="surface-header">
+        <h3>当前数据集</h3>
+        <div class="badge">Dataset</div>
+      </div>
+      <div class="dataset-panel">
+        <div class="dataset-card active">
+          <h4>nginx_access_logs</h4>
+          <div class="meta">
+            <div class="pill">default.nginx_access_logs</div>
+            <div class="pill">1 分钟前有数据</div>
+            <div class="pill">默认</div>
+          </div>
+        </div>
+        <div class="dataset-card">
+          <h4>gateway_error_logs</h4>
+          <div class="meta">
+            <div class="pill">错误密集</div>
+            <div class="pill">建议切换</div>
+          </div>
+        </div>
+        <div class="dataset-card">
+          <h4>syslog_logs</h4>
+          <div class="meta">
+            <div class="pill">空表</div>
+            <div class="pill">回退</div>
+          </div>
+        </div>
+        <div class="empty-inline">无数据时这里只保留一行提示和一个动作入口。</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="bottom-grid">
+    <section class="surface">
+      <div class="surface-header">
+        <h3>Top 主机</h3>
+        <div class="badge">Host</div>
+      </div>
+      <div class="list">
+        <div class="list-item">
+          <div>
+            <strong>edge-gw-01</strong>
+            <span>18.2k</span>
+          </div>
+          <em>+12%</em>
+        </div>
+        <div class="list-item">
+          <div>
+            <strong>web-02</strong>
+            <span>12.4k</span>
+          </div>
+          <em>稳定</em>
+        </div>
+        <div class="list-item">
+          <div>
+            <strong>api-03</strong>
+            <span>8.7k</span>
+          </div>
+          <em>异常</em>
+        </div>
+      </div>
+    </section>
+
+    <section class="surface">
+      <div class="surface-header">
+        <h3>Top 应用</h3>
+        <div class="badge">App</div>
+      </div>
+      <div class="list">
+        <div class="list-item">
+          <div>
+            <strong>nginx</strong>
+            <span>21.1k</span>
+          </div>
+          <em>入口</em>
+        </div>
+        <div class="list-item alert">
+          <div>
+            <strong>gateway</strong>
+            <span>14.9k</span>
+          </div>
+          <em>波动</em>
+        </div>
+        <div class="list-item">
+          <div>
+            <strong>auth-service</strong>
+            <span>6.3k</span>
+          </div>
+          <em>告警</em>
+        </div>
+      </div>
+    </section>
+
+    <section class="surface">
+      <div class="surface-header">
+        <h3>高危日志</h3>
+        <div class="badge">Alert</div>
+      </div>
+      <div class="list">
+        <div class="list-item critical">
+          <div>
+            <strong>[CRITICAL] gateway timeout</strong>
+            <span>edge-gw-01 · 1 分钟前</span>
+          </div>
+          <em>查看</em>
+        </div>
+        <div class="list-item alert">
+          <div>
+            <strong>[ERROR] auth token failed</strong>
+            <span>auth-service · 2 分钟前</span>
+          </div>
+          <em>搜索</em>
+        </div>
+        <div class="list-item">
+          <div>
+            <strong>[WARN] file source lagging</strong>
+            <span>Vector 组件</span>
+          </div>
+          <em>组件</em>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="v3-yes" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>这版方向对了</h3>
+      <p>按这种轻量产品感继续落地真实页面。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="v3-more-clean" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>再更干净一点</h3>
+      <p>继续减少块数和修饰，往 Linear 靠。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="v3-more-monitoring" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>再更监控一点</h3>
+      <p>保留这个风格，但加一点态势感和异常强调。</p>
+    </div>
+  </div>
+</div>

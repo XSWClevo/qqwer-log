@@ -1,109 +1,111 @@
 <template>
-  <el-card class="dashboard-card chart-card" v-loading="loading">
-    <template #header>
-      <div class="card-header">
-        <span class="card-title">级别分布</span>
-      </div>
-    </template>
-    <div ref="chartRef" class="donut-chart"></div>
-  </el-card>
+  <InsightPanel
+    title="级别分布"
+    description="高优先级日志占比与整体分布。"
+    :status="status"
+    empty-title="暂无级别分布"
+    :empty-description="emptyText || '当前时间范围内没有可聚合的级别数据。'"
+  >
+    <div ref="chartRef" class="distribution-chart"></div>
+  </InsightPanel>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, onUnmounted, computed } from 'vue'
-import echarts from '@/utils/echarts'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDark } from '@vueuse/core'
-import type { LevelDistribution } from '../types'
+import echarts from '@/utils/echarts'
+import InsightPanel from './InsightPanel.vue'
+import type { DashboardPanelState, LevelDistribution } from '../types'
 
-const props = defineProps<{ data: LevelDistribution[]; loading: boolean }>()
+const props = defineProps<{
+  data: DashboardPanelState<LevelDistribution>
+}>()
 
 const chartRef = ref<HTMLElement>()
-let chart: echarts.ECharts | null = null
 const isDark = useDark()
+const status = computed(() => props.data.status)
+const emptyText = computed(() => props.data.emptyText)
+let chart: echarts.ECharts | null = null
 
-const legendColor = computed(() => isDark.value ? '#98989D' : '#606266')
-const centerLabelColor = computed(() => isDark.value ? '#F5F5F7' : '#1D1D1F')
+const renderChart = () => {
+  if (!chart || props.data.status !== 'ready' || !props.data.items.length) {
+    return
+  }
 
-const initChart = () => {
-  if (!chartRef.value) return
-  chart = echarts.init(chartRef.value, isDark.value ? 'dark' : undefined, {
-    renderer: 'canvas'
+  const total = props.data.items.reduce((sum, item) => sum + item.count, 0)
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: isDark.value ? 'rgba(30,30,30,0.9)' : '#fff',
+      borderColor: isDark.value ? '#4C4D4F' : '#e4e7ed',
+      textStyle: { color: isDark.value ? '#fff' : '#606266' }
+    },
+    legend: {
+      bottom: 0,
+      textStyle: { color: isDark.value ? '#98989D' : '#606266' }
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['54%', '76%'],
+        center: ['50%', '44%'],
+        label: {
+          show: true,
+          position: 'center',
+          formatter: `总量\n${total.toLocaleString()}`,
+          fontSize: 16,
+          color: isDark.value ? '#F5F5F7' : '#1D1D1F',
+          fontWeight: 'bold'
+        },
+        labelLine: { show: false },
+        data: props.data.items.map(item => ({
+          value: item.count,
+          name: item.severity,
+          itemStyle: { color: item.color }
+        }))
+      }
+    ]
   })
-  updateChart()
+}
+
+const initChart = async () => {
+  await nextTick()
+  if (!chartRef.value) {
+    return
+  }
+  chart = echarts.init(chartRef.value, isDark.value ? 'dark' : undefined, { renderer: 'canvas' })
+  renderChart()
   window.addEventListener('resize', handleResize)
 }
 
 const handleResize = () => chart?.resize()
 
-const updateChart = () => {
-  if (!chart || !props.data.length) return
-  const total = props.data.reduce((sum, d) => sum + d.count, 0)
-  
-  chart.setOption({
-    backgroundColor: 'transparent',
-    tooltip: { 
-      trigger: 'item', 
-      formatter: '{b}: {c} ({d}%)',
-      backgroundColor: isDark.value ? 'rgba(30,30,30,0.9)' : '#fff',
-      borderColor: isDark.value ? '#4C4D4F' : '#e4e7ed',
-      textStyle: {
-        color: isDark.value ? '#fff' : '#606266'
-      }
-    },
-    legend: { 
-      orient: 'vertical', 
-      right: 10, 
-      top: 'center', 
-      itemWidth: 10, 
-      itemHeight: 10, 
-      textStyle: { fontSize: 12, color: legendColor.value } 
-    },
-    series: [{
-      type: 'pie', radius: ['50%', '70%'], center: ['35%', '50%'], avoidLabelOverlap: false,
-      label: { 
-        show: true, 
-        position: 'center', 
-        formatter: () => `总计\n${(total / 1000).toFixed(0)}K`, 
-        fontSize: 14, 
-        fontWeight: 'bold', 
-        color: centerLabelColor.value 
-      },
-      emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
-      labelLine: { show: false },
-      data: props.data.map(d => ({ value: d.count, name: d.severity, itemStyle: { color: d.color } }))
-    }]
+watch(() => props.data, () => {
+  nextTick(() => {
+    if (!chart && props.data.status === 'ready') {
+      initChart()
+      return
+    }
+    renderChart()
   })
-}
-
-watch(() => props.data, updateChart, { deep: true })
+}, { deep: true, immediate: true })
 watch(isDark, () => {
-  if (chart) {
-    chart.dispose()
-    initChart()
-  }
+  chart?.dispose()
+  chart = null
+  initChart()
 })
 
 onMounted(initChart)
-onUnmounted(() => { chart?.dispose(); window.removeEventListener('resize', handleResize) })
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  chart?.dispose()
+})
 </script>
 
 <style scoped lang="scss">
-.dashboard-card {
-  border-radius: var(--macos-radius-lg);
-  border: 1px solid var(--macos-border);
-  box-shadow: var(--macos-shadow-sm);
-  background: var(--macos-glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  transition: var(--macos-transition);
-
-  &:hover {
-    box-shadow: var(--macos-shadow-md);
-    border-color: var(--macos-border-hover);
-  }
+.distribution-chart {
+  width: 100%;
+  height: 320px;
 }
-.chart-card { height: 400px; }
-.card-header { display: flex; justify-content: space-between; align-items: center; }
-.card-title { font-size: 16px; font-weight: 600; color: var(--macos-text-primary); }
-.donut-chart { height: calc(100% - 60px); }
 </style>

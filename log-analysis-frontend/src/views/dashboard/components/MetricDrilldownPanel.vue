@@ -90,8 +90,12 @@ const sparklinePoints = computed(() => {
     return [24, 34, 28, 48, 36, 52, 42, 62]
   }
 
-  const max = Math.max(...baseSeries, 1)
-  return baseSeries.map(value => Math.max(12, Math.round((value / max) * 100)))
+  // 下钻图只表达走势，不逐点还原全部数据，避免长时间窗撑出横向滚动。
+  const maxVisiblePoints = 24
+  const step = Math.max(1, Math.ceil(baseSeries.length / maxVisiblePoints))
+  const compactSeries = baseSeries.filter((_, index) => index % step === 0).slice(-maxVisiblePoints)
+  const max = Math.max(...compactSeries, 1)
+  return compactSeries.map(value => Math.max(12, Math.round((value / max) * 100)))
 })
 
 const formatViewLabel = (view: string) => {
@@ -141,7 +145,6 @@ const formatViewLabel = (view: string) => {
 .drilldown-eyebrow {
   font-size: 12px;
   letter-spacing: 0;
-  text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 92%, transparent);
 }
 
@@ -173,16 +176,17 @@ const formatViewLabel = (view: string) => {
 .signal-strip {
   display: flex;
   align-items: end;
-  gap: 10px;
+  gap: 6px;
   min-height: 160px;
   padding: 14px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--macos-bg-secondary) 88%, transparent);
+  overflow: hidden;
 }
 
 .signal-bar {
   flex: 1;
-  min-width: 16px;
+  min-width: 0;
   border-radius: 4px 4px 2px 2px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--macos-blue) 88%, #14b8a6 12%), color-mix(in srgb, #14b8a6 72%, transparent));
   box-shadow: 0 10px 24px color-mix(in srgb, var(--macos-blue) 18%, transparent);
@@ -203,7 +207,6 @@ const formatViewLabel = (view: string) => {
     margin-bottom: 12px;
     font-size: 12px;
     letter-spacing: 0;
-    text-transform: uppercase;
     color: color-mix(in srgb, var(--macos-text-secondary) 92%, transparent);
   }
 

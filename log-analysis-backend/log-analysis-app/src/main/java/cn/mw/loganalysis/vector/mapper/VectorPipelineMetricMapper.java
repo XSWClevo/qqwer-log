@@ -1,11 +1,12 @@
 package cn.mw.loganalysis.vector.mapper;
 
+import cn.mw.loganalysis.common.util.DateTimeUtils;
 import cn.mw.loganalysis.vector.entity.VectorPipelineMetric;
 import com.baomidou.dynamic.datasource.annotation.DS;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
-import org.springframework.util.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,7 +15,7 @@ import java.util.List;
  * Vector管道指标 Mapper
  */
 @Mapper
-@DS("postgres")
+@DS("clickhouse")
 public interface VectorPipelineMetricMapper extends BaseMapper<VectorPipelineMetric> {
 
     /**
@@ -25,9 +26,9 @@ public interface VectorPipelineMetricMapper extends BaseMapper<VectorPipelineMet
                                                                      LocalDateTime endTime,
                                                                      Integer limit) {
         LambdaQueryWrapper<VectorPipelineMetric> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(StringUtils.hasText(machineId), VectorPipelineMetric::getMachineId, machineId)
-               .between(startTime != null && endTime != null,
-                       VectorPipelineMetric::getRecordedAt, startTime, endTime)
+        wrapper.eq(StringUtils.isNotBlank(machineId), VectorPipelineMetric::getMachineId, machineId)
+               .ge(startTime != null, VectorPipelineMetric::getRecordedAt, DateTimeUtils.format(startTime))
+               .le(endTime != null, VectorPipelineMetric::getRecordedAt, DateTimeUtils.format(endTime))
                .orderByDesc(VectorPipelineMetric::getRecordedAt);
         if (limit != null && limit > 0) {
             wrapper.last("LIMIT " + limit);

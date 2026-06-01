@@ -3,11 +3,11 @@
     <div class="hero-copy">
       <div class="eyebrow">
         <span class="eyebrow-dot"></span>
-        科技指挥中心
+        平台态势
       </div>
-      <h1>日志运营总览</h1>
+      <h1>运行态势与风险概览</h1>
       <p>
-        以当前数据集为中心，把链路健康、风险级别、热点主机和异常模式集中到一个决策舞台。
+        按当前数据集汇总链路健康、风险级别、热点主机和异常模式，优先暴露需要处理的信号。
       </p>
 
       <div class="hero-tags">
@@ -54,14 +54,14 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr);
   gap: 18px;
-  padding: 18px;
+  padding: 16px;
   border: 1px solid color-mix(in srgb, var(--macos-border) 72%, transparent);
   border-radius: 8px;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--macos-blue) 16%, transparent), transparent 36%),
-    linear-gradient(270deg, color-mix(in srgb, #14b8a6 12%, transparent), transparent 28%),
+    linear-gradient(90deg, color-mix(in srgb, var(--macos-blue) 9%, transparent), transparent 34%),
+    linear-gradient(270deg, color-mix(in srgb, #14b8a6 7%, transparent), transparent 28%),
     linear-gradient(135deg, color-mix(in srgb, var(--macos-card-bg) 90%, transparent), color-mix(in srgb, var(--macos-bg-secondary) 96%, transparent));
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.10);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   overflow: hidden;
 }
 
@@ -72,7 +72,7 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
 
   h1 {
     margin: 0;
-    font-size: 34px;
+    font-size: 26px;
     line-height: 1.12;
     letter-spacing: 0;
     color: var(--macos-text-primary);
@@ -93,7 +93,6 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
   gap: 10px;
   font-size: 12px;
   letter-spacing: 0;
-  text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 88%, transparent);
 }
 
@@ -148,7 +147,7 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
   backdrop-filter: blur(16px);
 
   strong {
-    font-size: 26px;
+    font-size: 22px;
     line-height: 1;
     color: var(--macos-text-primary);
   }
@@ -164,7 +163,6 @@ const spotlightMetrics = computed(() => props.platformMetrics.slice(0, 4))
 .matrix-label {
   font-size: 12px;
   letter-spacing: 0;
-  text-transform: uppercase;
   color: color-mix(in srgb, var(--macos-text-secondary) 92%, transparent);
 }
 

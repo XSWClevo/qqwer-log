@@ -6,6 +6,12 @@ export interface DashboardQueryRequest {
   granularity?: string
   pageNum?: number
   pageSize?: number
+  datasourceId?: string
+}
+
+export interface VectorDashboardQueryRequest {
+  range?: string
+  hostId?: string
 }
 
 // 系统指标
@@ -40,3 +46,7 @@ export const getDatabaseStatus = () => request({ url: '/api/dashboard/database-s
 // 仪表盘概览 (聚合所有数据)
 export const getDashboardOverview = (data: DashboardQueryRequest) =>
   request({ url: '/api/dashboard/overview', method: 'POST', data })
+
+// Vector 主机监控概览
+export const getVectorDashboardOverview = (params: VectorDashboardQueryRequest = {}) =>
+  request({ url: '/api/dashboard/vector-overview', method: 'GET', params })

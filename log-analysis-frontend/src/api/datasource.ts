@@ -1,5 +1,19 @@
 import request from '@/utils/request'
 
+interface ApiResult<T> {
+  code: number
+  message: string
+  data: T
+}
+
+interface PageResult<T> {
+  records: T[]
+  total: number
+  size?: number
+  current?: number
+  pages?: number
+}
+
 /**
  * 数据源类型
  */
@@ -75,8 +89,8 @@ export function listDatasources(params: {
   keyword?: string
   type?: string
   status?: string
-}) {
-  return request({
+}): Promise<ApiResult<PageResult<Datasource>>> {
+  return request<any, ApiResult<PageResult<Datasource>>>({
     url: '/api/datasources',
     method: 'get',
     params
@@ -86,8 +100,8 @@ export function listDatasources(params: {
 /**
  * 获取所有活跃的数据源
  */
-export function listActiveDatasources() {
-  return request({
+export function listActiveDatasources(): Promise<ApiResult<Datasource[]>> {
+  return request<any, ApiResult<Datasource[]>>({
     url: '/api/datasources/active',
     method: 'get'
   })
@@ -96,8 +110,8 @@ export function listActiveDatasources() {
 /**
  * 根据类型查询数据源
  */
-export function listDatasourcesByType(type: string) {
-  return request({
+export function listDatasourcesByType(type: string): Promise<ApiResult<Datasource[]>> {
+  return request<any, ApiResult<Datasource[]>>({
     url: `/api/datasources/by-type/${type}`,
     method: 'get'
   })
@@ -106,8 +120,8 @@ export function listDatasourcesByType(type: string) {
 /**
  * 获取数据源详情
  */
-export function getDatasource(id: string) {
-  return request({
+export function getDatasource(id: string): Promise<ApiResult<Datasource>> {
+  return request<any, ApiResult<Datasource>>({
     url: `/api/datasources/${id}`,
     method: 'get'
   })
@@ -116,8 +130,8 @@ export function getDatasource(id: string) {
 /**
  * 创建数据源
  */
-export function createDatasource(data: CreateDatasourceRequest) {
-  return request({
+export function createDatasource(data: CreateDatasourceRequest): Promise<ApiResult<Datasource>> {
+  return request<any, ApiResult<Datasource>>({
     url: '/api/datasources',
     method: 'post',
     data
@@ -127,8 +141,8 @@ export function createDatasource(data: CreateDatasourceRequest) {
 /**
  * 更新数据源
  */
-export function updateDatasource(id: string, data: UpdateDatasourceRequest) {
-  return request({
+export function updateDatasource(id: string, data: UpdateDatasourceRequest): Promise<ApiResult<Datasource>> {
+  return request<any, ApiResult<Datasource>>({
     url: `/api/datasources/${id}`,
     method: 'put',
     data
@@ -138,8 +152,8 @@ export function updateDatasource(id: string, data: UpdateDatasourceRequest) {
 /**
  * 删除数据源
  */
-export function deleteDatasource(id: string) {
-  return request({
+export function deleteDatasource(id: string): Promise<ApiResult<void>> {
+  return request<any, ApiResult<void>>({
     url: `/api/datasources/${id}`,
     method: 'delete'
   })
@@ -148,8 +162,8 @@ export function deleteDatasource(id: string) {
 /**
  * 测试数据源连接
  */
-export function testDatasourceConnection(id: string) {
-  return request({
+export function testDatasourceConnection(id: string): Promise<ApiResult<DatasourceTestResult>> {
+  return request<any, ApiResult<DatasourceTestResult>>({
     url: `/api/datasources/${id}/test`,
     method: 'post'
   })
@@ -158,8 +172,8 @@ export function testDatasourceConnection(id: string) {
 /**
  * 测试新数据源连接（创建前测试）
  */
-export function testNewDatasourceConnection(data: CreateDatasourceRequest) {
-  return request({
+export function testNewDatasourceConnection(data: CreateDatasourceRequest): Promise<ApiResult<DatasourceTestResult>> {
+  return request<any, ApiResult<DatasourceTestResult>>({
     url: '/api/datasources/test',
     method: 'post',
     data

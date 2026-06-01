@@ -232,9 +232,9 @@ const esIlmDays = computed({
  */
 const loadConfigs = async () => {
   try {
-    const { data } = await getAllConfigs()
-    if (data.code === 200 && data.data) {
-      const configs = data.data as Array<{
+    const response = await getAllConfigs()
+    if (response.code === 200 && response.data) {
+      const configs = response.data as Array<{
         configKey: string
         configValue: string
         configType: string

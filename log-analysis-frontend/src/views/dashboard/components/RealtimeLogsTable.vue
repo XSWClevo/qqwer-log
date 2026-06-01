@@ -70,6 +70,12 @@ const handleRowClick = (row: LogRecord) => emit('row-click', row)
 .card-title { font-size: 16px; font-weight: 600; color: var(--macos-text-primary); }
 .pulse { animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
 .logs-table {
   background: transparent;
   :deep(.el-table__row) { 

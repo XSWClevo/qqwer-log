@@ -1,19 +1,23 @@
 package vector
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mw/vector-agent/internal/config"
@@ -21,7 +25,9 @@ import (
 
 // Manager Vector管理器（跨平台支持）
 type Manager struct {
-	osType string // darwin, linux
+	osType                  string // darwin, linux
+	internalMetricsMu       sync.Mutex
+	previousInternalMetrics map[string]internalComponentCounter
 }
 
 // NewManager 创建Vector管理器
@@ -586,7 +592,21 @@ data_dir: "%s"
 api:
   enabled: true
   address: "127.0.0.1:8686"
-`, config.DataDir)
+
+sources:
+  internal_metrics:
+    type: internal_metrics
+    scrape_interval_secs: 10
+
+sinks:
+  _vector_internal_metrics_file:
+    type: file
+    inputs:
+      - internal_metrics
+    path: "%s/internal-metrics-%%Y-%%m-%%d.log"
+    encoding:
+      codec: json
+`, config.DataDir, config.DataDir)
 
 	if err := os.MkdirAll(config.ConfigDir, 0755); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)
@@ -643,6 +663,12 @@ func (m *Manager) GetComponentMetrics() map[string]*ComponentMetrics {
 
 	result := make(map[string]*ComponentMetrics)
 
+	// 优先读取 Vector 内置 internal_metrics source 写出的指标。
+	internalMetrics := m.fetchInternalMetricsFile()
+	if len(internalMetrics) > 0 {
+		return internalMetrics
+	}
+
 	// 尝试通过 Vector GraphQL API 获取组件状态
 	// Vector 默认在 8686 端口提供 GraphQL API
 	apiMetrics := m.fetchVectorAPIMetrics()
@@ -664,6 +690,138 @@ func (m *Manager) GetComponentMetrics() map[string]*ComponentMetrics {
 	}
 
 	return result
+}
+
+type internalComponentCounter struct {
+	events int64
+	bytes  int64
+	errors int64
+}
+
+type internalMetricEvent struct {
+	Name    string            `json:"name"`
+	Tags    map[string]string `json:"tags"`
+	Counter *struct {
+		Value float64 `json:"value"`
+	} `json:"counter"`
+}
+
+func (m *Manager) fetchInternalMetricsFile() map[string]*ComponentMetrics {
+	lines := readLatestInternalMetricLines()
+	if len(lines) == 0 {
+		return nil
+	}
+	return m.componentMetricsFromInternalMetricLines(lines, time.Now())
+}
+
+func readLatestInternalMetricLines() []string {
+	files, err := filepath.Glob(filepath.Join(config.DataDir, "internal-metrics-*.log"))
+	if err != nil || len(files) == 0 {
+		return nil
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		left, leftErr := os.Stat(files[i])
+		right, rightErr := os.Stat(files[j])
+		if leftErr != nil || rightErr != nil {
+			return files[i] > files[j]
+		}
+		return left.ModTime().After(right.ModTime())
+	})
+
+	data, err := os.ReadFile(files[0])
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	const maxTailBytes = 512 * 1024
+	if len(data) > maxTailBytes {
+		data = data[len(data)-maxTailBytes:]
+		if index := bytes.IndexByte(data, '\n'); index >= 0 && index+1 < len(data) {
+			data = data[index+1:]
+		}
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var lines []string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func (m *Manager) componentMetricsFromInternalMetricLines(lines []string, now time.Time) map[string]*ComponentMetrics {
+	counters := make(map[string]internalComponentCounter)
+	for _, line := range lines {
+		var event internalMetricEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil || event.Counter == nil {
+			continue
+		}
+		componentID := event.Tags["component_id"]
+		if strings.TrimSpace(componentID) == "" {
+			continue
+		}
+
+		value := int64(math.Max(0, math.Round(event.Counter.Value)))
+		counter := counters[componentID]
+		switch event.Name {
+		case "component_sent_events_total", "component_received_events_total":
+			counter.events = maxInt64(counter.events, value)
+		case "component_sent_event_bytes_total", "component_received_event_bytes_total", "component_received_bytes_total":
+			counter.bytes = maxInt64(counter.bytes, value)
+		default:
+			if strings.Contains(event.Name, "error") || strings.Contains(event.Name, "discarded") || strings.Contains(event.Name, "dropped") {
+				counter.errors = maxInt64(counter.errors, value)
+			}
+		}
+		counters[componentID] = counter
+	}
+	if len(counters) == 0 {
+		return nil
+	}
+
+	m.internalMetricsMu.Lock()
+	defer m.internalMetricsMu.Unlock()
+
+	result := make(map[string]*ComponentMetrics, len(counters))
+	for componentID, current := range counters {
+		previous, hasPrevious := m.previousInternalMetrics[componentID]
+		events := current.events
+		bytesProcessed := current.bytes
+		errors := current.errors
+		if hasPrevious {
+			events = counterDelta(current.events, previous.events)
+			bytesProcessed = counterDelta(current.bytes, previous.bytes)
+			errors = counterDelta(current.errors, previous.errors)
+		}
+		result[componentID] = &ComponentMetrics{
+			Status:          "normal",
+			EventsProcessed: events,
+			BytesProcessed:  bytesProcessed,
+			Errors:          errors,
+			LastActive:      now,
+		}
+	}
+
+	m.previousInternalMetrics = counters
+	return result
+}
+
+func counterDelta(current, previous int64) int64 {
+	if current < previous {
+		return current
+	}
+	return current - previous
+}
+
+func maxInt64(left, right int64) int64 {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 // fetchVectorAPIMetrics 从 Vector GraphQL API 获取组件指标

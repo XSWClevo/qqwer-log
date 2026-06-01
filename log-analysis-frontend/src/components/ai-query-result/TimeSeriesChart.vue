@@ -175,7 +175,7 @@ const renderChart = () => {
     chartInstance = echarts.init(chartRef.value, isDark.value ? 'dark' : undefined)
   }
 
-  const { timePoints, series, aggregateField, dimensionField } = parsedData.value
+  const { timePoints, series, aggregateField } = parsedData.value
 
   // 格式化时间标签
   const timeLabels = timePoints.map(t => {

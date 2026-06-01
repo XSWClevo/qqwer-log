@@ -19,7 +19,7 @@
         <li v-show="!isCollapsed" class="menu-group-label">监控</li>
         <el-menu-item index="/">
           <el-icon><DataBoard /></el-icon>
-          <template #title>监控大屏</template>
+          <template #title>Dashboard</template>
         </el-menu-item>
         <el-menu-item index="/agent">
           <el-icon><MagicStick /></el-icon>

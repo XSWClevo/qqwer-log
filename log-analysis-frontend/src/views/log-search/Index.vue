@@ -172,7 +172,7 @@
           :selected-fields="tableColumns"
           :pinned-fields="pinnedFieldNames"
           :available-fields="datasourceFields"
-          :datasource-id="selectedDatasource"
+          :datasource-id="selectedSingleDatasourceId"
           @filter="handleSidebarFilter"
           @remove-filter="handleRemoveFilter"
           @clear-filters="clearAllFilters"
@@ -533,7 +533,7 @@ import echarts from '@/utils/echarts'
 import * as yaml from 'js-yaml'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { ElMessage } from 'element-plus'
-import { queryLogs, queryTimeSeries, exportLogs, queryFieldStats, queryLogContext, queryFieldTimeSeries, getDatasourceSchema, aiQuery, type FieldInfo, type AiQueryResponse } from '@/api/log'
+import { queryLogs, queryTimeSeries, exportLogs, queryFieldStats, queryLogContext, queryFieldTimeSeries, getDatasourceSchema, aiQuery, type FieldInfo } from '@/api/log'
 import { getPinnedChartsConfig, savePinnedChartsConfig, type PinnedChartConfig } from '@/api/field-config'
 import { configComponentApi, type ConfigComponent } from '@/api/vector'
 import type { LogEntry, TimeRangeType, FieldStats, FilterCondition, MessageCondition, FieldFilter } from '@/types/log'
@@ -567,6 +567,11 @@ const datasources = ref<ConfigComponent[]>([])
 const selectedDatasource = ref<string | string[]>('') // 支持单选和多选
 const datasourceLoading = ref(false)
 
+const selectedSingleDatasourceId = computed(() => {
+  const value = selectedDatasource.value
+  return Array.isArray(value) ? value[0] || undefined : value || undefined
+})
+
 // 数据源字段信息（动态获取）
 const datasourceFields = ref<FieldInfo[]>([])
 const schemaLoading = ref(false)
@@ -574,16 +579,6 @@ const schemaLoading = ref(false)
 // 计算可用的统计维度字段
 const availableStatsDimensions = computed(() => {
   return datasourceFields.value.filter(f => f.isStatsDimension)
-})
-
-// 计算可用的内容字段（用于搜索）
-const availableContentFields = computed(() => {
-  return datasourceFields.value.filter(f => f.isContentField)
-})
-
-// 计算时间戳字段
-const timestampField = computed(() => {
-  return datasourceFields.value.find(f => f.isTimestamp)?.name || 'timestamp'
 })
 
 // 从 configYaml 中解析表名
@@ -672,9 +667,12 @@ const loadDatasources = async () => {
     const dsId = route.query.datasource as string
     if (dsId && datasources.value.some(d => d.id === dsId)) {
       selectedDatasource.value = isAiQuery.value ? [dsId] : dsId
-    } else if (datasources.value.length > 0 && !selectedDatasource.value) {
+    } else if (datasources.value.length > 0 && !selectedSingleDatasourceId.value) {
       // 默认选中第一个
-      selectedDatasource.value = isAiQuery.value ? [datasources.value[0].id] : datasources.value[0].id
+      const firstDatasourceId = datasources.value[0]?.id
+      if (firstDatasourceId) {
+        selectedDatasource.value = isAiQuery.value ? [firstDatasourceId] : firstDatasourceId
+      }
     }
   } catch (error) {
     console.error('加载数据源失败:', error)
@@ -685,13 +683,8 @@ const loadDatasources = async () => {
 
 // 加载数据源的字段信息
 const loadDatasourceSchema = async () => {
-  // 获取当前选中的数据源ID（单选或多选的第一个）
-  let datasourceId = ''
-  if (Array.isArray(selectedDatasource.value)) {
-    datasourceId = selectedDatasource.value.length > 0 ? selectedDatasource.value[0] : ''
-  } else {
-    datasourceId = selectedDatasource.value
-  }
+  // 查询类接口只能接收单数据源，这里把多选状态收敛为第一个数据源。
+  const datasourceId = selectedSingleDatasourceId.value
 
   if (!datasourceId) {
     // 没有选择数据源时，使用默认字段
@@ -1065,7 +1058,6 @@ const getTimeRange = (): [string, string] => {
 // Search handlers
 // 切换AI查询模式
 const toggleAiQuery = () => {
-  const previousMode = isAiQuery.value
   isAiQuery.value = !isAiQuery.value
 
   // 切换模式时重置数据源选择（不触发 change 事件）
@@ -1080,7 +1072,7 @@ const toggleAiQuery = () => {
   } else {
     // 切换到普通模式：如果是多选，取第一个；如果是空数组，清空
     if (Array.isArray(selectedDatasource.value)) {
-      selectedDatasource.value = selectedDatasource.value.length > 0 ? selectedDatasource.value[0] : ''
+      selectedDatasource.value = selectedSingleDatasourceId.value || ''
     }
     ElMessage.info('已切换到普通查询模式')
   }
@@ -1251,10 +1243,18 @@ const handleAiQueryResult = (result: any) => {
   }
   // 3. 单值结果（数字、字符串等）
   else {
-    aiQueryResultType.value = 'metric'
-    // 将单值包装成对象
-    logs.value = [{ value: result }]
-    total.value = 1
+      aiQueryResultType.value = 'metric'
+      // 将单值包装成对象
+      logs.value = [{
+        id: 'ai-single-value',
+        timestamp: new Date().toISOString(),
+        severity: 'INFO',
+        source_type: 'AI',
+        hostname: '-',
+        message: String(result),
+        value: result
+      }]
+      total.value = 1
     ElMessage.info({
       message: `查询结果: ${result}`,
       duration: 5000,
@@ -1365,7 +1365,7 @@ const handleSearch = async () => {
   try {
     const [startTime, endTime] = getTimeRange()
     const params = {
-      datasourceId: selectedDatasource.value || undefined, // 添加数据源ID
+      datasourceId: selectedSingleDatasourceId.value, // 添加数据源ID
       startTime,
       endTime,
       fieldFilters: buildFieldFilters(), // 使用新函数合并侧边栏筛选和高级筛选
@@ -1399,7 +1399,7 @@ const loadTimeSeries = async () => {
     else granularity = '1d'
 
     const { data } = await queryTimeSeries({ 
-      datasourceId: selectedDatasource.value || undefined,
+      datasourceId: selectedSingleDatasourceId.value,
       startTime, 
       endTime, 
       granularity,
@@ -1423,7 +1423,7 @@ const loadFieldStats = async () => {
       : ['severity', 'source_type', 'hostname', 'appname'] // 默认字段
     
     const { data } = await queryFieldStats({
-      datasourceId: selectedDatasource.value || undefined,
+      datasourceId: selectedSingleDatasourceId.value,
       startTime,
       endTime,
       dimensions,
@@ -1482,7 +1482,7 @@ const handleInlineFilter = (field: string, value: string, type: 'include' | 'exc
 }
 
 // Row expansion
-const handleExpandChange = (row: LogEntry, expandedRows: LogEntry[]) => {
+const handleExpandChange = (_row: LogEntry, expandedRows: LogEntry[]) => {
   expandedRowKeys.value = expandedRows.map(r => r.id)
 }
 
@@ -1513,7 +1513,7 @@ const handleExport = async () => {
   try {
     const [startTime, endTime] = getTimeRange()
     await exportLogs({
-      datasourceId: selectedDatasource.value || undefined,
+      datasourceId: selectedSingleDatasourceId.value,
       startTime,
       endTime,
       fieldFilters: buildFieldFilters(), // 使用统一函数，包含侧边栏和高级筛选
@@ -1552,7 +1552,7 @@ const normalizeRequestTimestamp = (value: unknown): string => {
     const nano = parseTimestampPart(nanoRaw) ?? 0
     const millis = Math.floor(nano / 1_000_000)
 
-    if ([year, month, day].some((part) => part == null)) {
+    if (year == null || month == null || day == null) {
       return ''
     }
 
@@ -1585,7 +1585,7 @@ const viewContext = async (row: LogEntry) => {
 
   try {
     const { data } = await queryLogContext({
-      datasourceId: selectedDatasource.value || undefined,
+      datasourceId: selectedSingleDatasourceId.value,
       logId: row.id,
       timestamp: normalizedTimestamp,
       beforeCount: 50,
@@ -1957,16 +1957,6 @@ const getLevelStyle = (level: string) => {
     debug: { backgroundColor: '#909399', color: '#FFFFFF', borderColor: '#909399' }
   }
   return styleMap[normalizedLevel] || {}
-}
-
-const getStatsFieldData = (fieldName: string) => {
-  const stat = fieldStats.value.find(s => s.name === fieldName)
-  return stat?.topValues?.slice(0, 10) || []
-}
-
-const calculatePercent = (count: number): number => {
-  if (total.value === 0) return 0
-  return Math.round((count / total.value) * 100)
 }
 
 // Lifecycle

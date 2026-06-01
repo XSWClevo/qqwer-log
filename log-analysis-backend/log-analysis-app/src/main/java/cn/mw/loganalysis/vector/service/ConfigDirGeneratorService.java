@@ -88,6 +88,7 @@ public class ConfigDirGeneratorService {
         
         // 3. 添加 Vector 自身运行日志采集 pipeline — 始终生成，传入 machineId 用于日志归属
         configFiles.putAll(generateInternalLogsPipeline(machineId));
+        configFiles.putAll(generateInternalMetricsPipeline());
         
         if (deployedConfigs.isEmpty()) {
             log.warn("机器 {} 没有已部署的用户配置，仅生成全局配置和内部日志 pipeline", machineId);
@@ -124,6 +125,7 @@ public class ConfigDirGeneratorService {
 
         // 添加 Vector 自身运行日志采集 pipeline
         configFiles.putAll(generateInternalLogsPipeline(machineId));
+        configFiles.putAll(generateInternalMetricsPipeline());
         
         // 生成 pipeline 文件
         String pipelineName = getPipelineName(config);
@@ -154,6 +156,7 @@ public class ConfigDirGeneratorService {
 
         // 添加 Vector 自身运行日志采集 pipeline
         configFiles.putAll(generateInternalLogsPipeline(machineId));
+        configFiles.putAll(generateInternalMetricsPipeline());
         
         // 获取 pipeline 名称
         String pipelineName;
@@ -596,6 +599,28 @@ public class ConfigDirGeneratorService {
                 "  type: memory\n" +
                 "  max_events: 10000\n";
         files.put("sinks/_vector_log_sink.yaml", sinkYaml);
+
+        return files;
+    }
+
+    /**
+     * 生成 Vector internal_metrics 观测 pipeline。
+     * internal_metrics source 写入本地 JSONL 文件，Agent 读取该文件后上报组件级吞吐、字节和错误指标。
+     */
+    private Map<String, String> generateInternalMetricsPipeline() {
+        Map<String, String> files = new LinkedHashMap<>();
+
+        files.put("sources/internal_metrics.yaml",
+                "type: internal_metrics\n" +
+                "scrape_interval_secs: 10\n");
+
+        files.put("sinks/_vector_internal_metrics_file.yaml",
+                "type: file\n" +
+                "inputs:\n" +
+                "  - internal_metrics\n" +
+                "path: /opt/vector-agent/data/internal-metrics-%Y-%m-%d.log\n" +
+                "encoding:\n" +
+                "  codec: json\n");
 
         return files;
     }

@@ -190,3 +190,106 @@ export interface DashboardWorkspaceData {
   emptyState: DashboardEmptyState | null
   lastUpdatedLabel: string
 }
+
+export interface VectorPoint {
+  label: string
+  timestamp: string
+  value: number
+}
+
+export interface VectorSeries {
+  key: string
+  name: string
+  color: string
+  points: VectorPoint[]
+}
+
+export interface VectorHostCard {
+  id: string
+  name: string
+  hostname?: string
+  ipAddress: string
+  environment: string
+  status: 'healthy' | 'warning' | 'critical'
+  statusLabel: string
+  cpuPercent: number
+  memoryPercent: number
+  networkInMbps: number
+  networkOutMbps: number
+  eventsPerSecond?: number
+  dataInBytes?: number
+  dataOutBytes?: number
+  droppedEvents?: number
+  bufferUsedBytes?: number
+  bufferTotalBytes?: number
+  bufferUsedPercent?: number
+  uptime?: string
+  vectorVersion?: string
+  osType?: string
+  cpuSeries: VectorPoint[]
+  memorySeries: VectorPoint[]
+  networkInSeries: VectorPoint[]
+  networkOutSeries: VectorPoint[]
+}
+
+export interface VectorDashboardMetrics {
+  eventsPerSecond: number
+  dataInBytes: number
+  dataOutBytes: number
+  droppedEvents: number
+  bufferUsedBytes: number
+  bufferTotalBytes: number
+  eventsChangePercent: number
+  dataInChangePercent: number
+  dataOutChangePercent: number
+  droppedChangePercent: number
+}
+
+export interface VectorBufferSummary {
+  usedBytes: number
+  availableBytes: number
+  totalBytes: number
+  usedPercent: number
+}
+
+export interface VectorTopSource {
+  name: string
+  eventsPerSecond: number
+  events: number
+  percentage: number
+  color: string
+}
+
+export interface VectorEventType {
+  type: string
+  events: number
+  percentage: number
+  color: string
+}
+
+export interface VectorHostSummary {
+  host: string
+  status: string
+  eventsPerSecond: number
+  dataInBytes: number
+  cpuPercent: number
+  memoryPercent: number
+}
+
+export interface VectorDashboardOverview {
+  generatedAt: string
+  range: string
+  selectedHostId?: string
+  selectedHost: VectorHostCard | null
+  metrics: VectorDashboardMetrics
+  buffer: VectorBufferSummary
+  hosts: VectorHostCard[]
+  eventsOverTime: VectorSeries[]
+  dataInSeries: VectorSeries[]
+  dataOutSeries: VectorSeries[]
+  droppedSeries: VectorSeries[]
+  eventsByType: VectorEventType[]
+  topSources: VectorTopSource[]
+  hostSummary: VectorHostSummary[]
+  warnings: string[]
+}

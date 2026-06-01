@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -29,6 +30,13 @@ public class TraceIdFilter extends OncePerRequestFilter {
     public static final String TRACE_ID_KEY = "traceId";
     public static final String TRACE_ID_HEADER = "X-Trace-Id";
     private static final String UNKNOWN_IP = "unknown";
+    private static final Set<String> NOISY_AGENT_ENDPOINTS = Set.of(
+            "/api/vector/agents/config",
+            "/api/vector/agents/command",
+            "/api/vector/agents/heartbeat",
+            "/api/vector/agents/config/deploy-status",
+            "/api/vector/agents/command/status"
+    );
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -81,7 +89,9 @@ public class TraceIdFilter extends OncePerRequestFilter {
     }
 
     private boolean shouldLogRequest(HttpServletRequest request) {
-        return StringUtils.startsWith(request.getRequestURI(), "/api/");
+        String requestUri = request.getRequestURI();
+        return StringUtils.startsWith(requestUri, "/api/")
+                && !NOISY_AGENT_ENDPOINTS.contains(requestUri);
     }
 
     private String getClientIp(HttpServletRequest request) {

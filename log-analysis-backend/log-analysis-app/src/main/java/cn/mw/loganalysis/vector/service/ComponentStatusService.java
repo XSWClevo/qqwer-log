@@ -36,7 +36,15 @@ public class ComponentStatusService {
      * Vector 内部组件名称，不应暴露给前端可视化配置
      */
     private static final Set<String> INTERNAL_COMPONENTS = Set.of(
-            "internal_metrics", "blackhole", "internal_logs"
+            "internal_metrics",
+            "blackhole",
+            "internal_logs",
+            "_vector_internal_metrics_file",
+            "vector_internal_metrics_file",
+            "metrics_file",
+            "_vector_file_logs",
+            "_vector_log_remap",
+            "_vector_log_sink"
     );
     
     /**

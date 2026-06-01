@@ -3,10 +3,10 @@ import { ref, computed } from 'vue'
 import type { User, LoginRequest, LoginResponse } from '@/types/auth'
 import { login as loginApi, logout as logoutApi, getUserInfo } from '@/api/auth'
 import { ElMessage } from 'element-plus'
-import { clearStoredAuthTokens, readStoredJwtToken, isLikelyJwtToken } from '@/utils/jwt'
+import { clearStoredAuthTokens, readStoredJwtToken, isUsableJwtToken } from '@/utils/jwt'
 
 export const useAuthStore = defineStore('auth', () => {
-  if (!isLikelyJwtToken(localStorage.getItem('accessToken')) && localStorage.getItem('accessToken')) {
+  if (!isUsableJwtToken(localStorage.getItem('accessToken')) && localStorage.getItem('accessToken')) {
     clearStoredAuthTokens()
   }
 
@@ -27,7 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
 
   // 计算属性
-  const isAuthenticated = computed(() => isLikelyJwtToken(accessToken.value))
+  const isAuthenticated = computed(() => isUsableJwtToken(accessToken.value))
 
   // 登录
   const login = async (loginData: LoginRequest) => {
