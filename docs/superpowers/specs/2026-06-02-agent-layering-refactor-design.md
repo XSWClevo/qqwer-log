@@ -1,29 +1,29 @@
-# Agent Layering Refactor Design
+# Agent 分层重构设计
 
-## Context
+## 背景
 
-The `cn.mw.loganalysis.agent.service` package currently contains most of the agent implementation. It mixes orchestration, LLM integration, JSON NLU, intent matchers, fallback execution, tool handlers, Text2SQL candidate generation, Vector component planning, session memory, streaming, and email/reporting support in one package.
+当前 `cn.mw.loganalysis.agent.service` 包承载了 Agent 模块的大部分实现。这个包里混合了编排、LLM 接入、JSON NLU、意图匹配、规则回退执行、工具处理、Text2SQL 候选生成、Vector 组件计划、会话记忆、流式输出、邮件报表等职责。
 
-This makes the agent module hard to navigate and raises the cost of changing one capability without disturbing unrelated behavior. The refactor should introduce clear package boundaries and service entry points while preserving the current API behavior.
+这种结构会让 Agent 模块难以阅读，也会提高修改某个能力时影响其它能力的风险。本次重构的目标是建立清晰的包边界和应用入口边界，同时保持现有接口行为不变。
 
-## Goals
+## 目标
 
-- Move agent implementation classes into purpose-based packages under `cn.mw.loganalysis.agent`.
-- Keep controller routes, request/response DTOs, database entities, mappers, repositories, and external behavior unchanged.
-- Keep the existing LLM, fallback, Text2SQL, Vector component plan, memory, email, and stream behavior intact.
-- Make the main application flow readable from package names without reading every class.
-- Introduce clear application-facing service boundaries where the current service package already implies separate responsibilities.
+- 将 Agent 实现类移动到 `cn.mw.loganalysis.agent` 下按职责划分的包中。
+- 保持 Controller 路由、请求/响应 DTO、数据库实体、Mapper、Repository 和外部行为不变。
+- 保持现有 LLM、规则回退、Text2SQL、Vector 组件计划、会话记忆、邮件和流式输出行为不变。
+- 让主流程可以通过包名看清楚，不需要先读完整个 `service` 包。
+- 在当前代码已经隐含出不同职责的地方，收口出更清晰的应用层服务边界。
 
-## Non-Goals
+## 非目标
 
-- Do not rewrite the LLM prompt strategy.
-- Do not replace LangChain4j function/tool calling.
-- Do not replace the JSON NLU path.
-- Do not redesign Text2SQL candidate racing.
-- Do not split large algorithmic classes such as `VectorComponentPreviewPlanner`, `SqlCandidateValidator`, or `AgentConversationHistoryService` in this first pass.
-- Do not change frontend API response shapes or controller paths.
+- 不重写 LLM prompt 策略。
+- 不替换 LangChain4j function/tool calling。
+- 不替换 JSON NLU 路径。
+- 不重新设计 Text2SQL 候选竞争逻辑。
+- 第一轮不拆分 `VectorComponentPreviewPlanner`、`SqlCandidateValidator`、`AgentConversationHistoryService` 这类较大的算法类。
+- 不改变前端 API 返回结构或 Controller 路径。
 
-## Proposed Package Structure
+## 建议包结构
 
 ```text
 cn.mw.loganalysis.agent
@@ -47,40 +47,40 @@ cn.mw.loganalysis.agent
 
 ### `application`
 
-Owns application-level use cases exposed to controllers.
+承载 Controller 面向的应用用例入口。
 
-Classes:
+包含类：
 
 - `LogAnalysisAgentService`
 
-Responsibilities:
+职责：
 
-- Prepare a chat request through conversation/session services.
-- Select deterministic fallback execution or LangChain4j execution.
-- Apply fallback-on-error behavior.
-- Finalize conversation memory/history.
+- 通过会话服务准备聊天请求。
+- 选择确定性规则链路或 LangChain4j 链路。
+- 应用 LLM 失败后的回退策略。
+- 完成本轮会话记忆和历史记录收尾。
 
 ### `conversation`
 
-Owns session, memory, and persisted conversation history.
+承载 session、memory 和持久化对话历史。
 
-Classes:
+包含类：
 
 - `AgentSessionService`
 - `AgentConversationMemoryService`
 - `AgentConversationHistoryService`
 
-Responsibilities:
+职责：
 
-- Normalize and prepare session IDs.
-- Maintain short-lived in-process memory.
-- Persist and retrieve conversation history.
+- 规范化和准备 sessionId。
+- 维护短期进程内记忆。
+- 持久化和读取对话历史。
 
 ### `execution`
 
-Owns runtime context, fallback orchestration, execution context, flow events, and local execution registry.
+承载运行时上下文、规则回退编排、执行上下文、流程事件和本地执行器注册表。
 
-Classes:
+包含类：
 
 - `AgentRuntimeContext`
 - `AgentExecutionContext`
@@ -100,36 +100,36 @@ Classes:
 - `AgentFlowObserver`
 - `LoggingAgentFlowObserver`
 
-Responsibilities:
+职责：
 
-- Build the per-request runtime context.
-- Run local fallback workflow.
-- Publish lifecycle events.
-- Route resolved intents to concrete local tool executors.
+- 构造单次请求的运行时上下文。
+- 执行本地规则回退工作流。
+- 发布生命周期事件。
+- 将已识别的意图路由到具体的本地工具执行器。
 
 ### `llm`
 
-Owns LangChain4j integration and model-driven tool calling.
+承载 LangChain4j 接入和模型驱动的工具调用。
 
-Classes:
+包含类：
 
 - `LangChain4jLogAnalysisAgentExecutor`
 - `LangChain4jLogAnalysisAssistant`
 - `LangChain4jStreamingLogAnalysisAssistant`
 - `LogAnalysisAgentTools`
 
-Responsibilities:
+职责：
 
-- Build the LLM system prompt.
-- Register LangChain4j `@Tool` methods.
-- Execute synchronous and streaming model calls.
-- Convert model tool-call events into stream events through the shared response assembler.
+- 构造 LLM system prompt。
+- 注册 LangChain4j `@Tool` 方法。
+- 执行同步和流式模型调用。
+- 通过共享的响应组装器，将模型工具调用事件转换为前端流式事件。
 
 ### `nlu`
 
-Owns intent definitions, JSON NLU, rule-based intent matching, and slot models.
+承载意图定义、JSON NLU、规则意图匹配和槽位模型。
 
-Classes:
+包含类：
 
 - `AgentIntent`
 - `AgentIntentDecision`
@@ -148,17 +148,17 @@ Classes:
 - `Text2SqlIntentMatcher`
 - `VectorComponentPlanIntentMatcher`
 
-Responsibilities:
+职责：
 
-- Convert user text into an executable internal intent.
-- Parse model-provided JSON NLU results.
-- Apply rule-based fallbacks and safety overrides.
+- 将用户文本转换为可执行的内部意图。
+- 解析模型返回的 JSON NLU 结果。
+- 应用规则兜底和安全覆盖。
 
 ### `tool`
 
-Owns the unified tool facade, shared tool payload, response assembly, and concrete non-LLM tool handlers/executors.
+承载统一工具门面、工具载荷、响应组装，以及具体的非 LLM 工具处理器和意图执行器。
 
-Classes:
+包含类：
 
 - `AgentToolFacade`
 - `AgentToolPayload`
@@ -175,17 +175,17 @@ Classes:
 - `VectorComponentPlanToolIntentExecutor`
 - `CreateLogParserToolIntentExecutor`
 
-Responsibilities:
+职责：
 
-- Provide one internal surface for both fallback execution and LangChain4j `@Tool` execution.
-- Convert tool payloads and LangChain4j tool executions into frontend response DTOs.
-- Execute basic schema/logs/timeseries/text2sql/vector-plan tools.
+- 为规则回退执行和 LangChain4j `@Tool` 执行提供统一内部入口。
+- 将工具结果和 LangChain4j 工具执行轨迹转换为前端响应 DTO。
+- 执行 schema、logs、timeseries、text2sql、vector-plan 等基础工具。
 
 ### `text2sql`
 
-Owns Text2SQL candidate generation, validation, and racing.
+承载 Text2SQL 候选生成、校验和竞争。
 
-Classes:
+包含类：
 
 - `SqlCandidate`
 - `SqlCandidateProvider`
@@ -200,17 +200,17 @@ Classes:
 - `TemplateSqlCandidateProvider`
 - `LlmSqlCandidateProvider`
 
-Responsibilities:
+职责：
 
-- Generate SQL candidates from history, templates, and the external AI service.
-- Validate generated SQL before execution.
-- Race candidates and select the first safe executable result.
+- 从历史记录、模板和外部 AI service 生成 SQL 候选。
+- 在执行前校验生成的 SQL。
+- 并发竞争候选 SQL，选择第一个安全且可执行的结果。
 
 ### `vectorplan`
 
-Owns Vector component planning, slot extraction, source config extraction, and commit artifacts.
+承载 Vector 组件计划、槽位提取、source 配置提取和提交产物。
 
-Classes:
+包含类：
 
 - `VectorComponentPlan`
 - `VectorComponentPlanStore`
@@ -241,30 +241,30 @@ Classes:
 - `SocketLikeSourceConfigExtractor`
 - `KafkaSourceConfigExtractor`
 
-Responsibilities:
+职责：
 
-- Collect required slots for parser/component creation.
-- Preview Vector Remap/Sink plans.
-- Commit approved Vector component plans.
+- 收集创建日志解析和组件计划所需的槽位。
+- 预览 Vector Remap/Sink 组件计划。
+- 提交用户确认后的 Vector 组件计划。
 
 ### `notification`
 
-Owns agent-triggered email/report notifications.
+承载 Agent 触发的邮件和报表通知能力。
 
-Classes:
+包含类：
 
 - `AgentEmailService`
 
-Responsibilities:
+职责：
 
-- Render and send current-user email reports.
-- Keep report/email formatting separate from agent orchestration.
+- 渲染并发送当前用户的邮件报表。
+- 将报表/邮件格式化逻辑从 Agent 编排中分离出来。
 
 ### `support`
 
-Owns cross-cutting helpers that do not belong to a specific capability package.
+承载不属于单一能力包的通用辅助类。
 
-Classes:
+包含类：
 
 - `AgentToolSupport`
 - `AgentTimeWindow`
@@ -272,14 +272,14 @@ Classes:
 - `AgentStreamWriter`
 - `SlotResult`
 
-Responsibilities:
+职责：
 
-- Provide shared parsing/truncation/time-window/stream utilities.
-- Avoid placing generic helpers in domain-specific packages.
+- 提供通用的解析、截断、时间窗口和流式输出工具。
+- 避免把通用 helper 放进具体业务能力包中。
 
-## Data Flow
+## 数据流
 
-### LLM Tool-Calling Flow
+### LLM 工具调用链路
 
 ```text
 AgentController
@@ -287,27 +287,27 @@ AgentController
   -> llm.LangChain4jLogAnalysisAgentExecutor
   -> llm.LogAnalysisAgentTools
   -> tool.AgentToolFacade
-  -> concrete tool handler
-  -> downstream stats/vector services
+  -> 具体 tool handler
+  -> 下游 stats/vector 服务
   -> tool.AgentResponseAssembler
 ```
 
-### Deterministic/Fallback Flow
+### 确定性/规则回退链路
 
 ```text
 AgentController
   -> application.LogAnalysisAgentService
   -> execution.FallbackAgentExecutor
   -> execution.AgentFallbackWorkflow
-  -> nlu.IntentDecision or nlu.AgentIntentRecognitionService
+  -> nlu.IntentDecision 或 nlu.AgentIntentRecognitionService
   -> execution.AgentFallbackToolExecutorRegistry
   -> tool.*ToolIntentExecutor
   -> tool.AgentToolFacade
-  -> concrete tool handler
+  -> 具体 tool handler
   -> tool.AgentResponseAssembler
 ```
 
-### Text2SQL Flow
+### Text2SQL 链路
 
 ```text
 tool.Text2SqlToolHandler
@@ -319,75 +319,75 @@ tool.Text2SqlToolHandler
   -> stats.DynamicLogQueryService
 ```
 
-### Vector Plan Flow
+### Vector 组件计划链路
 
 ```text
 tool.VectorComponentPlanToolHandler
   -> vectorplan.VectorComponentPreviewPlanner
-  -> vectorplan.CreateLogParser* slot/source helpers
+  -> vectorplan.CreateLogParser* slot/source 辅助类
   -> vectorplan.VectorComponentPlanStore
   -> vectorplan.VectorComponentCommitService
 ```
 
-## Visibility Rules
+## 可见性规则
 
-- Controller-facing services should be `public`.
-- Classes used across package boundaries must be `public`.
-- Internal strategy interfaces can stay package-private only when all implementations and consumers remain in the same package.
-- Moving classes out of `service` will require making several currently package-private records/interfaces public, including intent and execution model types where they cross package boundaries.
-- Existing user changes must be preserved, including the current public visibility change to `AgentRuntimeContext`.
+- Controller 面向的服务保持 `public`。
+- 跨包使用的类必须是 `public`。
+- 只在同一个包内使用的策略接口可以保持 package-private。
+- 从 `service` 包移出类后，部分当前 package-private 的 record/interface 需要调整为 `public`，尤其是跨包传递的意图和执行模型。
+- 保留现有用户改动，包括当前工作区里 `AgentRuntimeContext` 被调整为 `public` 的改动。
 
-## Migration Strategy
+## 迁移策略
 
-1. Move tests first or alongside production packages so package-private assumptions are visible immediately.
-2. Move one capability group at a time:
+1. 测试文件和生产文件同步迁移，尽早暴露 package-private 依赖问题。
+2. 按能力组逐步搬迁：
    - execution/context/fallback
    - nlu/intent
-   - tool facade and handlers
+   - tool facade 和 handlers
    - text2sql
    - vectorplan
    - conversation
    - llm
    - notification/support
-3. Compile after each major group move.
-4. Keep class names stable to reduce behavioral risk.
-5. Do not introduce new algorithms during this pass.
+3. 每迁移一组后编译一次。
+4. 保持类名稳定，降低行为回归风险。
+5. 本轮只做分层和入口边界整理，不引入新算法。
 
-## Test Strategy
+## 测试策略
 
-Run focused tests after package migration:
+包迁移后运行聚焦测试：
 
 ```bash
 mvn -pl log-analysis-app test -Dtest='*Agent*,*SqlCandidate*,*Text2Sql*'
 ```
 
-If Maven module resolution requires running from the backend parent, use:
+如果 Maven 模块解析需要从后端父目录执行，则使用：
 
 ```bash
 cd log-analysis-backend
 mvn -pl log-analysis-app test -Dtest='*Agent*,*SqlCandidate*,*Text2Sql*'
 ```
 
-Expected coverage:
+预期覆盖：
 
-- Text2SQL candidate race behavior remains unchanged.
-- SQL validation behavior remains unchanged.
-- Text2SQL tool handler response shape remains unchanged.
-- LLM SQL candidate provider still calls `AiQueryService.generateSqlOnly`.
-- Agent package compiles with controller/config imports updated.
+- Text2SQL 候选竞争行为保持不变。
+- SQL 校验行为保持不变。
+- Text2SQL tool handler 响应结构保持不变。
+- LLM SQL candidate provider 仍然调用 `AiQueryService.generateSqlOnly`。
+- Agent 包在 Controller 和 config imports 更新后可以正常编译。
 
-## Risks
+## 风险
 
-- Moving package-private interfaces across packages can force visibility changes.
-- Tests that relied on package-private access may need to move with the package or use public APIs.
-- Spring component scanning should still work because all target packages remain under `cn.mw.loganalysis`.
-- Import churn is large even though behavior should not change.
+- package-private 接口跨包移动后需要调整可见性。
+- 依赖 package-private 访问的测试可能需要随包移动，或改为通过 public API 测试。
+- Spring 组件扫描应保持可用，因为目标包仍在 `cn.mw.loganalysis` 下。
+- 即使行为不变，本轮也会产生较多 import 变更。
 
-## Acceptance Criteria
+## 验收标准
 
-- The `agent/service` package no longer contains all agent implementation classes.
-- New package names reflect responsibilities clearly.
-- `AgentController` still depends on stable application-level services.
-- Existing public routes and DTOs are unchanged.
-- Focused agent/Text2SQL tests pass.
-- No unrelated files or generated artifacts are modified.
+- `agent/service` 包不再承载几乎所有 Agent 实现类。
+- 新包名能清晰表达职责。
+- `AgentController` 仍依赖稳定的应用层服务。
+- 现有公开路由和 DTO 不变。
+- 聚焦的 Agent/Text2SQL 测试通过。
+- 不修改无关文件或生成物。
