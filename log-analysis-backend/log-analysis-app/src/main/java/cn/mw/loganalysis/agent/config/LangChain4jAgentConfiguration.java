@@ -1,6 +1,6 @@
 package cn.mw.loganalysis.agent.config;
 
-import cn.mw.loganalysis.agent.service.LangChain4jLogAnalysisAgentExecutor;
+import cn.mw.loganalysis.agent.llm.LangChain4jLogAnalysisAgentExecutor;
 import dev.langchain4j.http.client.spring.restclient.SpringRestClient;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
