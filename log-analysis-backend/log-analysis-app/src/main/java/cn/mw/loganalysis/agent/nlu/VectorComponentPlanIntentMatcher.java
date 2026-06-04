@@ -25,7 +25,7 @@ public class VectorComponentPlanIntentMatcher implements AgentIntentMatcher {
     public boolean matches(AgentRuntimeContext context) {
         String lower = StringUtils.lowerCase(context.getEffectiveMessage(), Locale.ROOT);
         return AgentToolSupport.containsAny(lower,
-                "vector组件", "vector 组件", "创建组件", "生成组件", "解析组件", "生成正则",
+                "vector组件", "vector 组件", "解析组件", "生成组件预览", "组件预览", "生成正则",
                 "生成remap", "remap", "sink", "建表", "入库", "日志样本");
     }
 

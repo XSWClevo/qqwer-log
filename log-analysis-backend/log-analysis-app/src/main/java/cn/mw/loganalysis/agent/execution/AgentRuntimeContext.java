@@ -4,6 +4,7 @@ import cn.mw.loganalysis.agent.dto.AgentChatRequest;
 import cn.mw.loganalysis.agent.dto.AgentChatResponse;
 import cn.mw.loganalysis.agent.nlu.AgentIntent;
 import cn.mw.loganalysis.agent.nlu.AgentNluSlots;
+import cn.mw.loganalysis.agent.skill.AgentSkillDecision;
 import cn.mw.loganalysis.agent.support.AgentStreamEventEmitter;
 import cn.mw.loganalysis.agent.tool.AgentToolPayload;
 import cn.mw.loganalysis.agent.nlu.IntentNode;
@@ -15,6 +16,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 规则 Agent 的一次请求上下文。
@@ -29,6 +31,14 @@ import java.util.List;
 public class AgentRuntimeContext {
 
     private AgentChatRequest request;
+
+    private String skillId;
+
+    private String pageContext;
+
+    private String routePath;
+
+    private Map<String, Object> surfaceContext;
 
     private Long userId;
 
@@ -53,6 +63,8 @@ public class AgentRuntimeContext {
     private String severity;
 
     private boolean deterministicToolRequest;
+
+    private AgentSkillDecision skillDecision;
 
     private AgentExecutionContext executionContext;
 

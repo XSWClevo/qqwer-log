@@ -12,6 +12,10 @@
               <el-icon><MagicStick /></el-icon>
               智能向导
             </el-button>
+            <el-button type="primary" plain @click="openAgentDrawer">
+              <el-icon><Cpu /></el-icon>
+              让助手创建解析组件
+            </el-button>
             <el-button type="primary" @click="openDialog()">
               <el-icon><Plus /></el-icon>
               新建组件
@@ -629,6 +633,9 @@
 
       <!-- 智能向导 -->
       <SmartWizard v-model="showSmartWizard" @created="handleWizardCreated" />
+
+      <!-- 组件库智能助手 -->
+      <ComponentLibraryAgentDrawer v-model="showAgentDrawer" @created="handleAgentCreated" />
     </div>
   </AppLayout>
 </template>
@@ -637,10 +644,11 @@
 import { ref, reactive, onMounted, watch, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Upload, Operation, Download, Edit, Delete, Tools, WarningFilled, SuccessFilled, Search, Check, RefreshRight, Setting, Grid, MagicStick } from '@element-plus/icons-vue'
+import { Plus, Upload, Operation, Download, Edit, Delete, Tools, WarningFilled, SuccessFilled, Search, Check, RefreshRight, Setting, Grid, MagicStick, Cpu } from '@element-plus/icons-vue'
 import * as yaml from 'js-yaml'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DatasourceManageDialog from './components/DatasourceManageDialog.vue'
+import ComponentLibraryAgentDrawer from './components/ComponentLibraryAgentDrawer.vue'
 import SmartWizard from './SmartWizard.vue'
 import { configComponentApi, vrlApi, type ConfigComponent, type ParsedField } from '@/api/vector'
 import { listActiveDatasources, type Datasource } from '@/api/datasource'
@@ -665,6 +673,9 @@ let editorView: EditorView | null = null
 
 // 智能向导状态
 const showSmartWizard = ref(false)
+
+// 组件库智能助手状态
+const showAgentDrawer = ref(false)
 
 // 数据源管理对话框状态
 const showDatasourceManage = ref(false)
@@ -1191,6 +1202,10 @@ const handleWizardCreated = async (payload: WizardCreatedPayload) => {
   }
 }
 
+const handleAgentCreated = async (payload: WizardCreatedPayload) => {
+  await handleWizardCreated(payload)
+}
+
 // 加载数据源列表
 const loadDatasources = async () => {
   try {
@@ -1244,6 +1259,10 @@ const getDatasourceTypeColor = (type: string) => {
  */
 const openSmartWizard = () => {
   showSmartWizard.value = true
+}
+
+const openAgentDrawer = () => {
+  showAgentDrawer.value = true
 }
 
 const openDialog = (comp?: ConfigComponent) => {

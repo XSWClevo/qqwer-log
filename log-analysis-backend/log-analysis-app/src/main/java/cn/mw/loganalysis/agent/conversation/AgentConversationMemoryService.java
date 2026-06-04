@@ -86,6 +86,10 @@ public class AgentConversationMemoryService {
             AgentChatRequest effectiveRequest = new AgentChatRequest();
             effectiveRequest.setMessage(request.getMessage());
             effectiveRequest.setDatasourceId(request.getDatasourceId());
+            effectiveRequest.setSkillId(request.getSkillId());
+            effectiveRequest.setPageContext(request.getPageContext());
+            effectiveRequest.setRoutePath(request.getRoutePath());
+            effectiveRequest.setSurfaceContext(request.getSurfaceContext());
             effectiveRequest.setSessionId(sessionId);
             effectiveRequest.setHistory(toAgentMessages(session.memory.messages()));
             return new PreparedAgentChatRequest(sessionId, effectiveRequest);

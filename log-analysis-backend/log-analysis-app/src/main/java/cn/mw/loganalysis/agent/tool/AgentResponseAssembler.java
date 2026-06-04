@@ -111,6 +111,18 @@ public class AgentResponseAssembler {
     }
 
     /**
+     * 构建无需执行工具的澄清响应。
+     */
+    public AgentChatResponse clarification(String answer, List<String> suggestions) {
+        return AgentChatResponse.builder()
+                .success(true)
+                .intent("clarification")
+                .answer(answer)
+                .suggestions(suggestions == null ? List.of() : suggestions)
+                .build();
+    }
+
+    /**
      * 将 LangChain4j 工具执行前事件转换成前端 running 状态。
      */
     public AgentToolCall toRunningToolCall(BeforeToolExecution beforeToolExecution) {

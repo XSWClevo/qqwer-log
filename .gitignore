@@ -51,3 +51,5 @@ log-analysis-backend/log-analysis-app/src/main/resources/application-local.yml
 # Docker volumes
 data/
 .claude
+packages/
+vector-agent/bin

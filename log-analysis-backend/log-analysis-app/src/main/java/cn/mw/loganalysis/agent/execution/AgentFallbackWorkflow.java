@@ -44,6 +44,9 @@ public class AgentFallbackWorkflow {
         }
 
         AgentRuntimeContext context = prepareContext(request, userId, request.getSessionId(), null, false);
+        if (context.getSkillDecision() != null && context.getSkillDecision().requiresClarification()) {
+            return true;
+        }
         boolean createLogParserFlow = AgentIntent.CREATE_LOG_PARSER.equals(context.getIntent());
         if (createLogParserFlow) {
             return true;
@@ -60,8 +63,14 @@ public class AgentFallbackWorkflow {
     AgentChatResponse execute(AgentChatRequest request,
                               Long userId,
                               String sessionId,
-                              AgentStreamEventEmitter emitter) throws IOException {
+                              AgentStreamEventEmitter emitter) {
         AgentRuntimeContext context = prepareContext(request, userId, sessionId, emitter, true);
+        if (context.getSkillDecision() != null && context.getSkillDecision().requiresClarification()) {
+            return responseAssembler.clarification(
+                    context.getSkillDecision().clarificationMessage(),
+                    context.getSkillDecision().suggestions()
+            );
+        }
         boolean createLogParserFlow = AgentIntent.CREATE_LOG_PARSER.equals(context.getIntent());
 
         if (StringUtils.isBlank(request.getDatasourceId()) && !createLogParserFlow) {
@@ -106,6 +115,10 @@ public class AgentFallbackWorkflow {
                                                boolean useModelNlu) {
         AgentRuntimeContext context = AgentRuntimeContext.builder()
                 .request(request)
+                .skillId(request.getSkillId())
+                .pageContext(request.getPageContext())
+                .routePath(request.getRoutePath())
+                .surfaceContext(request.getSurfaceContext())
                 .userId(userId)
                 .sessionId(sessionId)
                 .emitter(emitter)

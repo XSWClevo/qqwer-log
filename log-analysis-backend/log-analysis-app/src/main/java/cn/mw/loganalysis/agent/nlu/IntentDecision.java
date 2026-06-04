@@ -2,6 +2,7 @@ package cn.mw.loganalysis.agent.nlu;
 
 import cn.mw.loganalysis.agent.execution.AgentRuntimeContext;
 import cn.mw.loganalysis.agent.execution.Decision;
+import cn.mw.loganalysis.agent.skill.AgentSkillDecision;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -40,6 +41,15 @@ public class IntentDecision extends Decision {
      */
     @Override
     public Object execute(AgentRuntimeContext context) {
+        AgentSkillDecision skillDecision = fallbackIntentRecognitionService.recognizeSkill(context);
+        if (skillDecision.requiresClarification()) {
+            return null;
+        }
+        if (skillDecision.hasIntentDecision()) {
+            applyFallbackDecision(context, skillDecision.intentDecision());
+            return context.getIntentNode();
+        }
+
         List<IntentSlotsEntity> intentSlots = nluSlotsHandler.callNluAgent(context);
         context.setIntentSlots(intentSlots);
 

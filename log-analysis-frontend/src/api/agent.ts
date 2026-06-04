@@ -7,9 +7,20 @@ export interface AgentChatMessage {
   content: string
 }
 
+export type AgentPageContext =
+  | 'COMPONENT_LIBRARY'
+  | 'LOG_PARSER_WIZARD'
+  | 'AGENT_CHAT'
+  | 'VECTOR_EDITOR'
+  | 'UNKNOWN'
+
 export interface AgentChatRequest {
   message: string
   datasourceId?: string
+  skillId?: string
+  pageContext?: AgentPageContext
+  routePath?: string
+  surfaceContext?: Record<string, any>
   sessionId?: string
   history?: AgentChatMessage[]
 }
