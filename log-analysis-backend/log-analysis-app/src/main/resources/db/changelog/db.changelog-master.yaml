@@ -23,3 +23,9 @@ databaseChangeLog:
       file: db/changelog/changes/20260526-trusted-log-sources-demo-ips.sql
   - include:
       file: db/changelog/changes/20260528-agent-sql-query-examples.sql
+  - include:
+      file: db/changelog/changes/20260617-job-communication-records.sql
+  - include:
+      file: db/changelog/changes/20260617-job-communication-records-rich-fields.sql
+  - include:
+      file: db/changelog/changes/20260617-job-communication-communication-key.sql

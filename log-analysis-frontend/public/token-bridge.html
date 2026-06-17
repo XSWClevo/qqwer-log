@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Token Bridge</title>
+  </head>
+  <body>
+    <script>
+      ;(() => {
+        const RESPONSE_TYPE = 'LOG_ANALYSIS_TOKEN_BRIDGE_RESPONSE'
+        const REQUEST_TYPE = 'LOG_ANALYSIS_TOKEN_BRIDGE_REQUEST'
+        const search = new URLSearchParams(window.location.search)
+        const redirect = search.get('redirect') || '/token-bridge.html'
+
+        const buildPayload = () => {
+          const accessToken = localStorage.getItem('accessToken') || ''
+          const refreshToken = localStorage.getItem('refreshToken') || ''
+          return {
+            accessToken,
+            refreshToken,
+            hasAccessToken: Boolean(accessToken)
+          }
+        }
+
+        const postToOpener = (payload) => {
+          if (!window.opener || window.opener.closed) {
+            return false
+          }
+
+          try {
+            window.opener.postMessage(
+              {
+                type: RESPONSE_TYPE,
+                requestId: search.get('requestId') || '',
+                payload
+              },
+              '*'
+            )
+            return true
+          } catch (error) {
+            console.error('postMessage to opener failed:', error)
+            return false
+          }
+        }
+
+        const payload = buildPayload()
+        if (!payload.hasAccessToken) {
+          const loginUrl = `/login?redirect=${encodeURIComponent(redirect)}`
+          window.location.replace(loginUrl)
+        } else {
+          document.body.textContent = '授权成功，正在回传登录凭证...'
+          const posted = postToOpener(payload)
+          if (posted) {
+            setTimeout(() => window.close(), 800)
+          }
+        }
+
+        window.addEventListener('message', (event) => {
+          const data = event.data || {}
+          if (data.type !== REQUEST_TYPE) {
+            return
+          }
+
+          event.source?.postMessage(
+            {
+              type: RESPONSE_TYPE,
+              requestId: data.requestId,
+              payload: buildPayload()
+            },
+            event.origin || '*'
+          )
+        })
+      })()
+    </script>
+  </body>
+</html>

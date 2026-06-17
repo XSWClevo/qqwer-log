@@ -47,6 +47,7 @@
           </template>
           <el-menu-item index="/trend-analysis">趋势分析</el-menu-item>
           <el-menu-item index="/trace-analysis">链路分析</el-menu-item>
+          <el-menu-item index="/job-communication-analysis">岗位沟通分析</el-menu-item>
           <el-menu-item index="/attack-classification">攻击识别</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/log-source">

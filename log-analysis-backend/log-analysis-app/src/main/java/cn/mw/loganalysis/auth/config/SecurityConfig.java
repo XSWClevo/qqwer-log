@@ -102,6 +102,9 @@ public class SecurityConfig {
                         // Vector HTTP sink 上报新日志源，不携带用户 JWT。
                         .requestMatchers(HttpMethod.POST, "/api/log-sources/notify-new-ip").permitAll()
 
+                        // 本地 BOSS 油猴脚本上报岗位沟通记录，不要求用户 JWT。
+                        .requestMatchers("/api/job-communications/**").permitAll()
+
                         .anyRequest().authenticated()
                 )
 

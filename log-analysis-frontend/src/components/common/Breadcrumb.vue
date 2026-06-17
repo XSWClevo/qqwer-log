@@ -26,6 +26,7 @@ const routeMap: Record<string, { title: string; parent?: string }> = {
   '/agent': { title: '智能助手' },
   '/trend-analysis': { title: '趋势分析', parent: '日志分析' },
   '/trace-analysis': { title: '链路分析', parent: '日志分析' },
+  '/job-communication-analysis': { title: '岗位沟通分析', parent: '日志分析' },
   '/alert/rules': { title: '告警规则', parent: '告警管理' },
   '/alert/history': { title: '告警历史', parent: '告警管理' },
   '/vector/machines': { title: '主机管理', parent: 'Vector 管理' },

@@ -53,11 +53,12 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 // 表单引用
@@ -94,7 +95,8 @@ const handleLogin = async () => {
     const success = await authStore.login(loginForm)
 
     if (success) {
-      router.push('/')
+      const redirect = String(route.query.redirect || '/')
+      router.push(redirect)
     }
   } catch (error) {
     console.error('登录验证失败:', error)
