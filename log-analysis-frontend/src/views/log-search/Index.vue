@@ -710,8 +710,8 @@ const loadDatasourceSchema = async () => {
     // updateFieldStatsFromSchema()
   } catch (error) {
     console.error('加载数据源字段失败:', error)
-    // 使用默认字段
-    datasourceFields.value = getDefaultFields()
+    // 已选择具体数据源时，不回退到 syslog 默认字段，避免请求不存在的维度。
+    datasourceFields.value = datasourceId ? [] : getDefaultFields()
     initializeTableColumns()
     initializeStatsFields()
   } finally {
@@ -818,7 +818,7 @@ const initializeStatsFields = () => {
       name: f.name,
       label: f.label
     }))
-  } else {
+  } else if (!selectedSingleDatasourceId.value) {
     // 默认统计字段
     fieldStats.value = [
       { name: 'severity', label: '日志级别', topValues: [] },
@@ -833,6 +833,9 @@ const initializeStatsFields = () => {
       { name: 'hostname', label: '主机名' },
       { name: 'appname', label: '应用名' }
     ]
+  } else {
+    fieldStats.value = []
+    statsViewFields.value = []
   }
 }
 
@@ -976,6 +979,9 @@ const getFieldLabel = (field: string): string => {
 const convertFiltersToBackendFormat = (filters: FilterCondition[]): FieldFilter[] => {
   const groupedMap = new Map<string, FieldFilter>()
   filters.forEach(filter => {
+    if (!canQueryField(filter.field)) {
+      return
+    }
     const key = `${filter.field}_${filter.type}`
     if (groupedMap.has(key)) {
       const existing = groupedMap.get(key)!
@@ -1005,26 +1011,33 @@ const buildFieldFilters = (): FieldFilter[] | undefined => {
 
   // 2. 添加高级筛选（动态字段，从 advancedFilterValues 获取）
   Object.entries(advancedFilterValues).forEach(([fieldName, values]) => {
-    if (values && values.length > 0) {
+    if (values && values.length > 0 && canQueryField(fieldName)) {
       allFilters.push({ field: fieldName, type: 'include', values })
     }
   })
 
   // 兼容旧的硬编码字段（如果通过其他方式设置了值）
-  if (searchForm.levels.length > 0) {
+  if (searchForm.levels.length > 0 && canQueryField('severity')) {
     allFilters.push({ field: 'severity', type: 'include', values: searchForm.levels })
   }
-  if (searchForm.sources.length > 0) {
+  if (searchForm.sources.length > 0 && canQueryField('source_type')) {
     allFilters.push({ field: 'source_type', type: 'include', values: searchForm.sources })
   }
-  if (searchForm.hosts.length > 0) {
+  if (searchForm.hosts.length > 0 && canQueryField('hostname')) {
     allFilters.push({ field: 'hostname', type: 'include', values: searchForm.hosts })
   }
-  if (searchForm.services.length > 0) {
+  if (searchForm.services.length > 0 && canQueryField('appname')) {
     allFilters.push({ field: 'appname', type: 'include', values: searchForm.services })
   }
 
   return allFilters.length > 0 ? allFilters : undefined
+}
+
+const canQueryField = (field: string): boolean => {
+  if (!selectedSingleDatasourceId.value) {
+    return true
+  }
+  return datasourceFields.value.some(item => item.name === field)
 }
 
 // Time range calculation
@@ -1416,11 +1429,20 @@ const loadTimeSeries = async () => {
 const loadFieldStats = async () => {
   try {
     const [startTime, endTime] = getTimeRange()
-    
-    // 使用动态获取的统计维度字段
-    const dimensions = availableStatsDimensions.value.length > 0 
-      ? availableStatsDimensions.value.slice(0, 6).map(f => f.name)
-      : ['severity', 'source_type', 'hostname', 'appname'] // 默认字段
+
+    // 使用当前数据源真实可统计字段；具体数据源没有统计字段时不请求默认 syslog 维度。
+    const selectedStatsNames = statsViewFields.value.map(f => f.name)
+    const schemaStatsNames = availableStatsDimensions.value.map(f => f.name)
+    const dimensions = (selectedStatsNames.length > 0 ? selectedStatsNames : schemaStatsNames)
+      .filter((name, index, arr) => arr.indexOf(name) === index)
+      .slice(0, 6)
+
+    if (dimensions.length === 0) {
+      fieldStats.value.forEach(stat => {
+        stat.topValues = []
+      })
+      return
+    }
     
     const { data } = await queryFieldStats({
       datasourceId: selectedSingleDatasourceId.value,

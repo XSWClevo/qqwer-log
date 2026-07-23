@@ -25,6 +25,8 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: 5173,
+      // 允许通过公网穿透域名/IP 访问 dev server（vite 默认会拦截非白名单 Host）
+      allowedHosts: (env.VITE_ALLOWED_HOSTS || '39.98.82.145').split(','),
       proxy: {
         '/api': {
           target: proxyTarget,

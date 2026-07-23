@@ -1,4 +1,59 @@
 services:
+  # 后端 API
+  backend:
+    build:
+      context: ./log-analysis-backend
+    image: log-analysis-backend:local
+    container_name: log-analysis-backend
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+      - 223.5.5.5
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_DB=MWLOGDB_ANALYSIS
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=12345678
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - AI_SERVICE_URL=http://ai-service:8001
+      - JAVA_OPTS=-Xms512m -Xmx1g
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - log-analysis-network
+
+  # 前端 Web
+  frontend:
+    build:
+      context: ./log-analysis-frontend
+    image: log-analysis-frontend:local
+    container_name: log-analysis-frontend
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+      - 223.5.5.5
+    ports:
+      - "50080:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - log-analysis-network
+
   # PostgreSQL (业务数据库)
   postgres:
     image: docker.1ms.run/postgres:15

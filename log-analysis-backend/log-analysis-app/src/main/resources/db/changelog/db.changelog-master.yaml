@@ -29,3 +29,5 @@ databaseChangeLog:
       file: db/changelog/changes/20260617-job-communication-records-rich-fields.sql
   - include:
       file: db/changelog/changes/20260617-job-communication-communication-key.sql
+  - include:
+      file: db/changelog/changes/20260723-alert-default-syslog-table.sql

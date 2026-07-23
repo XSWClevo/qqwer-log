@@ -13,6 +13,7 @@ import java.util.Map;
 public interface JobCommunicationService {
     JobCommunicationRecord upsert(Long userId, JobCommunicationUpsertRequest request);
     JobCommunicationRecord markReplied(Long userId, String platform, String jobId);
+    JobCommunicationRecord markStatus(Long userId, String platform, String jobId, String status);
     List<Map<String, Object>> skipCheck(Long userId, JobCommunicationSkipCheckRequest request);
     JobCommunicationOverviewDTO getOverview(Long userId);
     List<Map<String, Object>> getTrend(Long userId, String granularity);

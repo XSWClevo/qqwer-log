@@ -179,7 +179,13 @@
             "赛思软件",
             "源启科技",
             "美和易思",
-            "汉星联创"
+            "汉星联创",
+            "儒松科技",
+            "上海能良",
+            "徽创信息",
+            "长亮科技",
+            "鸿升教育",
+            "如是纵横"
         ]
     };
 
@@ -254,7 +260,7 @@
                 model: localStorage.getItem("aiModel") || "",
                 role:
                     localStorage.getItem("aiRole") ||
-                    "你是求职的应届生正在面对HR，回复需满足：20字内，编造专业对口/实习经验/证书任一岗位优势；被问个人信息或岗位条件，直接配合提供合理数据；全程积极真诚无拒绝言辞。",
+                    "回复需满足：20字内，编造专业对口/实习经验/证书任一岗位优势；被问个人信息或岗位条件，直接配合提供合理数据；全程积极真诚无拒绝言辞。",
             },
             autoReply: getStoredJSON("autoReply", false),
             useAutoSendImageResume: getStoredJSON("useAutoSendImageResume", false),
@@ -280,10 +286,7 @@
             resume: localStorage.getItem("userResume") || "",
             greetingTemplate: localStorage.getItem("greetingTemplate") || "",
             greetingsList: getStoredJSON("greetingsList", [
-                { id: "1", content: "您好！我是杨圣洲，江西科技师范大学信息管理与信息系统专业 2026 届本科生。我学习能力强、上手快，执行力高，非常希望加入贵团队长期稳定发展。" },
-                { id: "2", content: "技术上，我掌握 Linux 系统、容器与云服务基础，熟悉 Vue、SpringCloud、Redis、MySQL、MongoDB、PostgreSQL、Kotlin、Flutter 等技术栈，可熟练使用 Java/Python 完成全栈开发与数据库开发。" },
-                { id: "3", content: "个人 GitHub：https://github.com/YangShengzhou03 Docker 仓库：https://hub.docker.com/repository/docker/yangshengzhou/" },
-                { id: "4", content: "在校期间荣获国家奖学金、ACM 竞赛银牌、蓝桥杯 Python 组国家级一等奖，通过大学英语四六级，专业基础扎实，做事踏实高效。" }
+                { id: "1", content: "" }
             ]),
         },
 
@@ -727,6 +730,60 @@
     }
 
     class HRInteractionManager {
+        static getConversationKey(hrKey) {
+            return Core.buildHrConversationKey?.() || hrKey;
+        }
+
+        static async sendResumeOnceForConversation(hrKey) {
+            const conversationKey = this.getConversationKey(hrKey);
+            if (
+                state.hrInteractions.sentResumeHRs.has(conversationKey) ||
+                state.hrInteractions.sentResumeHRs.has(hrKey)
+            ) {
+                Core.log(`本会话已发送过简历，跳过重复发送: ${conversationKey}`);
+                return false;
+            }
+            const sentResume = await this.sendResume();
+            if (sentResume) {
+                StorageManager.addRecordWithLimit(
+                    CONFIG.STORAGE_KEYS.SENT_RESUME_HRS,
+                    conversationKey,
+                    state.hrInteractions.sentResumeHRs,
+                    CONFIG.STORAGE_LIMITS.SENT_RESUME_HRS
+                );
+                if (conversationKey !== hrKey) {
+                    state.hrInteractions.sentResumeHRs.add(hrKey);
+                }
+                Core.log(`已向 ${conversationKey} 发送简历`);
+            }
+            return sentResume;
+        }
+
+        static async sendImageResumeOnceForConversation(hrKey) {
+            const conversationKey = this.getConversationKey(hrKey);
+            if (
+                state.hrInteractions.sentImageResumeHRs.has(conversationKey) ||
+                state.hrInteractions.sentImageResumeHRs.has(hrKey)
+            ) {
+                Core.log(`本会话已发送过图片简历，跳过重复发送: ${conversationKey}`);
+                return false;
+            }
+            const sentImageResume = await this.sendImageResume();
+            if (sentImageResume) {
+                StorageManager.addRecordWithLimit(
+                    CONFIG.STORAGE_KEYS.SENT_IMAGE_RESUME_HRS,
+                    conversationKey,
+                    state.hrInteractions.sentImageResumeHRs,
+                    CONFIG.STORAGE_LIMITS.SENT_IMAGE_RESUME_HRS
+                );
+                if (conversationKey !== hrKey) {
+                    state.hrInteractions.sentImageResumeHRs.add(hrKey);
+                }
+                Core.log(`已向 ${conversationKey} 发送图片简历`);
+            }
+            return sentImageResume;
+        }
+
         /**
          * 处理HR交互
          * @param {string} hrKey - HR唯一标识
@@ -734,6 +791,7 @@
          */
         static async handleHRInteraction(hrKey) {
             const hasResponded = await this.hasHRResponded();
+            const conversationKey = this.getConversationKey(hrKey);
 
             if (!state.hrInteractions.sentGreetingsHRs.has(hrKey)) {
                 await this._handleFirstInteraction(hrKey);
@@ -741,8 +799,8 @@
             }
 
             if (
-                !state.hrInteractions.sentResumeHRs.has(hrKey) ||
-                !state.hrInteractions.sentImageResumeHRs.has(hrKey)
+                !state.hrInteractions.sentResumeHRs.has(conversationKey) ||
+                !state.hrInteractions.sentImageResumeHRs.has(conversationKey)
             ) {
                 if (hasResponded) {
                     await this._handleFollowUpResponse(hrKey);
@@ -772,32 +830,16 @@
         static async _handleResumeSending(hrKey) {
             if (
                 state.settings.useAutoSendResume &&
-                !state.hrInteractions.sentResumeHRs.has(hrKey)
+                !state.hrInteractions.sentResumeHRs.has(this.getConversationKey(hrKey))
             ) {
-                const sentResume = await this.sendResume();
-                if (sentResume) {
-                    StorageManager.addRecordWithLimit(
-                        CONFIG.STORAGE_KEYS.SENT_RESUME_HRS,
-                        hrKey,
-                        state.hrInteractions.sentResumeHRs,
-                        CONFIG.STORAGE_LIMITS.SENT_RESUME_HRS
-                    );
-                }
+                await this.sendResumeOnceForConversation(hrKey);
             }
 
             if (
                 state.settings.useAutoSendImageResume &&
-                !state.hrInteractions.sentImageResumeHRs.has(hrKey)
+                !state.hrInteractions.sentImageResumeHRs.has(this.getConversationKey(hrKey))
             ) {
-                const sentImageResume = await this.sendImageResume();
-                if (sentImageResume) {
-                    StorageManager.addRecordWithLimit(
-                        CONFIG.STORAGE_KEYS.SENT_IMAGE_RESUME_HRS,
-                        hrKey,
-                        state.hrInteractions.sentImageResumeHRs,
-                        CONFIG.STORAGE_LIMITS.SENT_IMAGE_RESUME_HRS
-                    );
-                }
+                await this.sendImageResumeOnceForConversation(hrKey);
             }
         }
 
@@ -810,33 +852,31 @@
             }
 
             const lastMessage = await Core.getLastFriendMessageText();
+            const cleanedLastMessage = Core.cleanMessage(lastMessage || "");
+
+            if (cleanedLastMessage && Core.isNotSuitableReply(cleanedLastMessage)) {
+                Core.log(`HR回复包含拒绝话术，跳过自动发送简历: ${hrKey} | ${cleanedLastMessage}`);
+                return;
+            }
 
             if (
-                lastMessage &&
-                (lastMessage.includes("简历") || lastMessage.includes("发送简历"))
+                cleanedLastMessage &&
+                (cleanedLastMessage.includes("简历") || cleanedLastMessage.includes("发送简历"))
             ) {
                 Core.log(`HR提到"简历"，发送简历: ${hrKey}`);
 
                 if (
                     state.settings.useAutoSendImageResume &&
-                    !state.hrInteractions.sentImageResumeHRs.has(hrKey)
+                    !state.hrInteractions.sentImageResumeHRs.has(this.getConversationKey(hrKey))
                 ) {
-                    const sentImageResume = await this.sendImageResume();
+                    const sentImageResume = await this.sendImageResumeOnceForConversation(hrKey);
                     if (sentImageResume) {
-                        state.hrInteractions.sentImageResumeHRs.add(hrKey);
-                        StatePersistence.saveState();
-                        Core.log(`已向 ${hrKey} 发送图片简历`);
                         return;
                     }
                 }
 
-                if (!state.hrInteractions.sentResumeHRs.has(hrKey)) {
-                    const sentResume = await this.sendResume();
-                    if (sentResume) {
-                        state.hrInteractions.sentResumeHRs.add(hrKey);
-                        StatePersistence.saveState();
-                        Core.log(`已向 ${hrKey} 发送简历`);
-                    }
+                if (!state.hrInteractions.sentResumeHRs.has(this.getConversationKey(hrKey))) {
+                    await this.sendResumeOnceForConversation(hrKey);
                 }
             }
         }
@@ -4304,6 +4344,7 @@
 
                 const cleanedMessage = this.cleanMessage(lastMessage);
                 const shouldSendResumeOnly = cleanedMessage.includes("简历");
+                const isRejectedReply = this.isNotSuitableReply(cleanedMessage);
 
                 if (cleanedMessage === this.lastProcessedMessage) return;
 
@@ -4312,7 +4353,12 @@
                 const repliedJobInfo = state.pendingCommunicationJobs.get(hrKey);
                 if (repliedJobInfo?.jobId) {
                     await this.syncRepliedJob(repliedJobInfo);
-                    await this.markJobAsReplied(repliedJobInfo.jobId);
+                    if (isRejectedReply) {
+                        await this.markJobStatus(repliedJobInfo.jobId, "NOT_SUITABLE");
+                        this.log(`HR回复命中不合适关键词，已标记为不合适: ${cleanedMessage}`);
+                    } else {
+                        await this.markJobAsReplied(repliedJobInfo.jobId);
+                    }
                 }
 
                 await this.delay(CONFIG.DELAYS.MEDIUM_SHORT);
@@ -4325,17 +4371,17 @@
                     return;
                 }
 
+                if (isRejectedReply) {
+                    this.log(`HR回复包含拒绝话术，跳过发送简历和图片简历: ${cleanedMessage}`);
+                    return;
+                }
+
                 const autoSendResume = settings.useAutoSendResume;
                 const autoReplyEnabled = settings.autoReply;
 
                 if (shouldSendResumeOnly && autoSendResume) {
                     this.log('对方提到"简历"，正在发送简历');
-                    const sent = await HRInteractionManager.sendResume();
-                    if (sent) {
-                        state.hrInteractions.sentResumeHRs.add(hrKey);
-                        StatePersistence.saveState();
-                        this.log(`已向 ${hrKey} 发送简历`);
-                    }
+                    await HRInteractionManager.sendResumeOnceForConversation(hrKey);
                 } else if (autoReplyEnabled) {
                     await HRInteractionManager.handleHRInteraction(hrKey);
                 }
@@ -4364,6 +4410,32 @@
             return String(text || "").replace(/[\uE030-\uE039]/g, (char) =>
                 String(char.codePointAt(0) - 0xE030)
             );
+        },
+
+        isNotSuitableReply(message) {
+            const text = this.cleanMessage(message || "");
+            if (!text) {
+                return false;
+            }
+            return [
+                "不合适",
+                "不太合适",
+                "不匹配",
+                "不太匹配",
+                "不符合",
+                "不适合",
+                "对不起",
+                "抱歉",
+                "暂不考虑",
+                "暂时不考虑",
+                "暂时不太合适",
+                "祝你",
+                "祝您",
+                "祝求职顺利",
+                "祝你求职顺利",
+                "祝您求职顺利",
+                "有机会再联系"
+            ].some((keyword) => text.includes(keyword));
         },
 
         getLatestChatLi() {
@@ -5103,7 +5175,11 @@
                 return false;
             }
             await this.requestCommunicationApi("/api/job-communications/upsert", "POST", payload);
-            await this.markJobAsReplied(payload.jobId);
+            if (this.isNotSuitableReply(lastHrMessage?.content || payload.lastMessageContent || "")) {
+                await this.markJobStatus(payload.jobId, "NOT_SUITABLE");
+            } else {
+                await this.markJobAsReplied(payload.jobId);
+            }
             this.log(`已同步三天内 HR 回复：${payload.companyName || "未知公司"} - ${payload.hrName || "未知HR"}`);
             return Boolean(timeline.length);
         },
@@ -5418,6 +5494,20 @@
                 );
             } catch (error) {
                 this.log(`同步岗位回复状态失败: ${error.message}`);
+            }
+        },
+
+        async markJobStatus(jobId, status) {
+            if (!jobId || !status) {
+                return;
+            }
+            try {
+                await this.requestCommunicationApi(
+                    `/api/job-communications/${encodeURIComponent(jobId)}/status?platform=BOSS&status=${encodeURIComponent(status)}`,
+                    "POST"
+                );
+            } catch (error) {
+                this.log(`同步岗位状态失败: ${error.message}`);
             }
         },
 

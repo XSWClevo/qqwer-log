@@ -46,6 +46,14 @@ public class JobCommunicationController {
         return Result.success(jobCommunicationService.markReplied(resolveUserId(), platform, jobId));
     }
 
+    @PostMapping("/{jobId}/status")
+    public Result<JobCommunicationRecord> markStatus(@PathVariable String jobId,
+                                                     @RequestParam(defaultValue = "BOSS") String platform,
+                                                     @RequestParam String status) {
+        log.info("job-communications status received: jobId={}, platform={}, status={}", jobId, platform, status);
+        return Result.success(jobCommunicationService.markStatus(resolveUserId(), platform, jobId, status));
+    }
+
     @PostMapping("/skip-check")
     public Result<List<Map<String, Object>>> skipCheck(@RequestBody(required = false) JobCommunicationSkipCheckRequest request) {
         JobCommunicationSkipCheckRequest actual = ObjectUtils.defaultIfNull(request, new JobCommunicationSkipCheckRequest());

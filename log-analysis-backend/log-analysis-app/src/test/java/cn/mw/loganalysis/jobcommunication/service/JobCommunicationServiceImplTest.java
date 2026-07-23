@@ -120,6 +120,41 @@ class JobCommunicationServiceImplTest {
     }
 
     @Test
+    void shouldKeepNotSuitableStatusWhenAlreadyRejectedJobIsUpsertedAgain() {
+        JobCommunicationRecordMapper mapper = mock(JobCommunicationRecordMapper.class);
+        JobCommunicationService service = new JobCommunicationServiceImpl(mapper);
+
+        LocalDateTime firstCommunicatedAt = LocalDateTime.now().minusDays(2);
+        LocalDateTime lastRepliedAt = LocalDateTime.now().minusHours(4);
+        JobCommunicationRecord existing = new JobCommunicationRecord();
+        existing.setId(1L);
+        existing.setUserId(1001L);
+        existing.setPlatform("BOSS");
+        existing.setJobId("job-1");
+        existing.setCommunicationKey("boss:job-1:示例公司:张三");
+        existing.setStatus(JobCommunicationStatus.NOT_SUITABLE);
+        existing.setCommunicationCount(3);
+        existing.setFirstCommunicatedAt(firstCommunicatedAt);
+        existing.setLastRepliedAt(lastRepliedAt);
+
+        JobCommunicationUpsertRequest request = new JobCommunicationUpsertRequest();
+        request.setPlatform("BOSS");
+        request.setJobId("job-1");
+        request.setCommunicationKey("boss:job-1:示例公司:张三");
+        request.setJobTitle("Java开发");
+        request.setCompanyName("示例公司");
+
+        when(mapper.selectOne(any())).thenReturn(existing);
+
+        JobCommunicationRecord result = service.upsert(1001L, request);
+
+        assertThat(result.getStatus()).isEqualTo(JobCommunicationStatus.NOT_SUITABLE);
+        assertThat(result.getCommunicationCount()).isEqualTo(4);
+        assertThat(result.getLastRepliedAt()).isEqualTo(lastRepliedAt);
+        verify(mapper).updateById(existing);
+    }
+
+    @Test
     void shouldMergeRicherFieldsWhenExistingRecordIsUpsertedAgain() {
         JobCommunicationRecordMapper mapper = mock(JobCommunicationRecordMapper.class);
         JobCommunicationService service = new JobCommunicationServiceImpl(mapper);

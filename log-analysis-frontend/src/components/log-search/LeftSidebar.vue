@@ -245,6 +245,9 @@ const allFieldsInfo = computed(() => {
   if (props.availableFields && props.availableFields.length > 0) {
     return props.availableFields
   }
+  if (props.datasourceId) {
+    return []
+  }
   return getDefaultFields()
 })
 

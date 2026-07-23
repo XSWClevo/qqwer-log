@@ -100,7 +100,8 @@ public class JobCommunicationServiceImpl implements JobCommunicationService {
         if (existing.getFirstCommunicatedAt() == null) {
             existing.setFirstCommunicatedAt(now);
         }
-        if (existing.getStatus() != JobCommunicationStatus.REPLIED) {
+        if (existing.getStatus() != JobCommunicationStatus.REPLIED
+                && existing.getStatus() != JobCommunicationStatus.NOT_SUITABLE) {
             existing.setStatus(JobCommunicationStatus.CONTACTED);
             existing.setLastStatusChangedAt(now);
         }
@@ -124,21 +125,30 @@ public class JobCommunicationServiceImpl implements JobCommunicationService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public JobCommunicationRecord markReplied(Long userId, String platform, String jobId) {
+        return markStatus(userId, platform, jobId, JobCommunicationStatus.REPLIED.name());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public JobCommunicationRecord markStatus(Long userId, String platform, String jobId, String status) {
         validateUser(userId);
         platform = normalizePlatform(platform);
         jobId = normalizeRequired(jobId, "jobId");
+        JobCommunicationStatus targetStatus = JobCommunicationStatus.valueOf(StringUtils.defaultIfBlank(status, JobCommunicationStatus.REPLIED.name()));
         JobCommunicationRecord record = findOne(userId, platform, jobId, null);
         if (record == null) {
-            log.info("job-communications reply ignored, record not found: userId={}, platform={}, jobId={}", userId, platform, jobId);
+            log.info("job-communications status ignored, record not found: userId={}, platform={}, jobId={}, status={}", userId, platform, jobId, targetStatus);
             return null;
         }
         LocalDateTime now = LocalDateTime.now();
-        record.setStatus(JobCommunicationStatus.REPLIED);
-        record.setLastRepliedAt(now);
+        record.setStatus(targetStatus);
+        if (targetStatus == JobCommunicationStatus.REPLIED || targetStatus == JobCommunicationStatus.NOT_SUITABLE) {
+            record.setLastRepliedAt(now);
+        }
         record.setLastStatusChangedAt(now);
         record.setUpdatedAt(now);
         mapper.updateById(record);
-        log.info("job-communications reply updated: userId={}, id={}, jobId={}, status={}, lastRepliedAt={}",
+        log.info("job-communications status updated: userId={}, id={}, jobId={}, status={}, lastRepliedAt={}",
                 userId,
                 record.getId(),
                 record.getJobId(),

@@ -155,7 +155,7 @@ public class AlertRuleScopeResolver {
     private AlertDatasetTarget defaultTarget() {
         return AlertDatasetTarget.builder()
                 .datasourceType("clickhouse")
-                .tableName("syslog_logs")
+                .tableName("syslog")
                 .timeField("timestamp")
                 .messageField("message")
                 .rawField("raw")

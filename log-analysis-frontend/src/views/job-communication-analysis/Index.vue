@@ -83,6 +83,7 @@
                 <el-option label="是否回复" value="" />
                 <el-option label="已回复" value="REPLIED" />
                 <el-option label="未回复" value="CONTACTED" />
+                <el-option label="不合适" value="NOT_SUITABLE" />
               </el-select>
 
               <button class="export-button" @click="exportRecords">导出</button>
@@ -104,20 +105,46 @@
                     <div v-else class="company-fallback-logo" :style="getCompanyLogoStyle(row)">
                       {{ getCompanyInitial(getCompanyName(row)) }}
                     </div>
-                    <span class="company-name">{{ getCompanyName(row) }}</span>
+                    <a
+                      v-if="getJobUrl(row)"
+                      :href="getJobUrl(row)"
+                      class="company-link"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      @click.stop
+                    >
+                      {{ getCompanyName(row) }}
+                    </a>
+                    <span v-else class="company-name">{{ getCompanyName(row) }}</span>
                   </div>
                 </template>
               </el-table-column>
 
               <el-table-column label="岗位名" min-width="220">
                 <template #default="{ row }">
-                  <span class="cell-strong">{{ getJobTitle(row) }}</span>
+                  <a
+                    v-if="getJobUrl(row)"
+                    :href="getJobUrl(row)"
+                    class="job-link"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    {{ getJobTitle(row) }}
+                  </a>
+                  <span v-else class="cell-strong">{{ getJobTitle(row) }}</span>
                 </template>
               </el-table-column>
 
               <el-table-column label="HR 名" min-width="150">
                 <template #default="{ row }">
                   <span>{{ getHrName(row) }}</span>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="工作地点" min-width="170">
+                <template #default="{ row }">
+                  <span>{{ getJobLocation(row) }}</span>
                 </template>
               </el-table-column>
 
@@ -129,8 +156,8 @@
 
               <el-table-column label="是否回复" min-width="160">
                 <template #default="{ row }">
-                  <span class="status-pill" :class="row.status === 'REPLIED' ? 'is-replied' : 'is-pending'">
-                    {{ row.status === 'REPLIED' ? '已回复' : '未回复' }}
+                  <span class="status-pill" :class="getStatusClass(row.status)">
+                    {{ getStatusText(row.status) }}
                   </span>
                 </template>
               </el-table-column>
@@ -163,8 +190,8 @@
         <div v-if="selectedRecord" class="drawer-body">
           <div class="drawer-header">
             <h3>{{ getJobTitle(selectedRecord) }}</h3>
-            <span class="drawer-chip" :class="selectedRecord.status === 'REPLIED' ? 'is-replied' : 'is-pending'">
-              {{ selectedRecord.status === 'REPLIED' ? '已回复' : '未回复' }}
+            <span class="drawer-chip" :class="getStatusClass(selectedRecord.status)">
+              {{ getStatusText(selectedRecord.status) }}
             </span>
           </div>
 
@@ -287,6 +314,7 @@ type JobRecord = {
   jobLocation?: string
   salaryRange?: string
   salaryRangeNormalized?: string
+  jobUrl?: string
   hrName?: string
   hrTitle?: string
   firstCommunicatedAt?: string
@@ -298,7 +326,7 @@ type JobRecord = {
   sourcePayload?: string
 }
 
-type KpiStatus = 'ALL' | 'REPLIED' | 'CONTACTED'
+type KpiStatus = 'ALL' | 'REPLIED' | 'CONTACTED' | 'NOT_SUITABLE'
 
 const loading = ref(false)
 const drawerVisible = ref(false)
@@ -412,9 +440,20 @@ const formatDateTime = (value?: string, fallback = '暂无记录') => {
 const getCompanyName = (row: JobRecord) => sanitizeText(row.companyName) || '匿名企业'
 const getCompanyInitial = (companyName?: string) => sanitizeText(companyName || '企').charAt(0).toUpperCase() || '企'
 const getCompanyLogo = (row: JobRecord) => sanitizeText(row.companyLogo)
+const getJobUrl = (row: JobRecord) => sanitizeText(row.jobUrl)
 const getJobTitle = (row: JobRecord) => sanitizeText(row.jobTitle) || '未知岗位'
 const getJobLocation = (row: JobRecord) => sanitizeText(row.jobLocation) || '地点待补充'
 const getHrName = (row: JobRecord) => sanitizeText(row.hrName) || '待识别'
+const getStatusText = (status?: string) => {
+  if (status === 'REPLIED') return '已回复'
+  if (status === 'NOT_SUITABLE') return '不合适'
+  return '未回复'
+}
+const getStatusClass = (status?: string) => {
+  if (status === 'REPLIED') return 'is-replied'
+  if (status === 'NOT_SUITABLE') return 'is-rejected'
+  return 'is-pending'
+}
 const sanitizeSalaryText = (value?: string) => {
   const normalized = sanitizeText(value)
   if (!normalized) return ''
@@ -463,6 +502,7 @@ const getLastCommunicationSnippet = (row: JobRecord) => {
   if (lastMessage) return lastMessage
   const timeline = getTimeline(row)
   if (timeline.length) return sanitizeText(timeline[timeline.length - 1]?.content) || '最近消息待同步'
+  if (row.status === 'NOT_SUITABLE') return 'HR 明确反馈当前岗位不合适。'
   return row.status === 'REPLIED' ? 'HR 已回复，建议优先跟进。' : '尚未收到回复。'
 }
 
@@ -535,7 +575,14 @@ const handleKpiClick = (card: { status: KpiStatus }) => {
 }
 
 const syncStatusFilter = () => {
-  activeStatusFilter.value = status.value === 'REPLIED' ? 'REPLIED' : status.value === 'CONTACTED' ? 'CONTACTED' : 'ALL'
+  activeStatusFilter.value =
+    status.value === 'REPLIED'
+      ? 'REPLIED'
+      : status.value === 'CONTACTED'
+        ? 'CONTACTED'
+        : status.value === 'NOT_SUITABLE'
+          ? 'NOT_SUITABLE'
+          : 'ALL'
   pageNum.value = 1
   loadPage()
 }
@@ -1018,6 +1065,20 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.company-link,
+.job-link {
+  color: #2b3444;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.company-link:hover,
+.job-link:hover {
+  color: #17beb0;
+  text-decoration: underline;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -1040,6 +1101,12 @@ onMounted(() => {
 .drawer-chip.is-pending {
   color: #ff9b1c;
   background: #fff5e7;
+}
+
+.status-pill.is-rejected,
+.drawer-chip.is-rejected {
+  color: #ef4444;
+  background: #fef2f2;
 }
 
 .table-footer {
